@@ -12,12 +12,11 @@
     "test": "tsx scripts/smoke.ts"
   },
   "dependencies": {
-    "three": "^0.187.0",
+    "playcanvas": "^2.24.2",
     "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "@types/three": "^0.187.0",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
