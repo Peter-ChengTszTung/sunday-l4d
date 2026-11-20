@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chibi Outbreak</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧟</text></svg>" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" hidden>
+    <div id="vignette"></div>
+    <div id="goo"></div>
+    <div id="dmgdir"></div>
+    <div id="crosshair"><i></i><i></i><i></i><i></i><b id="hitmark"></b></div>
+
+    <div id="top">
+      <div id="objective"></div>
+      <div id="holdout" hidden></div>
+    </div>
+    <button id="room" title="Copy invite link"></button>
+    <div id="team"></div>
+    <div id="feed"></div>
+    <div id="banner"></div>
+
+    <div id="prompt" hidden></div>
+    <div id="ring" hidden>
+      <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" class="bg" /><circle cx="32" cy="32" r="26" class="fg" id="ringfg" /></svg>
+      <span id="ringlabel"></span>
+    </div>
+
+    <div id="status">
+      <div id="medkit" hidden>✚<small>Q</small></div>
+      <div id="hpwrap"><div id="hpbar"></div><span id="hptext">100</span></div>
+    </div>
+    <div id="ammo"><div id="wname"></div><div id="acount"><b id="mag">15</b><span id="reserve">∞</span></div><div id="slots"></div></div>
+    <div id="spectate" hidden></div>
+  </div>
+
+  <div id="lobby">
+    <div class="card">
+      <h1><span>CHIBI</span> OUTBREAK</h1>
+      <p class="tag">4-player co-op zombie survival. Tiny heroes, big hordes.</p>
+      <form id="join">
+        <label>Name <input id="name" maxlength="14" autocomplete="off" placeholder="Mochi" /></label>
+        <label>Room code <input id="code" maxlength="6" autocomplete="off" placeholder="blank = quick play" /></label>
+        <button type="submit" id="play">PLAY</button>
+      </form>
+      <p id="lobbymsg"></p>
+      <div class="keys">
+        <span><kbd>WASD</kbd> move</span><span><kbd>Mouse</kbd> aim</span><span><kbd>LMB</kbd> shoot</span><span><kbd>RMB</kbd> shove</span>
+        <span><kbd>R</kbd> reload</span><span><kbd>E</kbd> use / revive</span><span><kbd>Q</kbd> medkit</span><span><kbd>1</kbd><kbd>2</kbd> weapons</span>
+        <span><kbd>Space</kbd> jump</span><span><kbd>F</kbd> flashlight</span><span><kbd>M</kbd> mute</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" hidden>
+    <div class="card small">
+      <h2>Paused</h2>
+      <p>Click to jump back in. The horde does not wait.</p>
+    </div>
+  </div>
+
+  <div id="end" hidden>
+    <div class="card small">
+      <h2 id="endtitle"></h2>
+      <p id="endstats"></p>
+      <ul id="endboard"></ul>
+      <p class="dim">Next run starts automatically…</p>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
