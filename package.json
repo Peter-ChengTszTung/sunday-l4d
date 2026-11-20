@@ -1,0 +1,26 @@
+{
+  "name": "chibi-outbreak",
+  "version": "0.1.0",
+  "description": "Chibi cel-shaded online co-op zombie survival shooter for the browser",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --include 'shared/**' server/index.ts",
+    "build": "vite build",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}
