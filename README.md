@@ -1,7 +1,8 @@
 # Chibi Outbreak
 
 A browser co-op zombie survival shooter for up to 4 players. Chibi characters, cel-shaded
-toon rendering with ink outlines, and a server-driven horde. TypeScript end to end.
+toon rendering with ink outlines, and a server-driven horde. TypeScript end to end, rendered
+with [PlayCanvas](https://playcanvas.com).
 
 ## Run it
 
@@ -52,7 +53,7 @@ players are rescued next to a teammate after 25 s. If nobody is left standing th
 ```
 shared/   constants, the level grid, collision/raycast helpers, wire protocol types
 server/   index.ts (HTTP + WebSocket host), room.ts (authoritative simulation + director)
-client/   index.html, style.css, src/ (three.js rendering, input, HUD, synthesised audio)
+client/   index.html, style.css, src/ (PlayCanvas rendering, input, HUD, synthesised audio)
 scripts/  smoke.ts — headless end-to-end test
 ```
 
@@ -61,9 +62,11 @@ scripts/  smoke.ts — headless end-to-end test
   (fire rate, range, pellet count). Fine for co-op with friends; not cheat-proof.
 - **AI:** zombies follow a breadth-first flow field towards the nearest survivor and
   beeline when close with line of sight. The director spawns out of sight, a walk away.
-- **Look:** `MeshToonMaterial` with a 4-step ramp, inverted-hull outlines on characters and
-  props, fat ink lines on architecture. All models are built from primitives in code and all
-  sound is synthesised, so there are no asset files.
+- **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
+  custom GLSL shaders: 4-step banded lighting, a stepped flashlight cone, fog, and inverted-hull
+  ink outlines. Architecture ink lines are thin beam geometry. `client/src/geo.ts` is a small
+  primitive/merge kit; all models are built from it in code and all sound is synthesised, so
+  there are no asset files. The shaders are GLSL only, so rendering uses WebGL2 (not WebGPU).
 
 ## Checks
 
