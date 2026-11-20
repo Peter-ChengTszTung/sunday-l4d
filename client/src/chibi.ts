@@ -1,8 +1,9 @@
 // Chibi characters: huge head, bean body, stubby limbs. Built from primitives,
 // vertex-coloured so every character shares one toon material, and animated
-// procedurally (no skeletons). Models face -Z so rotation.y matches camera yaw.
-import * as THREE from 'three';
-import { toonVC, outlineMat, tint, trs, merge } from './toon';
+// procedurally (no skeletons). Models face -Z so yaw matches the camera.
+import * as pc from 'playcanvas';
+import { type Geo, box, sphere, cylinder, capsule, ring, quad, make, merge, trs, toMesh } from './geo';
+import { device, meshEntity, toonMat, outlineMat, makeUnlit, canvasTexture, setRot } from './gfx';
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
 
 export type HairStyle = SurvivorLook['style'] | 'bald' | 'mess' | 'hood';
@@ -14,69 +15,68 @@ export interface ChibiLook {
 export type Pose = 'idle' | 'run' | 'aim' | 'attack' | 'stagger' | 'windup' | 'leap' | 'down';
 
 const HEAD_Y = 1.06;
-const sphere = new THREE.SphereGeometry(1, 18, 12);
-const dome = new THREE.SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-const hoodGeo = new THREE.SphereGeometry(1, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.68);
-const cone = new THREE.ConeGeometry(1, 1, 8);
-const boxG = new THREE.BoxGeometry(1, 1, 1);
-const limb = new THREE.CapsuleGeometry(1, 1, 4, 10); // radius 1, mid-length 1 → scaled per use
-const shadowGeo = new THREE.CircleGeometry(0.36, 16).rotateX(-Math.PI / 2);
-const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0a0614, transparent: true, opacity: 0.38, depthWrite: false });
+const ball = sphere(18, 12);
+const dome = sphere(18, 8, Math.PI / 2);
+const hood = sphere(18, 10, Math.PI * 0.68);
+const cone = cylinder(8, 0, 1);
+const cube = box();
+const shadowMesh = toMesh(device, make(ring(0, 0.36, 16)));
+const shadowMat = makeUnlit({ color: 0x0a0614, alpha: 0.38, blend: 'normal', fog: false });
 
-const cache = new Map<string, THREE.BufferGeometry>();
-function cached(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
-  let g = cache.get(key);
-  if (!g) { g = make(); cache.set(key, g); }
-  return g;
+const cache = new Map<string, pc.Mesh>();
+function cached(key: string, build: () => Geo): pc.Mesh {
+  let m = cache.get(key);
+  if (!m) { m = toMesh(device, build()); cache.set(key, m); }
+  return m;
 }
 
-function headGeometry(l: ChibiLook): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [tint(sphere, l.skin, trs(0, 0, 0, 0, 0, 0, 0.36, 0.335, 0.35))];
+function headGeo(l: ChibiLook): Geo {
+  const parts: Geo[] = [make(ball, l.skin, trs(0, 0, 0, 0, 0, 0, 0.36, 0.335, 0.35))];
   const dark = 0x1a1226;
   if (l.zombie) {
     const glow = l.eye ?? 0xfff3a8;
     // Mismatched goggly eyes + a toothy grin.
-    parts.push(tint(sphere, glow, trs(-0.135, 0.0, -0.3, 0, 0, 0, 0.095, 0.105, 0.05)));
-    parts.push(tint(sphere, glow, trs(0.14, 0.02, -0.305, 0, 0, 0, 0.065, 0.07, 0.04)));
-    parts.push(tint(sphere, dark, trs(-0.125, -0.01, -0.345, 0, 0, 0, 0.028, 0.028, 0.02)));
-    parts.push(tint(sphere, dark, trs(0.15, 0.03, -0.34, 0, 0, 0, 0.022, 0.022, 0.02)));
-    parts.push(tint(boxG, 0x4a1630, trs(0, -0.16, -0.315, 0.1, 0, 0, 0.2, 0.07, 0.05)));
-    parts.push(tint(boxG, 0xfff8ee, trs(-0.05, -0.135, -0.335, 0.1, 0, 0, 0.045, 0.04, 0.03)));
-    parts.push(tint(boxG, 0xfff8ee, trs(0.045, -0.185, -0.33, 0.1, 0, 0, 0.045, 0.04, 0.03)));
+    parts.push(make(ball, glow, trs(-0.135, 0.0, -0.3, 0, 0, 0, 0.095, 0.105, 0.05)));
+    parts.push(make(ball, glow, trs(0.14, 0.02, -0.305, 0, 0, 0, 0.065, 0.07, 0.04)));
+    parts.push(make(ball, dark, trs(-0.125, -0.01, -0.345, 0, 0, 0, 0.028, 0.028, 0.02)));
+    parts.push(make(ball, dark, trs(0.15, 0.03, -0.34, 0, 0, 0, 0.022, 0.022, 0.02)));
+    parts.push(make(cube, 0x4a1630, trs(0, -0.16, -0.315, 0.1, 0, 0, 0.2, 0.07, 0.05)));
+    parts.push(make(cube, 0xfff8ee, trs(-0.05, -0.135, -0.335, 0.1, 0, 0, 0.045, 0.04, 0.03)));
+    parts.push(make(cube, 0xfff8ee, trs(0.045, -0.185, -0.33, 0.1, 0, 0, 0.045, 0.04, 0.03)));
   } else {
     for (const s of [-1, 1]) {
-      parts.push(tint(sphere, dark, trs(s * 0.13, -0.02, -0.31, 0, 0, 0, 0.058, 0.082, 0.04)));
-      parts.push(tint(sphere, 0xffffff, trs(s * 0.13 + 0.02, 0.015, -0.345, 0, 0, 0, 0.022, 0.026, 0.015)));
-      parts.push(tint(sphere, 0xff9bb0, trs(s * 0.22, -0.11, -0.27, 0, s * -0.6, 0, 0.05, 0.03, 0.012)));
+      parts.push(make(ball, dark, trs(s * 0.13, -0.02, -0.31, 0, 0, 0, 0.058, 0.082, 0.04)));
+      parts.push(make(ball, 0xffffff, trs(s * 0.13 + 0.02, 0.015, -0.345, 0, 0, 0, 0.022, 0.026, 0.015)));
+      parts.push(make(ball, 0xff9bb0, trs(s * 0.22, -0.11, -0.27, 0, s * -0.6, 0, 0.05, 0.03, 0.012)));
     }
-    parts.push(tint(sphere, 0x8a3b4a, trs(0, -0.14, -0.325, 0, 0, 0, 0.03, 0.016, 0.012)));
+    parts.push(make(ball, 0x8a3b4a, trs(0, -0.14, -0.325, 0, 0, 0, 0.03, 0.016, 0.012)));
   }
   const tilt = 0.32;
   switch (l.style) {
     case 'cap':
-      parts.push(tint(dome, l.hair, trs(0, 0.1, 0.02, tilt * 0.5, 0, 0, 0.375, 0.29, 0.37)));
-      parts.push(tint(boxG, l.hair, trs(0, 0.2, -0.38, -0.12, 0, 0, 0.34, 0.035, 0.2)));
+      parts.push(make(dome, l.hair, trs(0, 0.1, 0.02, tilt * 0.5, 0, 0, 0.375, 0.29, 0.37)));
+      parts.push(make(cube, l.hair, trs(0, 0.2, -0.38, -0.12, 0, 0, 0.34, 0.035, 0.2)));
       break;
     case 'spiky':
-      parts.push(tint(dome, l.hair, trs(0, 0.01, 0.02, tilt, 0, 0, 0.38, 0.36, 0.37)));
+      parts.push(make(dome, l.hair, trs(0, 0.01, 0.02, tilt, 0, 0, 0.38, 0.36, 0.37)));
       for (const [x, y, z, rz, rx] of [[0, 0.38, 0, 0, 0.2], [-0.17, 0.32, 0.02, 0.55, 0.2], [0.17, 0.32, 0.02, -0.55, 0.2], [-0.08, 0.3, 0.2, 0.2, 0.9], [0.1, 0.3, 0.2, -0.2, 0.9]]) {
-        parts.push(tint(cone, l.hair, trs(x, y, z, rx, 0, rz, 0.09, 0.22, 0.09)));
+        parts.push(make(cone, l.hair, trs(x, y, z, rx, 0, rz, 0.09, 0.22, 0.09)));
       }
       break;
     case 'buns':
-      parts.push(tint(dome, l.hair, trs(0, 0.01, 0.02, tilt, 0, 0, 0.38, 0.36, 0.37)));
-      for (const s of [-1, 1]) parts.push(tint(sphere, l.hair, trs(s * 0.31, 0.27, 0.06, 0, 0, 0, 0.135)));
+      parts.push(make(dome, l.hair, trs(0, 0.01, 0.02, tilt, 0, 0, 0.38, 0.36, 0.37)));
+      for (const s of [-1, 1]) parts.push(make(ball, l.hair, trs(s * 0.31, 0.27, 0.06, 0, 0, 0, 0.135)));
       break;
     case 'bob':
-      parts.push(tint(hoodGeo, l.hair, trs(0, 0.0, 0.03, tilt * 1.6, 0, 0, 0.39, 0.37, 0.38)));
+      parts.push(make(hood, l.hair, trs(0, 0.0, 0.03, tilt * 1.6, 0, 0, 0.39, 0.37, 0.38)));
       break;
     case 'hood':
-      parts.push(tint(hoodGeo, l.hair, trs(0, 0.0, 0.04, 0.62, 0, 0, 0.41, 0.4, 0.4)));
+      parts.push(make(hood, l.hair, trs(0, 0.0, 0.04, 0.62, 0, 0, 0.41, 0.4, 0.4)));
       break;
     case 'mess':
-      parts.push(tint(dome, l.hair, trs(0, 0.03, 0.03, tilt * 1.2, 0, 0.1, 0.375, 0.33, 0.36)));
-      parts.push(tint(cone, l.hair, trs(0.12, 0.34, 0.05, 0.2, 0, -0.7, 0.07, 0.2, 0.07)));
-      parts.push(tint(cone, l.hair, trs(-0.2, 0.28, 0.1, 0.4, 0, 0.9, 0.06, 0.16, 0.06)));
+      parts.push(make(dome, l.hair, trs(0, 0.03, 0.03, tilt * 1.2, 0, 0.1, 0.375, 0.33, 0.36)));
+      parts.push(make(cone, l.hair, trs(0.12, 0.34, 0.05, 0.2, 0, -0.7, 0.07, 0.2, 0.07)));
+      parts.push(make(cone, l.hair, trs(-0.2, 0.28, 0.1, 0.4, 0, 0.9, 0.06, 0.16, 0.06)));
       break;
     case 'bald':
       break;
@@ -84,144 +84,146 @@ function headGeometry(l: ChibiLook): THREE.BufferGeometry {
   return merge(parts);
 }
 
-function limbGeometry(color: number, tip: number, r: number, len: number): THREE.BufferGeometry {
+function limbGeo(color: number, tip: number, r: number, len: number): Geo {
   // Hangs down from the pivot (origin) along -Y, with a contrasting hand/shoe.
   const total = len + 2 * r;
   return merge([
-    tint(limb, color, trs(0, -total / 2, 0, 0, 0, 0, r, len, r)),
-    tint(sphere, tip, trs(0, -total + r * 0.6, 0, 0, 0, 0, r * 1.25, r * 1.1, r * 1.3)),
+    make(capsule(r, len), color, trs(0, -total / 2, 0)),
+    make(ball, tip, trs(0, -total + r * 0.6, 0, 0, 0, 0, r * 1.25, r * 1.1, r * 1.3)),
   ]);
 }
 
-function bodyGeometry(l: ChibiLook): THREE.BufferGeometry {
+function bodyGeo(l: ChibiLook): Geo {
   if (l.zombie === 'puffer') {
-    const parts = [tint(sphere, l.shirt, trs(0, 0, 0, 0, 0, 0, 0.36, 0.33, 0.34))];
+    const parts = [make(ball, l.shirt, trs(0, 0, 0, 0, 0, 0, 0.36, 0.33, 0.34))];
     for (const [x, y, z, s] of [[0.2, 0.12, -0.24, 0.09], [-0.16, -0.05, -0.29, 0.07], [0.02, 0.2, -0.26, 0.06], [-0.26, 0.14, -0.1, 0.08], [0.28, -0.08, 0.0, 0.07], [0.0, 0.1, 0.3, 0.09]]) {
-      parts.push(tint(sphere, 0xe9f76a, trs(x, y, z, 0, 0, 0, s)));
+      parts.push(make(ball, 0xe9f76a, trs(x, y, z, 0, 0, 0, s)));
     }
     return merge(parts);
   }
   const wide = l.zombie === 'brute' ? 1.45 : l.zombie === 'leaper' ? 0.85 : 1;
   return merge([
-    tint(sphere, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.23 * wide, 0.25, 0.2 * (wide > 1 ? 1.25 : wide))),
-    tint(sphere, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.2 * wide, 0.13, 0.18 * (wide > 1 ? 1.2 : wide))),
+    make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.23 * wide, 0.25, 0.2 * (wide > 1 ? 1.25 : wide))),
+    make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.2 * wide, 0.13, 0.18 * (wide > 1 ? 1.2 : wide))),
   ]);
 }
 
 export class Chibi {
-  readonly group = new THREE.Group();
-  readonly root = new THREE.Group(); // tilts/squashes without touching the shadow
-  readonly head: THREE.Mesh;
-  readonly body: THREE.Mesh;
-  readonly armL = new THREE.Group();
-  readonly armR = new THREE.Group();
-  readonly legL = new THREE.Group();
-  readonly legR = new THREE.Group();
+  readonly group = new pc.Entity('chibi');
+  readonly root = new pc.Entity('root'); // tilts/squashes without touching the shadow
+  readonly head: pc.Entity;
+  readonly body: pc.Entity;
+  readonly armL = new pc.Entity();
+  readonly armR = new pc.Entity();
+  readonly legL = new pc.Entity();
+  readonly legR = new pc.Entity();
   phase = Math.random() * 10;
   punch = 0; // hit squash, decays to 0
   private readonly headBaseY: number;
+  private readonly bodyBaseY: number;
+  // Smoothed pose values (kept here so we never read rotations back from the engine).
+  private p = { leg: 0, aL: 0, aR: 0, aLz: 0, aRz: 0, headZ: 0, lean: 0, rootX: 0, rootY: 0, squash: 1 };
 
   constructor(readonly look: ChibiLook) {
     const k = [look.skin, look.shirt, look.pants, look.hair, look.style, look.zombie ?? 'p', look.eye ?? 0].join('|');
     const z = look.zombie;
-    const mk = (geo: THREE.BufferGeometry) => {
-      const m = new THREE.Mesh(geo, toonVC);
-      m.add(new THREE.Mesh(geo, outlineMat));
-      return m;
-    };
-    this.body = mk(cached('b' + k, () => bodyGeometry(look)));
-    this.body.position.y = z === 'puffer' ? 0.62 : 0.55;
-    this.head = mk(cached('h' + k, () => headGeometry(look)));
+    const mk = (mesh: pc.Mesh) => meshEntity(mesh, [toonMat, outlineMat]);
+    this.body = mk(cached('b' + k, () => bodyGeo(look)));
+    this.bodyBaseY = z === 'puffer' ? 0.62 : 0.55;
+    this.head = mk(cached('h' + k, () => headGeo(look)));
     this.headBaseY = z === 'puffer' ? 1.16 : HEAD_Y;
-    this.head.position.y = this.headBaseY;
-    if (z === 'brute') this.head.scale.setScalar(0.82);
+    if (z === 'brute') this.head.setLocalScale(0.82, 0.82, 0.82);
 
     const armR = z === 'brute' ? 0.11 : 0.065, armLen = z === 'leaper' ? 0.24 : z === 'brute' ? 0.22 : 0.15;
-    const armGeo = cached('a' + k, () => limbGeometry(z ? look.skin : look.shirt, look.skin, armR, armLen));
-    const legGeo = cached('l' + k, () => limbGeometry(look.pants, z ? look.skin : 0x2b2540, 0.085, 0.13));
+    const armMesh = cached('a' + k, () => limbGeo(z ? look.skin : look.shirt, look.skin, armR, armLen));
+    const legMesh = cached('l' + k, () => limbGeo(look.pants, z ? look.skin : 0x2b2540, 0.085, 0.13));
     const sx = z === 'brute' ? 0.4 : z === 'puffer' ? 0.37 : 0.25;
     for (const [pivot, s] of [[this.armL, -1], [this.armR, 1]] as const) {
-      pivot.position.set(s * sx, z === 'puffer' ? 0.72 : 0.72, 0);
-      pivot.add(mk(armGeo));
-      this.root.add(pivot);
+      pivot.setLocalPosition(s * sx, 0.72, 0);
+      pivot.addChild(mk(armMesh));
+      this.root.addChild(pivot);
     }
     for (const [pivot, s] of [[this.legL, -1], [this.legR, 1]] as const) {
-      pivot.position.set(s * (z === 'brute' ? 0.17 : 0.11), 0.33, 0);
-      pivot.add(mk(legGeo));
-      this.root.add(pivot);
+      pivot.setLocalPosition(s * (z === 'brute' ? 0.17 : 0.11), 0.33, 0);
+      pivot.addChild(mk(legMesh));
+      this.root.addChild(pivot);
     }
-    this.root.add(this.body, this.head);
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
-    shadow.position.y = 0.03;
-    shadow.scale.setScalar(z === 'brute' || z === 'puffer' ? 1.5 : 1);
-    this.group.add(this.root, shadow);
+    this.root.addChild(this.body);
+    this.root.addChild(this.head);
+    const shadow = meshEntity(shadowMesh, shadowMat);
+    const ss = z === 'brute' || z === 'puffer' ? 1.5 : 1;
+    shadow.setLocalPosition(0, 0.03, 0);
+    shadow.setLocalScale(ss, 1, ss);
+    this.group.addChild(this.root);
+    this.group.addChild(shadow);
   }
 
   /** Procedural pose. `t` is seconds, `dt` frame delta. */
   animate(pose: Pose, t: number, dt: number): void {
-    const p = t * 1 + this.phase;
+    const ph = t + this.phase;
     const z = !!this.look.zombie;
-    const { armL, armR, legL, legR, head, body, root } = this;
-    let legSwing = 0, bob = 0, lean = 0, aL = 0, aR = 0, aLz = 0, aRz = 0, headTilt = 0, squashY = 1, rootX = 0, rootY = 0;
+    let leg = 0, bob = 0, lean = 0, aL = 0, aR = 0, aLz = 0, aRz = 0, headZ = 0, squash = 1, rootX = 0, rootY = 0;
     switch (pose) {
       case 'idle':
-        bob = Math.sin(p * 2.2) * 0.012;
-        headTilt = Math.sin(p * 1.3) * (z ? 0.18 : 0.04);
-        aL = aR = z ? 0.25 + Math.sin(p * 1.7) * 0.1 : 0.05;
+        bob = Math.sin(ph * 2.2) * 0.012;
+        headZ = Math.sin(ph * 1.3) * (z ? 0.18 : 0.04);
+        aL = aR = z ? 0.25 + Math.sin(ph * 1.7) * 0.1 : 0.05;
         aLz = -0.12; aRz = 0.12;
         lean = z ? 0.12 : 0;
         break;
       case 'run': {
-        const s = Math.sin(p * 13);
-        legSwing = s * 0.95; bob = Math.abs(Math.cos(p * 13)) * 0.05;
+        const s = Math.sin(ph * 13);
+        leg = s * 0.95; bob = Math.abs(Math.cos(ph * 13)) * 0.05;
         lean = z ? 0.28 : 0.12;
-        if (z) { aL = 1.35 + Math.sin(p * 9) * 0.22; aR = 1.45 + Math.cos(p * 8) * 0.22; headTilt = Math.sin(p * 6.5) * 0.16; }
-        else { aL = -s * 0.8; aR = s * 0.8; }
+        if (z) { aL = 1.35 + Math.sin(ph * 9) * 0.22; aR = 1.45 + Math.cos(ph * 8) * 0.22; headZ = Math.sin(ph * 6.5) * 0.16; }
+        else { aL = 1.25; aR = 1.4; aLz = 0.45; aRz = -0.1; } // survivors keep their gun up
         break;
       }
       case 'aim':
         aL = 1.25; aR = 1.4; aLz = 0.45; aRz = -0.1;
-        bob = Math.sin(p * 2.2) * 0.01;
+        bob = Math.sin(ph * 2.2) * 0.01;
         break;
       case 'attack': {
-        const s = Math.sin(p * 16);
-        aL = 1.2 + s * 0.9; aR = 1.2 - s * 0.9; lean = 0.35; headTilt = s * 0.12;
+        const s = Math.sin(ph * 16);
+        aL = 1.2 + s * 0.9; aR = 1.2 - s * 0.9; lean = 0.35; headZ = s * 0.12;
         bob = Math.abs(s) * 0.03;
         break;
       }
       case 'stagger':
-        lean = -0.55; aL = aR = -0.6; aLz = -0.9; aRz = 0.9; headTilt = Math.sin(p * 20) * 0.2;
-        legSwing = Math.sin(p * 18) * 0.4;
+        lean = -0.55; aL = aR = -0.6; aLz = -0.9; aRz = 0.9; headZ = Math.sin(ph * 20) * 0.2;
+        leg = Math.sin(ph * 18) * 0.4;
         break;
       case 'windup':
-        squashY = 0.72; lean = 0.5; aL = aR = -0.9; aLz = -0.5; aRz = 0.5;
+        squash = 0.72; lean = 0.5; aL = aR = -0.9; aLz = -0.5; aRz = 0.5;
         break;
       case 'leap':
-        lean = 1.15; aL = aR = 2.6; legSwing = 0; rootY = 0.45; squashY = 1.12;
+        lean = 1.15; aL = aR = 2.6; rootX = -0.9; rootY = 0.45; squash = 1.12;
         break;
       case 'down':
-        rootX = -Math.PI / 2; rootY = 0.22; aL = 2.6 + Math.sin(p * 3) * 0.2; aR = 0.4; headTilt = Math.sin(p * 2) * 0.1;
+        rootX = -Math.PI / 2; rootY = 0.22; aL = 2.6 + Math.sin(ph * 3) * 0.2; aR = 0.4; headZ = Math.sin(ph * 2) * 0.1;
         break;
     }
-    const k = Math.min(1, dt * 14);
-    const lerp = (a: number, b: number) => a + (b - a) * k;
-    legL.rotation.x = lerp(legL.rotation.x, legSwing);
-    legR.rotation.x = lerp(legR.rotation.x, -legSwing);
-    armL.rotation.x = lerp(armL.rotation.x, aL); armR.rotation.x = lerp(armR.rotation.x, aR);
-    armL.rotation.z = lerp(armL.rotation.z, aLz); armR.rotation.z = lerp(armR.rotation.z, aRz);
-    head.rotation.z = lerp(head.rotation.z, headTilt);
-    body.rotation.x = lerp(body.rotation.x, -lean * 0.6);
-    head.position.z = lerp(head.position.z, -lean * 0.16);
-    head.position.y = this.headBaseY + bob * 1.4;
-    body.position.y = (this.look.zombie === 'puffer' ? 0.62 : 0.55) + bob;
-    root.rotation.x = lerp(root.rotation.x, rootX !== 0 ? rootX : pose === 'leap' ? -0.9 : 0);
-    root.position.y = lerp(root.position.y, rootY);
+    const k = Math.min(1, dt * 14), p = this.p;
+    const to = (key: keyof typeof p, target: number) => { p[key] += (target - p[key]) * k; };
+    to('leg', leg); to('aL', aL); to('aR', aR); to('aLz', aLz); to('aRz', aRz); to('headZ', headZ);
+    to('lean', lean); to('rootX', rootX); to('rootY', rootY); to('squash', squash);
+    setRot(this.legL, p.leg, 0, 0); setRot(this.legR, -p.leg, 0, 0);
+    setRot(this.armL, p.aL, 0, p.aLz); setRot(this.armR, p.aR, 0, p.aRz);
+    setRot(this.head, 0, 0, p.headZ);
+    this.head.setLocalPosition(0, this.headBaseY + bob * 1.4, -p.lean * 0.16);
+    setRot(this.body, -p.lean * 0.6, 0, 0);
+    this.body.setLocalPosition(0, this.bodyBaseY + bob, 0);
+    setRot(this.root, p.rootX, 0, 0);
+    this.root.setLocalPosition(0, p.rootY, 0);
     this.punch = Math.max(0, this.punch - dt * 6);
     const pu = this.punch * 0.22;
-    root.scale.set(1 + pu, lerp(root.scale.y, squashY) - pu * 0.5, 1 + pu);
+    this.root.setLocalScale(1 + pu, p.squash - pu * 0.5, 1 + pu);
   }
 
-  dispose(): void { this.group.removeFromParent(); }
+  /** Death tumble, driven directly by the corpse animation. */
+  tumble(rx: number, y: number): void { this.p.rootX = rx; this.p.rootY = y; setRot(this.root, rx, 0, 0); this.root.setLocalPosition(0, y, 0); }
+
+  dispose(): void { this.group.destroy(); }
 }
 
 export function survivorLook(i: number): ChibiLook {
@@ -248,8 +250,9 @@ export function zombieLook(type: number, id: number): ChibiLook {
   return type === 0 ? WALKER_LOOKS[id % WALKER_LOOKS.length] : SPECIAL_LOOKS[type];
 }
 
-/** Floating name tag (canvas sprite). */
-export function nameTag(text: string, color: string): THREE.Sprite {
+const tagMesh = toMesh(device, make(quad(), undefined, new pc.Mat4().setScale(1.5, 0.375, 1)));
+/** Floating name tag: a camera-facing quad with the name drawn on a canvas. */
+export function nameTag(text: string, color: string): pc.Entity {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 64;
   const g = c.getContext('2d')!;
@@ -257,10 +260,6 @@ export function nameTag(text: string, color: string): THREE.Sprite {
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.lineWidth = 8; g.strokeStyle = '#1a1226'; g.lineJoin = 'round';
   g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false }));
-  s.scale.set(1.5, 0.375, 1);
-  s.renderOrder = 10;
-  return s;
+  const mat = makeUnlit({ tex: canvasTexture(c, false), blend: 'normal', depthTest: false, fog: false, cull: 'none' });
+  return meshEntity(tagMesh, mat);
 }

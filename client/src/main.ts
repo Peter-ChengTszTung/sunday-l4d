@@ -1,12 +1,14 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
-import * as THREE from 'three';
+import * as pc from 'playcanvas';
 import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS } from '../../shared/constants';
 import { MAP, F, floorAt, moveSlide, rayGrid } from '../../shared/map';
 import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView } from './world';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
-import { ViewModel, buildGun } from './viewmodel';
+import { ViewModel, buildGun, type Gun } from './viewmodel';
+import { app, setTorch } from './gfx';
+import { quatYXZ } from './geo';
 import { FX } from './fx';
 import { Sfx } from './audio';
 import { Hud, type MateView } from './hud';
@@ -16,56 +18,34 @@ const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+const RAD = 180 / Math.PI;
 const lerpAngle = (a: number, b: number, k: number) => {
   const d = (((b - a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
   return a + d * k;
 };
 
-// ------------------------------------------------------------------ renderer
+// -------------------------------------------------------------------- scene
 const canvas = $<HTMLCanvasElement>('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.autoClear = false;
-const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x7a4f8e, 24, 105);
-const camera = new THREE.PerspectiveCamera(74, 1, 0.08, 600);
-camera.rotation.order = 'YXZ';
-scene.add(camera);
+const camera = new pc.Entity('camera');
+camera.addComponent('camera', { fov: 74, nearClip: 0.08, farClip: 600, clearColor: new pc.Color(0.1, 0.07, 0.15) });
+app.root.addChild(camera);
+const cam = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1, rot: new pc.Quat() };
 
-scene.add(new THREE.HemisphereLight(0xc9d2ff, 0x6a557f, 1.9));
-const moon = new THREE.DirectionalLight(0xffe1cf, 1.7);
-moon.position.set(-0.4, 1, 0.9);
-scene.add(moon);
-const torch = new THREE.SpotLight(0xfff3d6, 9, 30, 0.52, 0.6, 0.9);
-torch.position.set(0.15, -0.1, 0);
-torch.target.position.set(0, -0.05, -1);
-camera.add(torch, torch.target);
-
-const world = buildWorld(scene, renderer);
-const fx = new FX(scene);
+const world = buildWorld();
+const fx = new FX();
 const sfx = new Sfx();
 const hud = new Hud();
 const net = new Net();
 const vm = new ViewModel(WEAPONS.map((w) => w.id));
 
-function resize(): void {
-  const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h; camera.updateProjectionMatrix();
-  vm.resize(w / h);
-  world.resize(w, h);
-}
-window.addEventListener('resize', resize);
-resize();
-
 // --------------------------------------------------------------------- state
 interface Mate {
-  id: number; name: string; look: number; chibi: Chibi; tag: THREE.Sprite; gun: THREE.Group | null; gunW: number;
+  id: number; name: string; look: number; chibi: Chibi; tag: pc.Entity; gun: Gun | null; gunW: number;
   x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number;
   hp: number; st: number; respawn: number; rev: number; speed: number;
 }
 interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry: number; tx: number; tz: number; tr: number; st: number }
-interface Corpse { chibi: Chibi; t: number; vx: number; vz: number }
+interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; z: number; scale: number }
 
 const me = {
   id: 0, x: MAP.spawns[0].x, y: 0, z: MAP.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
@@ -94,7 +74,7 @@ document.addEventListener('keydown', (e) => {
     case 'KeyR': startReload(); break;
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
     case 'Digit2': switchWeapon(0); break;
-    case 'KeyF': torchOn = !torchOn; torch.visible = torchOn; sfx.dryFire(); break;
+    case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(sfx.muted ? 'Sound off' : 'Sound on'); break;
     case 'KeyE': interact(); break;
   }
@@ -137,10 +117,11 @@ function startReload(): void {
   sfx.reload();
 }
 
-const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3(), _f = new THREE.Vector3(), _end = new THREE.Vector3(), _muz = new THREE.Vector3();
+type V3 = { x: number; y: number; z: number };
+const _d: V3 = { x: 0, y: 0, z: 0 }, _end: V3 = { x: 0, y: 0, z: 0 }, _muz: V3 = { x: 0, y: 0, z: 0 };
 
 /** Hitscan against walls, floor and zombie hit spheres. */
-function castShot(o: THREE.Vector3, d: THREE.Vector3, range: number): { t: number; zed: Zed | null; head: boolean } {
+function castShot(o: V3, d: V3, range: number): { t: number; zed: Zed | null; head: boolean } {
   const h = Math.hypot(d.x, d.z);
   let t = range;
   if (h > 1e-5) t = Math.min(t, rayGrid(o.x, o.z, d.x / h, d.z / h, range * h, gateOpen) / h);
@@ -173,18 +154,21 @@ function fire(): void {
     return;
   }
   me.mag[wi]--; me.fireCd = w.rate;
-  camera.getWorldPosition(_o);
-  camera.getWorldDirection(_f);
-  _r.crossVectors(_f, camera.up).normalize(); _u.crossVectors(_r, _f);
-  _muz.set(0.2, -0.15, -0.7); camera.localToWorld(_muz);
+  // Camera basis from yaw/pitch (kept in `cam` by updateCamera).
+  const fwx = cam.fx, fwy = cam.fy, fwz = cam.fz, rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
+  const ux = -rz * fwy, uy = rz * fwx - rx * fwz, uz = rx * fwy;
+  const _o: V3 = cam;
+  _muz.x = cam.x + rx * 0.2 - ux * 0.15 + fwx * 0.7; _muz.y = cam.y - uy * 0.15 + fwy * 0.7; _muz.z = cam.z + rz * 0.2 - uz * 0.15 + fwz * 0.7;
   const spread = w.spread + me.bloom;
   const hits = new Map<number, [number, number, number]>();
   let anyHead = false, first: [number, number, number] = [0, 0, 0];
   for (let i = 0; i < w.pellets; i++) {
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
-    _d.copy(_f).addScaledVector(_r, Math.cos(a) * r).addScaledVector(_u, Math.sin(a) * r).normalize();
+    const ca = Math.cos(a) * r, sa = Math.sin(a) * r;
+    _d.x = fwx + rx * ca + ux * sa; _d.y = fwy + uy * sa; _d.z = fwz + rz * ca + uz * sa;
+    const dl = Math.hypot(_d.x, _d.y, _d.z); _d.x /= dl; _d.y /= dl; _d.z /= dl;
     const hit = castShot(_o, _d, w.range);
-    _end.copy(_o).addScaledVector(_d, hit.t);
+    _end.x = _o.x + _d.x * hit.t; _end.y = _o.y + _d.y * hit.t; _end.z = _o.z + _d.z * hit.t;
     if (i === 0) first = [_end.x, _end.y, _end.z];
     if (i < 4) fx.tracer(_muz, _end, w.pellets > 1 ? 0.02 : 0.032);
     if (hit.zed) {
@@ -272,10 +256,10 @@ function onGot(pickupId: number): void {
 function addMate(r: RosterEntry): Mate {
   const chibi = new Chibi(survivorLook(r.look));
   const tag = nameTag(r.name, hex(SURVIVORS[r.look % SURVIVORS.length].shirt));
-  tag.position.y = 1.72;
-  chibi.group.add(tag);
-  chibi.group.visible = false;
-  scene.add(chibi.group);
+  tag.setLocalPosition(0, 1.72, 0);
+  chibi.group.addChild(tag);
+  chibi.group.enabled = false;
+  app.root.addChild(chibi.group);
   const m: Mate = { id: r.id, name: r.name, look: r.look, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0 };
   mates.set(r.id, m);
   return m;
@@ -301,15 +285,15 @@ function applyPlayers(list: PlayerSnap[]): void {
     }
     const m = mates.get(id);
     if (!m) continue;
-    const fresh = !m.chibi.group.visible && st !== PSTATE.DEAD;
+    const fresh = !m.chibi.group.enabled && st !== PSTATE.DEAD;
     m.tx = x; m.ty = y; m.tz = z; m.tr = ry; m.hp = hp; m.st = st; m.rev = rev; m.respawn = respawn;
     if (fresh || Math.hypot(x - m.x, z - m.z) > 8) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
-    m.chibi.group.visible = st !== PSTATE.DEAD;
+    m.chibi.group.enabled = st !== PSTATE.DEAD;
     if (m.gunW !== w) {
-      m.gun?.removeFromParent();
+      m.gun?.ent.destroy();
       m.gun = buildGun(WEAPONS[w]?.id ?? 'pistol');
-      m.gun.position.set(0.1, 0.74, -0.36); m.gun.scale.setScalar(1.15);
-      m.chibi.root.add(m.gun); m.gunW = w;
+      m.gun.ent.setLocalPosition(0.1, 0.74, -0.36); m.gun.ent.setLocalScale(1.15, 1.15, 1.15);
+      m.chibi.root.addChild(m.gun.ent); m.gunW = w;
     }
   }
 }
@@ -321,8 +305,10 @@ function applyZombies(list: ZombieSnap[]): void {
     let zd = zeds.get(id);
     if (!zd) {
       const chibi = new Chibi(zombieLook(type, id));
-      chibi.group.scale.setScalar(ZTYPES[type].scale);
-      scene.add(chibi.group);
+      const sc = ZTYPES[type].scale;
+      chibi.group.setLocalScale(sc, sc, sc);
+      chibi.group.setPosition(x, 0, z);
+      app.root.addChild(chibi.group);
       zd = { id, type, chibi, x, z, ry, tx: x, tz: z, tr: ry, st };
       zeds.set(id, zd);
     }
@@ -338,8 +324,8 @@ function killZed(id: number, head: boolean): void {
   if (!zd) return;
   zeds.delete(id);
   const dx = zd.x - me.x, dz = zd.z - me.z, d = Math.hypot(dx, dz) || 1;
-  corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3 });
   const s = ZTYPES[zd.type].scale;
+  corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3, x: zd.x, z: zd.z, scale: s });
   if (head) fx.burst({ x: zd.x, y: 1.1 * s, z: zd.z }, 0xffd43b, 5, 4, 0.14, true, 0.4, 5);
   fx.burst({ x: zd.x, y: 0.8 * s, z: zd.z }, 0xb4f05a, zd.type === ZT.BRUTE ? 16 : 4, 4, 0.1 * s);
   sfx.pop(d);
@@ -370,8 +356,8 @@ function onEvent(ev: GameEvent): void {
       if (ev[1] === me.id) break;
       const m = mates.get(ev[1]);
       if (!m) break;
-      _muz.set(m.x - Math.sin(m.ry) * 0.5, m.y + 0.78, m.z - Math.cos(m.ry) * 0.5);
-      _end.set(ev[3], ev[4], ev[5]);
+      _muz.x = m.x - Math.sin(m.ry) * 0.5; _muz.y = m.y + 0.78; _muz.z = m.z - Math.cos(m.ry) * 0.5;
+      _end.x = ev[3]; _end.y = ev[4]; _end.z = ev[5];
       fx.tracer(_muz, _end);
       fx.burst(_muz, 0xffd43b, 1, 0.5, 0.16, true, 0.08, 0);
       sfx.shoot(ev[2], Math.max(1, Math.hypot(m.x - me.x, m.z - me.z)));
@@ -472,7 +458,7 @@ $('join').addEventListener('submit', (e) => { e.preventDefault(); void join(); }
 $('pause').addEventListener('mousedown', () => { void canvas.requestPointerLock(); });
 
 function enterGame(): void {
-  inGame = true; ended = false;
+  inGame = true; ended = false; vm.visible = me.st === PSTATE.ALIVE;
   $('lobby').hidden = true;
   hud.show(true);
   hud.pause(!locked && !DEBUG);
@@ -548,46 +534,49 @@ function updateCamera(dt: number): void {
   const shake = me.trauma * me.trauma * 0.05;
   if (me.st === PSTATE.DEAD) {
     const m = [...mates.values()].find((q) => q.st === PSTATE.ALIVE) ?? [...mates.values()].find((q) => q.st !== PSTATE.DEAD);
-    if (m) {
-      camera.position.set(m.x + Math.sin(m.ry) * 3.2, 2.6, m.z + Math.cos(m.ry) * 3.2);
-      camera.lookAt(m.x, 1.0, m.z);
-    } else { camera.position.set(me.x, 6, me.z + 4); camera.lookAt(me.x, 0, me.z); }
+    if (m) { cam.x = m.x + Math.sin(m.ry) * 3.2; cam.y = 2.6; cam.z = m.z + Math.cos(m.ry) * 3.2; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(m.x, 1.0, m.z); }
+    else { cam.x = me.x; cam.y = 6; cam.z = me.z + 4; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(me.x, 0, me.z); }
+    cam.rot.copy(camera.getRotation());
+    setTorch(false, 0, 0, 0, 0, 0, -1);
     return;
   }
   const down = me.st === PSTATE.DOWN;
-  const eye = down ? 0.42 : PLAYER.eye;
-  camera.position.set(me.x, me.y + eye, me.z);
-  camera.rotation.set(me.pitch + me.recoil + (Math.random() - 0.5) * shake, me.yaw + (Math.random() - 0.5) * shake, down ? 0.35 : (Math.random() - 0.5) * shake);
+  const pitch = me.pitch + me.recoil;
+  cam.x = me.x; cam.y = me.y + (down ? 0.42 : PLAYER.eye); cam.z = me.z;
+  cam.fx = -Math.sin(me.yaw) * Math.cos(pitch); cam.fy = Math.sin(pitch); cam.fz = -Math.cos(me.yaw) * Math.cos(pitch);
+  quatYXZ(pitch + (Math.random() - 0.5) * shake, me.yaw + (Math.random() - 0.5) * shake, down ? 0.35 : (Math.random() - 0.5) * shake, cam.rot);
+  camera.setPosition(cam.x, cam.y, cam.z);
+  camera.setRotation(cam.rot);
+  setTorch(torchOn && !down, cam.x, cam.y - 0.1, cam.z, cam.fx, cam.fy, cam.fz);
 }
 
 function updateEntities(dt: number): void {
   const k = Math.min(1, dt * 13);
   for (const m of mates.values()) {
-    if (!m.chibi.group.visible) continue;
+    if (!m.chibi.group.enabled) continue;
     const px = m.x, pz = m.z;
     m.x += (m.tx - m.x) * k; m.y += (m.ty - m.y) * k; m.z += (m.tz - m.z) * k; m.ry = lerpAngle(m.ry, m.tr, k);
     m.speed += (Math.hypot(m.x - px, m.z - pz) / Math.max(dt, 1e-4) - m.speed) * 0.2;
-    m.chibi.group.position.set(m.x, m.y, m.z);
-    m.chibi.group.rotation.y = m.ry;
-    if (m.gun) m.gun.visible = m.st === PSTATE.ALIVE;
+    m.chibi.group.setPosition(m.x, m.y, m.z);
+    m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
+    if (m.gun) m.gun.ent.enabled = m.st === PSTATE.ALIVE;
     m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : m.speed > 1 ? 'run' : 'aim', time, dt);
-    if (m.st !== PSTATE.DOWN && m.speed > 1) { m.chibi.armL.rotation.x = 1.25; m.chibi.armR.rotation.x = 1.4; }
+    m.tag.setRotation(cam.rot);
   }
   for (const z of zeds.values()) {
     z.x += (z.tx - z.x) * k; z.z += (z.tz - z.z) * k; z.ry = lerpAngle(z.ry, z.tr, k);
-    z.chibi.group.position.set(z.x, 0, z.z);
-    z.chibi.group.rotation.y = z.ry;
+    z.chibi.group.setPosition(z.x, 0, z.z);
+    z.chibi.group.setLocalEulerAngles(0, z.ry * RAD, 0);
     z.chibi.animate(POSE[z.st] ?? 'idle', time, dt);
   }
   for (let i = corpses.length - 1; i >= 0; i--) {
     const c = corpses[i];
     c.t += dt;
-    const g = c.chibi.group;
-    g.position.x += c.vx * dt; g.position.z += c.vz * dt;
-    c.chibi.root.rotation.x = Math.min(1.5, c.t * 6);
-    c.chibi.root.position.y = Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35;
+    c.x += c.vx * dt; c.z += c.vz * dt;
+    c.chibi.group.setPosition(c.x, 0, c.z);
+    c.chibi.tumble(Math.min(1.5, c.t * 6), Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35);
     if (c.t > 0.4) {
-      fx.poof({ x: g.position.x, y: 0.2 * g.scale.y, z: g.position.z }, 0xf3f0ff, g.scale.y > 1.5 ? 14 : 6, 0.3 * g.scale.y);
+      fx.poof({ x: c.x, y: 0.2 * c.scale, z: c.z }, 0xf3f0ff, c.scale > 1.5 ? 14 : 6, 0.3 * c.scale);
       c.chibi.dispose();
       corpses.splice(i, 1);
     }
@@ -626,11 +615,10 @@ function updateHud(dt: number): void {
 }
 
 // ---------------------------------------------------------------------- loop
-let last = performance.now();
 let orbit = 0;
-function frame(now: number): void {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now; time += dt;
+app.on('update', (rawDt: number) => {
+  const dt = Math.min(0.05, rawDt);
+  time += dt;
   if (inGame) {
     updateMe(dt);
     updateCamera(dt);
@@ -642,16 +630,16 @@ function frame(now: number): void {
   } else {
     // Lobby backdrop: a slow drift down the main street.
     orbit += dt * 0.12;
-    camera.position.set(43 + Math.sin(orbit) * 6, 3.2, 30 + Math.cos(orbit * 0.7) * 8);
-    camera.rotation.set(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0);
+    cam.x = 43 + Math.sin(orbit) * 6; cam.y = 3.2; cam.z = 30 + Math.cos(orbit * 0.7) * 8;
+    quatYXZ(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0, cam.rot);
+    camera.setPosition(cam.x, cam.y, cam.z);
+    camera.setRotation(cam.rot);
+    vm.visible = false;
+    vm.update(dt, 0, 0, 0);
   }
-  world.update(time, dt, camera);
-  fx.update(dt, camera);
-  renderer.clear();
-  renderer.render(scene, camera);
-  if (inGame && vm.visible) { renderer.clearDepth(); renderer.render(vm.scene, vm.camera); }
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+  world.update(time, dt, cam.x, cam.y, cam.z);
+  fx.update(dt, cam.rot);
+});
+app.start();
 
-if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, scene, renderer, world, fire, shove, interact, state: () => ({ inGame, locked, ended, gateOpen, genStarted, holdout, serverState }) } });
+if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, world, fire, shove, interact, state: () => ({ inGame, locked, ended, gateOpen, genStarted, holdout, serverState }) } });
