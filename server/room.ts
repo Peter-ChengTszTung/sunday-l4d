@@ -3,7 +3,7 @@
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
 import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, HEAD_MULT, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM } from '../shared/constants';
-import { F, ALL_OPEN, cellOf, type Level, type Step, type Vec2 } from '../shared/level';
+import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
@@ -72,7 +72,8 @@ const DIRECTOR = {
    * `holdFar` path tiles from their target and attack together once the slots are full or `maxWait`
    * s after the first holder spawned. A holder that is spotted (in sight within `spotClose` m, or
    * in a survivor's view cone `spotCone` within `spotR` m), hurt, or walked up on (`closeTiles`)
-   * attacks at once and cuts the rest's wait to `blownWait`. Holdout specials never hold.
+   * attacks at once and cuts the rest's wait to `blownWait`. Holdouts skip all this: their specials
+   * come in pushes on their own clock (DIRECTOR.holdout).
    * `place[type]`: chance of [ahead, level/flank, behind] the team; the rest anywhere.
    */
   specials: {
@@ -127,9 +128,66 @@ const DIRECTOR = {
    * target, well inside `tiles`, so only one that has truly been left behind is culled.
    */
   cull: { every: 60, tiles: 34, seeR: 110 },
+  /**
+   * Staged holdouts (L4D2 finale/crescendo style): a holdout plays a script of stages (shared/level.ts
+   * HoldStage) over its timer. A step's `holdScript` is used as written; otherwise defaultHoldScript
+   * builds one from `hold` and the team size:
+   *   wave -> breather -> wave + specials -> breather -> final                       (hold < longHold)
+   *   wave -> breather -> wave + specials -> breather -> brute|specials -> breather -> final
+   * `final` is `finalFrac` of the hold clamped to `finalSecs`; breathers are `breath`, then
+   * `shortBreath` ([fraction of the hold, min, max] s); the fight stages share the rest by `split`
+   * (`split[2]` = the middle brute/specials stage). The Brute stage is rolled with `bruteChance`, never
+   * on a step that already brings one; if a Brute is up when it begins it plays as a specials push.
+   * Holds under `shortHold` s are just wave -> final.
+   * Per stage kind: `horde` (fraction of a full horde, 12 + 4n; the first stage's horde is the step's
+   * `horde` flag), `trickle` (s between walkers at one survivor, minus `triPer` per extra one, at
+   * least `triMin`; 0 = none) and `push[kind][n - 1]` specials spawned lurking that strike together
+   * after at most `pushWait` s (spotting or hurting one blows it sooner). The default script's second
+   * wave adds `wave2Push[n - 1]` specials and is `wave2Horde` of a full horde; its middle specials stage
+   * brings `midHorde`. Alive specials never exceed `maxSpecials[n - 1]`; in `final` they are topped up
+   * toward the push size every `drip` s (attacking at once). `final` also floods from two sides.
+   */
+  holdout: {
+    finalFrac: 0.2, finalSecs: [15, 20] as const, breath: [0.1, 6, 8] as const, shortBreath: [0.07, 4, 6] as const,
+    split: [0.35, 0.35, 0.3] as const, longHold: 90, shortHold: 40, bruteChance: 0.4,
+    horde: { wave: 1, breather: 0, specials: 0, brute: 0, final: 1.25 } as Record<HoldStageKind, number>,
+    trickle: { wave: 1.0, breather: 0, specials: 1.4, brute: 1.8, final: 0.5 } as Record<HoldStageKind, number>,
+    triPer: 0.12, triMin: 0.3,
+    push: {
+      wave: [0, 0, 0, 0], breather: [0, 0, 0, 0], specials: [2, 2, 3, 3], brute: [0, 0, 0, 0], final: [2, 2, 3, 3],
+    } as Record<HoldStageKind, readonly number[]>,
+    wave2Push: [1, 2, 2, 3] as const, wave2Horde: 0.75, midHorde: 0.5,
+    pushWait: 6, maxSpecials: [2, 2, 3, 4] as const, drip: 7,
+    finalMsg: 'Here they come! Hold the line!',
+  },
 };
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const tenth = (v: number) => Math.round(v * 10) / 10;
+
+/** The staged script for a holdout of `hold` s with no authored `holdScript` (DIRECTOR.holdout). `brute`: include a Brute stage. */
+export function defaultHoldScript(hold: number, n: number, brute: boolean): HoldStage[] {
+  const H = DIRECTOR.holdout, k = Math.min(Math.max(n, 1), 4) - 1;
+  const fin = clamp(hold * H.finalFrac, H.finalSecs[0], H.finalSecs[1]);
+  if (hold < H.shortHold) {
+    const f = tenth(Math.min(fin, hold * 0.4));
+    return [{ kind: 'wave', secs: tenth(hold - f) }, { kind: 'final', secs: f }];
+  }
+  const b1 = tenth(clamp(hold * H.breath[0], H.breath[1], H.breath[2]));
+  const b2 = tenth(clamp(hold * H.shortBreath[0], H.shortBreath[1], H.shortBreath[2]));
+  const wave2 = (secs: number): HoldStage => ({ kind: 'wave', secs, horde: H.wave2Horde, specials: H.wave2Push[k] });
+  if (hold < H.longHold) {
+    const rest = hold - fin - b1 - b2, a = tenth(rest / 2);
+    return [{ kind: 'wave', secs: a }, { kind: 'breather', secs: b1 }, wave2(tenth(rest - a)), { kind: 'breather', secs: b2 }, { kind: 'final', secs: tenth(fin) }];
+  }
+  const rest = hold - fin - b1 - 2 * b2, a = tenth(rest * H.split[0]), b = tenth(rest * H.split[1]), c = tenth(rest - a - b);
+  const mid: HoldStage = brute ? { kind: 'brute', secs: c } : { kind: 'specials', secs: c, horde: H.midHorde };
+  return [
+    { kind: 'wave', secs: a }, { kind: 'breather', secs: b1 }, wave2(b), { kind: 'breather', secs: b2 },
+    mid, { kind: 'breather', secs: b2 }, { kind: 'final', secs: tenth(fin) },
+  ];
+}
 
 const enum Phase { BUILD_UP, SUSTAIN, FADE, RELAX }
 const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
@@ -265,6 +323,12 @@ export class Room {
   private started = false;
   private step = 0;
   private holdout = -1; // seconds left; -1 = not running
+  /**
+   * The running holdout's script: stages, each one's end (seconds into the holdout, scaled), total
+   * length, current stage index, seconds to the next final-stage special refill, and a Brute the
+   * current stage still owes (retried every second until one fits).
+   */
+  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0 };
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
@@ -281,7 +345,7 @@ export class Room {
   private nextPuddle = 1;
   /** Earliest `time` the director may send another Alarm Clock. */
   private alarmAt = 0;
-  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, holdSpecial: 8, wander: 0 };
+  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, wander: 0 };
   /**
    * Wanderer regions this attempt (index = region id): rolled budget, sleepers placed so far, and
    * spent (a survivor came within WANDERERS.visit tiles: never placed into again). `reach`: scratch
@@ -384,7 +448,7 @@ export class Room {
     this.clearHazards();
     this.alarmAt = 0;
     this.waves = []; this.marks.clear();
-    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, holdSpecial: 8, wander: 0 };
+    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, wander: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -462,10 +526,12 @@ export class Room {
     const s = this.cur;
     if (!s) return;
     this.collected = 0;
-    this.holdout = s.kind === 'holdout' ? (s.hold ?? 60) * HOLD_SCALE : -1;
+    this.holdout = -1;
     if (!silent) this.events.push(['step', this.step]);
-    // A lever with a holdout saves its horde for the pull (the crescendo's opening burst), see onUse.
-    if (s.horde && !(s.kind === 'use' && s.hold)) this.horde();
+    // A holdout step starts its script now (its opening horde included); a lever with a holdout
+    // saves both for the pull (the crescendo's opening burst), see onUse.
+    if (s.kind === 'holdout') this.startHoldout(s);
+    else if (s.horde && !(s.kind === 'use' && s.hold)) this.horde();
     if (s.brute) this.pendingBrute = true;
     this.routeBest = Math.max(this.routeBest, this.cd.route.start[this.step]);
   }
@@ -744,7 +810,7 @@ export class Room {
       this.taken.add(id);
       this.alertNear(pk.x, pk.z, 30);
       // Holdout first so the horde's source ignores the ahead bias. Its event goes before 'use' (whose HOLD OUT banner wins).
-      if (s.hold) { this.holdout = s.hold * HOLD_SCALE; if (s.horde) this.horde(); }
+      if (s.hold) this.startHoldout(s);
       this.events.push(['use', p.id, id]);
       if (!s.hold) this.completeStep();
       return;
@@ -1328,25 +1394,28 @@ export class Room {
 
   private cellPos(c: number): Vec2 { const W = this.L.W; return { x: (c % W + 0.5) * TILE, z: (((c / W) | 0) + 0.5) * TILE }; }
 
-  /** A full horde: queue it and tell clients where it's coming from. `side` -1: from behind the team. */
-  private horde(side: Side = 1): void {
-    const at = this.spawnWave(12 + 4 * this.players.size, { side });
+  /**
+   * A horde (`size` x a full one): queue it and tell clients where it's coming from. `side` -1: from
+   * behind the team. `flank`: also from a second side.
+   */
+  private horde(side: Side = 1, size = 1, flank = false): void {
+    const at = this.spawnWave(Math.max(1, Math.round((12 + 4 * this.players.size) * size)), { side, flank });
     this.events.push(at ? ['horde', r2(at.x), r2(at.z)] : ['horde']);
   }
 
   /**
    * Queue `n` walkers that arrive together from one place. `noise`: cell of a noise they come from
    * (else a hidden cell a walk from the team, ahead-biased; or from the goo-marked survivors with
-   * `hunt`). Big team-sourced waves sometimes split to flank from a second side. `hunt`: seconds the
+   * `hunt`). Big team-sourced waves sometimes split to flank from a second side (`flank`: always try). `hunt`: seconds the
    * members chase marked survivors first. Returns the main source (metres), null if none was found
    * (members then pick cells one by one, as before).
    */
-  private spawnWave(n: number, o: { noise?: number; hunt?: number; side?: Side } = {}): Vec2 | null {
+  private spawnWave(n: number, o: { noise?: number; hunt?: number; side?: Side; flank?: boolean } = {}): Vec2 | null {
     const w: Wave = { id: this.nextWave++, left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0, side: o.side ?? 1 };
     const s = this.waveSource(w);
     if (s >= 0) {
       w.srcs.push(s);
-      if (w.anchor < 0 && !w.hunt && w.side > 0 && n >= FLANK_MIN && Math.random() < FLANK_CHANCE) { const f = this.flankSource(s); if (f >= 0) w.srcs.push(f); }
+      if (w.anchor < 0 && !w.hunt && (o.flank || (w.side > 0 && n >= FLANK_MIN && Math.random() < FLANK_CHANCE))) { const f = this.flankSource(s); if (f >= 0) w.srcs.push(f); }
     }
     this.waves.push(w);
     return s >= 0 ? this.cellPos(s) : null;
@@ -1486,6 +1555,94 @@ export class Room {
     this.waves = this.waves.filter((w) => w.anchor >= 0 || w.hunt > this.time);
   }
 
+  // -------------------------------------------------------------- holdouts
+  /** Start step `s`'s holdout: the timer, its script (authored or the default curve) and the first stage. */
+  private startHoldout(s: Step): void {
+    const n = this.players.size, H = DIRECTOR.holdout, hold = s.hold ?? 60;
+    const stages = s.holdScript ?? defaultHoldScript(hold, n, !s.brute && hold >= H.longHold && Math.random() < H.bruteChance);
+    let acc = 0;
+    const ends = stages.map((g) => (acc += g.secs) * HOLD_SCALE);
+    ends[ends.length - 1] = Infinity; // the last stage runs until the timer does, whatever the script adds up to
+    this.holdout = hold * HOLD_SCALE;
+    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0 };
+    // Lurking specials from before join the fight now; from here on only the holdout's pushes hold.
+    this.releaseAmbush('holdout');
+    if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout ${hold}s x${HOLD_SCALE}: ${stages.map((g) => `${g.kind} ${g.secs}`).join(' | ')}`);
+    this.enterStage(0, s.horde);
+  }
+
+  /** Begin holdout stage `i`. `opening`: the first stage, whose horde is the step's `horde` flag. */
+  private enterStage(i: number, opening = true): void {
+    const H = DIRECTOR.holdout, hs = this.hs, g = hs.stages[i], k = Math.min(Math.max(this.players.size, 1), 4) - 1;
+    hs.i = i; hs.drip = H.drip; hs.bruteWant = false;
+    this.t.ambient = 0.5;
+    let push = g.specials ?? H.push[g.kind][k];
+    if (g.kind === 'brute') {
+      let up = this.pendingBrute;
+      for (const z of this.zombies.values()) if (z.type === ZT.BRUTE && !z.dormant) up = true;
+      // One Brute at a time: with one already up this stage is a specials push instead.
+      if (up) push = g.specials ?? H.push.specials[k];
+      else { hs.bruteWant = true; hs.bruteTry = 0; }
+    }
+    const size = g.horde ?? H.horde[g.kind];
+    const msg = g.msg ?? (g.kind === 'final' ? H.finalMsg : '');
+    if (msg) this.events.push(['msg', msg]);
+    if (size > 0 && (i > 0 || opening)) this.horde(1, size, g.flank ?? g.kind === 'final');
+    const pushed = push > 0 ? this.pushSpecials(push, true) : 0;
+    if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout stage ${i + 1}/${hs.stages.length} ${g.kind}: horde ${i > 0 || opening ? size : 0}, specials ${pushed}/${push}${hs.bruteWant ? ', Brute' : ''}`);
+  }
+
+  /** Up to `k` holdout specials (within DIRECTOR.holdout.maxSpecials alive); `hold`: lurk and strike together after pushWait. Returns how many spawned. */
+  private pushSpecials(k: number, hold: boolean): number {
+    const H = DIRECTOR.holdout, n = this.players.size;
+    const byType = ZTYPES.map(() => 0);
+    let alive = 0;
+    for (const z of this.zombies.values()) {
+      if (z.dormant) continue;
+      byType[z.type]++;
+      if (z.type !== ZT.WALKER && z.type !== ZT.BRUTE) alive++;
+    }
+    k = Math.min(k, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] - alive);
+    let got = 0;
+    for (let j = 0; j < k; j++) {
+      const type = this.pickSpecial(byType, true);
+      const zb = type >= 0 ? this.spawnSpecial(type, 9, 20, hold) : null;
+      if (!zb) break;
+      byType[type]++; got++;
+      if (zb.hold) this.ambushUntil = Math.min(this.ambushUntil, this.time + H.pushWait);
+    }
+    return got;
+  }
+
+  /** Holdout tick: advance the script by elapsed time, then the current stage's trickle, Brute and refills. */
+  private updateHoldout(dt: number, room: boolean, specials: number, brute: boolean): void {
+    const H = DIRECTOR.holdout, hs = this.hs, n = this.players.size;
+    if (!hs.stages.length) return;
+    const el = hs.total - this.holdout;
+    let i = hs.i;
+    while (i + 1 < hs.stages.length && el >= hs.ends[i]) i++;
+    // Skipped stages (the whole team down for a while) are not replayed: only the latest begins.
+    if (i !== hs.i) this.enterStage(i, false);
+    const g = hs.stages[hs.i];
+    if (hs.bruteWant) {
+      if (brute) hs.bruteWant = false;
+      else if ((hs.bruteTry -= dt) <= 0) { hs.bruteTry = 1; if (this.spawnBrute()) hs.bruteWant = false; }
+    }
+    const every = H.trickle[g.kind];
+    if (every > 0) {
+      this.t.ambient -= dt;
+      if (this.t.ambient <= 0) {
+        this.t.ambient = Math.max(H.triMin, every - H.triPer * (n - 1));
+        if (room) this.spawnAt(ZT.WALKER, 6, 18);
+      }
+    }
+    if (g.kind === 'final' && (hs.drip -= dt) <= 0) {
+      hs.drip = H.drip;
+      const want = g.specials ?? H.push.final[Math.min(Math.max(n, 1), 4) - 1];
+      if (specials < want) this.pushSpecials(1, false);
+    }
+  }
+
   /** Roll where on the route this attempt's roaming Brute comes (DIRECTOR.boss); -1 = none. */
   private rollBoss(): void {
     const B = DIRECTOR.boss, r = this.cd.route;
@@ -1621,8 +1778,9 @@ export class Room {
     // Holding specials attack together: slots full, waited long enough (in any phase), or a crescendo began.
     const slots = S.slots[Math.min(n, S.slots.length) - 1];
     if (!holders) this.ambushUntil = Infinity;
-    else if (specials >= slots || this.time >= this.ambushUntil || this.holdout >= 0) {
-      this.releaseAmbush(specials >= slots ? 'slots full' : this.holdout >= 0 ? 'holdout' : 'timeout');
+    // In a holdout only its special pushes hold (startHoldout released the rest), on their own clock.
+    else if ((specials >= slots && this.holdout < 0) || this.time >= this.ambushUntil) {
+      this.releaseAmbush(this.holdout >= 0 ? 'holdout push' : specials >= slots ? 'slots full' : 'timeout');
       holders = 0;
     }
 
@@ -1647,19 +1805,7 @@ export class Room {
       }
     }
 
-    if (this.holdout >= 0) {
-      // Holdout: constant pressure until the timer runs out.
-      t.ambient -= dt;
-      if (t.ambient <= 0) { t.ambient = Math.max(0.35, 0.8 - 0.1 * n); if (commons < cap - 4) this.spawnAt(ZT.WALKER, 6, 18); }
-      t.holdSpecial -= dt;
-      if (t.holdSpecial <= 0) {
-        t.holdSpecial = 14 - n;
-        // Holdout specials skip the slots/cooldowns and attack straight away.
-        const type = specials < (n > 2 ? 3 : 2) ? this.pickSpecial(byType, true) : -1;
-        if (type >= 0) this.spawnSpecial(type, 8, 20, false);
-      }
-      return;
-    }
+    if (this.holdout >= 0) { this.updateHoldout(dt, commons < cap - 4, specials, brute); return; }
     // Safe rooms are a breather: no new pressure while the whole team is inside one.
     if (allSafe) return;
 

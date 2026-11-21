@@ -48,6 +48,24 @@ export interface Label { text: string; x: number; z: number; size: number; color
 export type RadioLine = [speaker: string, line: string];
 
 export type StepKind = 'reach' | 'gather' | 'use' | 'collect' | 'holdout';
+export type HoldStageKind = 'wave' | 'breather' | 'specials' | 'brute' | 'final';
+/**
+ * One stage of a staged holdout (server/room.ts, DIRECTOR.holdout). Stages run in order; their
+ * `secs` must add up to the step's `hold` (HOLDOUT_SCALE scales both). Per kind:
+ * - wave: queues a horde (the first stage's horde is the step's `horde` flag), walker trickle.
+ * - breather: no new spawns (queued horde members still arrive).
+ * - specials: a coordinated special push (they lurk, then strike together), light trickle.
+ * - brute: a Brute (unless one is already up), light trickle.
+ * - final: big horde from two sides, a special push plus refills, heavy trickle.
+ */
+export interface HoldStage {
+  kind: HoldStageKind;
+  /** Duration in seconds (unscaled). */ secs: number;
+  /** Horde size as a fraction of a full horde (12 + 4 per survivor); overrides the kind's default. */ horde?: number;
+  /** Also bring the horde from a second side (default: only `final`). */ flank?: boolean;
+  /** Specials in the push at the stage start; overrides the kind's team-scaled default. */ specials?: number;
+  /** Feed line shown to everyone when the stage begins (the game's existing 'msg' event). */ msg?: string;
+}
 export interface Step {
   kind: StepKind;
   /** HUD text. Collect steps get " 2/4" appended. */ objective: string;
@@ -56,6 +74,7 @@ export interface Step {
   /** use: pickup id of the objective machine. */ target?: number;
   /** collect: item group key, and how many there are. */ group?: string; count?: number;
   /** holdout: duration; use: optional holdout after the machine is used. */ hold?: number;
+  /** Optional authored stages for the holdout (else the server generates a default curve from `hold`). */ holdScript?: HoldStage[];
   /** Door ids opened when the step completes. */ opens: number[];
   /** Door ids closed when the step completes (seal a safe room behind the team). */ closes: number[];
   /** Completing this step saves a checkpoint (the team restarts here after a wipe). */ checkpoint: boolean;
@@ -101,7 +120,7 @@ export const DEFAULT_THEME: Theme = {
 
 /** Step options as written in chapter files. `at` defaults to the area/target centre. */
 export interface StepOpts {
-  objective: string; radio?: RadioLine[]; area?: Rect; target?: number; group?: string; hold?: number;
+  objective: string; radio?: RadioLine[]; area?: Rect; target?: number; group?: string; hold?: number; holdScript?: HoldStage[];
   opens?: number[]; closes?: number[]; checkpoint?: boolean; horde?: boolean; brute?: boolean; at?: [number, number];
 }
 
@@ -239,7 +258,7 @@ export class LevelBuilder {
   }
   private addStep(kind: StepKind, o: StepOpts, extra: Partial<Step> = {}): number {
     this.steps.push({
-      kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold,
+      kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold, holdScript: o.holdScript,
       opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...extra,
     });
     return this.steps.length - 1;

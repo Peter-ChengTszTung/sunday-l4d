@@ -2,7 +2,7 @@
 // the map viewer. Walks the quest in order with each step's door state and
 // verifies every objective is reachable from where the team stands.
 import { TILE, WEAPONS } from './constants';
-import { F, ALL_OPEN, cellOf, type Level, type Vec2 } from './level';
+import { F, ALL_OPEN, cellOf, type Level, type Step, type Vec2 } from './level';
 import { wandererRegions } from './regions';
 
 export interface StepReport { index: number; kind: string; objective: string; pathTiles: number; reachable: boolean; note?: string }
@@ -15,6 +15,31 @@ export interface ChapterReport {
 const INF = 32767;
 /** Minimum loot in each start/checkpoint safe room for a 4-player squad. */
 export const MIN_ROOM_GUNS = 4, MIN_ROOM_AMMO = 2;
+
+const STAGE_KINDS = new Set(['wave', 'breather', 'specials', 'brute', 'final']);
+
+/** An authored `holdScript` (shared/level.ts HoldStage): known kinds, positive durations adding up to `hold`. */
+function checkHoldScript(s: Step, where: string, errors: string[], warnings: string[]): void {
+  const sc = s.holdScript;
+  if (!sc) return;
+  const hold = s.hold ?? (s.kind === 'holdout' ? 60 : 0);
+  if (!hold || (s.kind !== 'holdout' && s.kind !== 'use')) { errors.push(`${where}: holdScript needs a holdout (a holdout step, or a use step with hold)`); return; }
+  if (!sc.length) { errors.push(`${where}: holdScript is empty`); return; }
+  let sum = 0;
+  sc.forEach((g, k) => {
+    const at = `${where} holdScript[${k}] (${g.kind})`;
+    if (!STAGE_KINDS.has(g.kind)) errors.push(`${at}: unknown stage kind`);
+    if (!(g.secs > 0)) errors.push(`${at}: secs must be > 0`);
+    sum += g.secs > 0 ? g.secs : 0;
+    if (g.horde !== undefined && !(g.horde >= 0 && g.horde <= 3)) errors.push(`${at}: horde must be 0..3 (fraction of a full horde)`);
+    if (g.specials !== undefined && !(Number.isInteger(g.specials) && g.specials >= 0 && g.specials <= 4)) errors.push(`${at}: specials must be an integer 0..4`);
+    if (g.kind === 'breather' && (g.horde || g.specials || g.flank)) errors.push(`${at}: a breather spawns nothing (drop horde/specials/flank)`);
+    if (g.kind === 'brute' && s.brute) warnings.push(`${at}: the step already brings a Brute (brute: true); this stage only adds a trickle while it is up`);
+    if (g.msg !== undefined && g.msg.length > 48) warnings.push(`${at}: msg longer than 48 chars`);
+  });
+  if (Math.abs(sum - hold) > 0.5) errors.push(`${where}: holdScript stages add up to ${sum} s but hold is ${hold} s`);
+  if (sc[sc.length - 1].kind !== 'final') warnings.push(`${where}: holdScript should end with a 'final' stage (the climax)`);
+}
 
 export function validateChapter(L: Level): ChapterReport {
   const def = L.def, { W, H } = L;
@@ -81,6 +106,7 @@ export function validateChapter(L: Level): ChapterReport {
     pos = next;
     if (s.checkpoint && !def.checkpointSpawns[i]) warnings.push(`${name(i)} is a checkpoint but not a gather step (team respawns at chapter start)`);
     if (s.objective.length > 40) warnings.push(`${name(i)}: objective longer than 40 chars`);
+    checkHoldScript(s, name(i), errors, warnings);
   }
   if (def.steps[def.steps.length - 1]?.kind !== 'gather') warnings.push('last step should be a gather (the exit)');
 

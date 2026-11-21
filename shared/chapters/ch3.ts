@@ -642,6 +642,18 @@ export function build() {
   });
   b.use(ignition, {
     objective: 'Fuel up and start Bertha', horde: true, hold: 120, opens: [cabDoor],
+    // Authored crescendo (the other holdouts get the server's default curve): Bertha coughs to life
+    // in fits, so the waves come with breathers between, a Brute midway, then the big rush.
+    holdScript: [
+      { kind: 'wave', secs: 22 },
+      { kind: 'breather', secs: 7, msg: 'Bertha wheezes... keep cranking!' },
+      { kind: 'wave', secs: 20, horde: 0.75, flank: true },
+      { kind: 'specials', secs: 14, horde: 0.4 },
+      { kind: 'breather', secs: 8, msg: 'Bertha coughs. That\'s good, right?' },
+      { kind: 'brute', secs: 22 },
+      { kind: 'breather', secs: 7 },
+      { kind: 'final', secs: 20, msg: 'She\'s nearly up! Hold the line!' },
+    ],
     radio: [
       ['Dot', 'Prime her, crank her, and hold on. Bertha takes her time and so should you.'],
       ['Pip', 'Two minutes?! Dot, that\'s like a WEEK.'],

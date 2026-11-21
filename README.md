@@ -87,7 +87,9 @@ docs/     campaign.md — story bible and per-chapter quest briefs
   survivor who strays far from the team draws them. Besides the scripted Brute, each attempt may
   roll a roaming one at a random point 30-70% along the chapter's route (clear of safe rooms,
   holdouts and the scripted one); it comes from ahead when the team passes that point, and timed
-  mobs pause while a Brute is up. Sleeping wanderers are placed once per area per attempt
+  mobs pause while a Brute is up. Holdouts are staged like L4D2 crescendos: waves with
+  breathers between, a coordinated special push, sometimes a Brute, then a final rush from two
+  sides (a default curve from the hold length; a step's `holdScript` can author its own). Sleeping wanderers are placed once per area per attempt
   (`shared/regions.ts`; `b.density(...)` in a chapter scales or zeroes an area), so a cleared
   street stays cleared. Run the server with `DIRECTOR_DEBUG=1` to log phase changes, ambush
   releases, lone-wolf picks, the rolled Brute point and wanderer placement.
