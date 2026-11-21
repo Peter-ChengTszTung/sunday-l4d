@@ -22,6 +22,41 @@ const MIN_SPAWN_DIST = 16;
  * from the noise; GOO_HUNT: seconds a gooed survivor stays marked (wave members chase them first). */
 const CLUSTER = 3, FLANK_CHANCE = 0.22, FLANK_MIN = 10, NOISE_REACH = 12, GOO_HUNT = 12;
 
+/**
+ * Adaptive pacing (L4D-style). Each survivor has an intensity 0..100 that rises when they are hurt,
+ * downed, pinned/leaped/charged, gooed or kill zombies close by, and decays only while nothing
+ * active is near them. The director cycles BUILD_UP -> SUSTAIN -> FADE -> RELAX on the team's
+ * (max) intensity. Times in seconds, distances in metres unless noted.
+ */
+const DIRECTOR = {
+  // Intensity gains.
+  dmg: 0.8, // per hp of damage taken
+  down: 35, pin: 25, leap: 15, charge: 12, goo: 15,
+  kill: 2, killR: 6, // per zombie that dies within killR of the survivor
+  // Intensity decay: per second, only while no active zombie is within engageR (and not pinned).
+  decay: 4, engageR: 9,
+  peak: 70, // team intensity that ends BUILD_UP
+  sustain: [3, 5] as const,
+  // FADE ends when the wave queue is empty and at most fadeQuiet active walkers are within
+  // fadeNear path tiles of the team, or after fadeMax.
+  fadeQuiet: 3, fadeNear: 15, fadeMax: 25,
+  // RELAX: at least relaxMin, then until relaxMax (rolled) or the team advances relaxAdvance tiles.
+  relaxMin: 15, relaxMax: [30, 45] as const, relaxAdvance: 20,
+  // Mob timer: counts down only in BUILD_UP; x mobMove while the team advanced in the last
+  // advanceWindow, x mobStill otherwise.
+  mobFirst: [80, 110] as const, mobEvery: [75, 120] as const, mobMove: 1.4, mobStill: 0.6, advanceWindow: 8,
+  mobAfterHoldout: [70, 100] as const,
+  // Anti-camping: this long in BUILD_UP without progress (outside holdouts/safe rooms) -> a horde from behind.
+  camp: 80,
+};
+const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
+const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
+
+const enum Phase { BUILD_UP, SUSTAIN, FADE, RELAX }
+const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
+/** Which side of the team (toward the objective or away from it) a spawn must be on; 0 = any. */
+type Side = -1 | 0 | 1;
+
 export interface Player {
   id: number; ws: WebSocket; name: string; look: number;
   x: number; y: number; z: number; ry: number; rx: number;
@@ -36,6 +71,8 @@ export interface Player {
   shotAt: Record<number, number>;
   /** Id of the Charger pinning this survivor (0 = free). While pinned the server ignores their movement. */
   pinned: number;
+  /** Director pacing: how hard-pressed this survivor is (0..100, server-only). */
+  intensity: number;
 }
 
 interface Zombie {
@@ -56,8 +93,11 @@ interface Zombie {
  * A queued horde. Members drip in from hidden cells clustered around `srcs` (spawn cells; a second
  * one flanks from another side). `anchor`: cell of the noise that called it (-1 = the team); a lost
  * source is re-picked by the same rule. `hunt`: room time until which members chase marked survivors.
+ * `side`: for team-sourced waves, 1 = ahead-biased (default), -1 = from behind (anti-camping), 0 = any.
  */
-interface Wave { left: number; srcs: number[]; anchor: number; hunt: number; repicks: number }
+interface Wave { left: number; srcs: number[]; anchor: number; hunt: number; repicks: number; side: Side }
+/** `pickSpawnCell`'s `ahead` for a team-sourced wave's side. */
+const waveAhead = (w: Wave) => (w.side < 0 ? -1 : w.side > 0 ? 0.75 : 0);
 
 /** Drooler goo in flight (simulated on the server along the same arc the clients draw). */
 interface Glob { x1: number; z1: number; t: number }
@@ -123,6 +163,17 @@ export class Room {
   /** Earliest `time` the director may send another Alarm Clock. */
   private alarmAt = 0;
   private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, holdSpecial: 8, belt: 0 };
+  /** Director pacing phase, seconds in it, `best` when it began, and how long it lasts (SUSTAIN/RELAX). */
+  private phase = Phase.BUILD_UP;
+  private phaseT = 0;
+  private phaseBest = 0;
+  private phaseLen = 0;
+  /** Room time `best` last increased; seconds of BUILD_UP since then (anti-camping). */
+  private advancedAt = 0;
+  private campT = 0;
+  /** Closest the team has been to the current objective (path tiles), for the objective field `objSeenKey`. */
+  private objBest = INF;
+  private objSeenKey = '';
 
   /**
    * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
@@ -199,7 +250,7 @@ export class Room {
     this.clearHazards();
     this.alarmAt = 0;
     this.waves = []; this.marks.clear();
-    this.t = { flow: 0, ambient: 3, horde: rand(80, 110), special: rand(20, 30), hordeTick: 0, holdSpecial: 8, belt: 0 };
+    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: rand(20, 30), hordeTick: 0, holdSpecial: 8, belt: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -210,13 +261,14 @@ export class Room {
     for (const p of this.players.values()) this.spawnPlayer(p, spawns[slot++ % spawns.length], !cp || freshStart);
     const sp = spawns[0];
     this.best = this.progressAt(sp.x, sp.z);
+    this.resetPacing();
     this.beginStep(true);
     this.fillBelt(BELT_MAX);
   }
 
   private spawnPlayer(p: Player, s: Vec2, fresh: boolean): void {
     Object.assign(p, { x: s.x, y: 0, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
-      revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, fireW: 0, nades: [], shotAt: {} });
+      revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0 });
     if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; }
     if (fresh) { p.medkits = 0; p.kills = 0; }
     this.events.push(['tp', p.id, s.x, s.z, Math.PI]);
@@ -303,7 +355,7 @@ export class Room {
     const stand = this.standing();
     if (this.holdout >= 0) {
       this.holdout -= dt;
-      if (this.holdout <= 0) this.completeStep();
+      if (this.holdout <= 0) { this.crescendoOver(); this.completeStep(); }
       return;
     }
     switch (s.kind) {
@@ -340,6 +392,8 @@ export class Room {
       this.events.push(['tp', p.id, s.x, s.z, Math.PI]);
     }
     this.best = this.progressAt(at.x, at.z);
+    this.waves = [];
+    this.resetPacing();
     this.beginStep();
     this.fillBelt(BELT_MAX);
   }
@@ -622,6 +676,7 @@ export class Room {
     this.zombies.delete(z.id);
     this.kills++;
     if (by) by.kills++;
+    for (const p of this.players.values()) if (Math.hypot(p.x - z.x, p.z - z.z) < DIRECTOR.killR) this.bumpIntensity(p, DIRECTOR.kill);
     this.events.push(['zdie', z.id, r2(z.x), r2(z.z), z.type, head ? 1 : 0, by ? by.id : 0]);
     if (z.type === ZT.PUFFER) this.explode(z);
     if (z.type === ZT.BRUTE) this.events.push(['msg', 'The Brute is down!']);
@@ -690,6 +745,7 @@ export class Room {
     const T = ZTYPES[ZT.CHARGER], go = this.doors;
     this.damagePlayer(p, CHARGER.hitDmg, z.x, z.z);
     if (p.st !== PSTATE.ALIVE) return false;
+    this.bumpIntensity(p, DIRECTOR.charge);
     // March from the survivor along the charge until a wall stops them.
     let x = p.x, zz = p.z, wall = false;
     for (let s = 0.25; s <= CHARGER.pinWallDist; s += 0.25) {
@@ -702,6 +758,7 @@ export class Room {
       return false;
     }
     p.x = x; p.z = zz; p.pinned = z.id; p.reviving = 0;
+    this.bumpIntensity(p, DIRECTOR.pin);
     z.st = ZSTATE.PIN; z.target = p.id; z.pinT = 0; z.acc = 0; z.pinHit = 0;
     // Plant the Charger right in front of its victim.
     const back = T.radius + PLAYER.radius + 0.05;
@@ -749,6 +806,7 @@ export class Room {
       if (p.st === PSTATE.DEAD) continue;
       if (Math.hypot(p.x - z.x, p.z - z.z) > T.boomRadius) continue;
       this.damagePlayer(p, T.boomDmg, z.x, z.z);
+      this.bumpIntensity(p, DIRECTOR.goo);
       this.events.push(['goo', p.id]);
       this.marks.set(p.id, this.time + GOO_HUNT);
       gooed = true;
@@ -765,9 +823,11 @@ export class Room {
   private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false): void {
     if (p.st === PSTATE.DEAD || this.state !== 'play') return;
     p.hp -= dmg;
+    this.bumpIntensity(p, dmg * DIRECTOR.dmg);
     this.events.push(quiet ? ['sizzle', p.id, dmg] : ['hurt', p.id, dmg, r2(sx), r2(sz)]);
     if (p.hp > 0) return;
     if (p.st === PSTATE.ALIVE) {
+      this.bumpIntensity(p, DIRECTOR.down);
       this.unpin(p);
       p.st = PSTATE.DOWN; p.hp = PLAYER.hp; p.revT = 0;
       this.events.push(['down', p.id]);
@@ -808,26 +868,35 @@ export class Room {
   }
 
   // Choose a tile to spawn on: a decent walk away, out of sight and (with probability `ahead`)
-  // between the team and its objective rather than behind it.
+  // between the team and its objective rather than behind it. `ahead` < 0: behind the team instead.
   private pickSpawnCell(minD: number, maxD: number, ahead: number): number {
-    const forward = Math.random() < ahead;
-    // Stages: in range (ahead if rolled) → a bit further out → any direction further out.
-    return this.trySpawnCell(minD, maxD, forward)
-      ?? this.trySpawnCell(minD, maxD + 8, forward)
-      ?? (forward ? this.trySpawnCell(minD + 4, maxD + 16, true) ?? this.trySpawnCell(minD, maxD + 8, false) : null)
+    const side: Side = ahead < 0 ? -1 : Math.random() < ahead ? 1 : 0;
+    // Stages: in range (on the rolled side) → a bit further out → (sided) further still → any direction.
+    return this.trySpawnCell(minD, maxD, side)
+      ?? this.trySpawnCell(minD, maxD + 8, side)
+      ?? (side ? this.trySpawnCell(minD + 4, maxD + 16, side) ?? this.trySpawnCell(minD, maxD + 8, 0) : null)
       ?? -1;
   }
 
-  /** `field`: path distances `minD`..`maxD` are measured on (default: to the nearest survivor). */
-  private trySpawnCell(minD: number, maxD: number, forward: boolean, field = this.flow): number | null {
+  /**
+   * `side` 1: no further from the objective than the lead survivor; -1: further from it than the
+   * rearmost survivor (behind the team); 0: anywhere. `field`: path distances `minD`..`maxD` are
+   * measured on (default: to the nearest survivor).
+   */
+  private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
     const players = this.standing();
     const { W } = this.L, open = this.cd.open;
-    let limit = INF;
-    const obj = forward ? this.objectiveField() : null;
+    let lo = -1, hi = INF;
+    const obj = side ? this.objectiveField() : null;
     if (obj) {
-      let team = INF;
-      for (const p of players) team = Math.min(team, obj[cellOf(p.z) * W + cellOf(p.x)]);
-      if (team < INF) limit = team + 2; // no further from the objective than the lead survivor
+      let lead = INF, rear = -1;
+      for (const p of players) {
+        const v = obj[cellOf(p.z) * W + cellOf(p.x)];
+        if (v >= INF) continue;
+        lead = Math.min(lead, v); rear = Math.max(rear, v);
+      }
+      if (side > 0 && lead < INF) hi = lead + 2;
+      if (side < 0 && rear >= 0) lo = rear + 2;
     }
     // Sample near the team first (most open cells are far away on a big map).
     const near = this.nearCells();
@@ -835,7 +904,7 @@ export class Room {
       const c = near.length && tries < 80 ? near[(Math.random() * near.length) | 0] : open[(Math.random() * open.length) | 0];
       const d = field[c];
       if (d < minD || d > maxD) continue;
-      if (obj && obj[c] > limit) continue;
+      if (obj && (obj[c] > hi || obj[c] < lo)) continue;
       const x = (c % W + 0.5) * TILE, z = (((c / W) | 0) + 0.5) * TILE;
       if (this.hidden(x, z, players, MIN_SPAWN_DIST)) return c;
     }
@@ -893,9 +962,9 @@ export class Room {
 
   private cellPos(c: number): Vec2 { const W = this.L.W; return { x: (c % W + 0.5) * TILE, z: (((c / W) | 0) + 0.5) * TILE }; }
 
-  /** A full horde: queue it and tell clients where it's coming from. */
-  private horde(): void {
-    const at = this.spawnWave(12 + 4 * this.players.size);
+  /** A full horde: queue it and tell clients where it's coming from. `side` -1: from behind the team. */
+  private horde(side: Side = 1): void {
+    const at = this.spawnWave(12 + 4 * this.players.size, { side });
     this.events.push(at ? ['horde', r2(at.x), r2(at.z)] : ['horde']);
   }
 
@@ -906,12 +975,12 @@ export class Room {
    * members chase marked survivors first. Returns the main source (metres), null if none was found
    * (members then pick cells one by one, as before).
    */
-  private spawnWave(n: number, o: { noise?: number; hunt?: number } = {}): Vec2 | null {
-    const w: Wave = { left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0 };
+  private spawnWave(n: number, o: { noise?: number; hunt?: number; side?: Side } = {}): Vec2 | null {
+    const w: Wave = { left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0, side: o.side ?? 1 };
     const s = this.waveSource(w);
     if (s >= 0) {
       w.srcs.push(s);
-      if (w.anchor < 0 && !w.hunt && n >= FLANK_MIN && Math.random() < FLANK_CHANCE) { const f = this.flankSource(s); if (f >= 0) w.srcs.push(f); }
+      if (w.anchor < 0 && !w.hunt && w.side > 0 && n >= FLANK_MIN && Math.random() < FLANK_CHANCE) { const f = this.flankSource(s); if (f >= 0) w.srcs.push(f); }
     }
     this.waves.push(w);
     return s >= 0 ? this.cellPos(s) : null;
@@ -921,10 +990,10 @@ export class Room {
   private waveSource(w: Wave): number {
     if (w.anchor >= 0) { const c = this.noiseSource(w.anchor); if (c >= 0) return c; }
     if (w.hunt > this.time && this.marks.size) {
-      const c = this.trySpawnCell(7, 18, false, this.markFlow) ?? this.trySpawnCell(7, 26, false, this.markFlow);
+      const c = this.trySpawnCell(7, 18, 0, this.markFlow) ?? this.trySpawnCell(7, 26, 0, this.markFlow);
       if (c !== null) return c;
     }
-    return this.pickSpawnCell(8, 20, this.holdout >= 0 ? 0 : 0.75);
+    return this.pickSpawnCell(8, 20, this.holdout >= 0 ? 0 : waveAhead(w));
   }
 
   /**
@@ -955,7 +1024,7 @@ export class Room {
     for (const p of stand) { cx += p.x / stand.length; cz += p.z / stand.length; }
     const m = this.cellPos(main), ax = m.x - cx, az = m.z - cz, al = Math.hypot(ax, az) || 1;
     for (let i = 0; i < 4; i++) {
-      const f = this.trySpawnCell(8, 22, false);
+      const f = this.trySpawnCell(8, 22, 0);
       if (f === null) return -1;
       const q = this.cellPos(f), bx = q.x - cx, bz = q.z - cz;
       // At least ~80 degrees round from the main source (as seen from the team) and well apart.
@@ -1000,7 +1069,7 @@ export class Room {
     if (c >= 0) {
       const p = this.cellPos(c);
       zb = this.spawnZombie(ZT.WALKER, p.x + rand(-0.5, 0.5), p.z + rand(-0.5, 0.5));
-    } else zb = this.spawnAt(ZT.WALKER, 7, 18, 0.75);
+    } else zb = this.spawnAt(ZT.WALKER, 7, 18, waveAhead(w));
     if (zb) zb.hunt = w.hunt;
     return !!zb;
   }
@@ -1020,6 +1089,80 @@ export class Room {
     this.L.distanceField(src, this.doors, this.markFlow);
   }
 
+  // ---------------------------------------------------------------- pacing
+  private bumpIntensity(p: Player, v: number): void {
+    if (p.st !== PSTATE.DEAD) p.intensity = Math.min(100, p.intensity + v);
+  }
+
+  /** Fresh attempt or debug jump: calm team, BUILD_UP, timers from now. */
+  private resetPacing(): void {
+    for (const p of this.players.values()) p.intensity = 0;
+    this.phase = Phase.BUILD_UP; this.phaseT = 0; this.phaseLen = 0; this.phaseBest = this.best;
+    this.advancedAt = this.time; this.campT = 0; this.objSeenKey = '';
+  }
+
+  private setPhase(ph: Phase, why: string): void {
+    if (DIRECTOR_DEBUG) {
+      const team = Math.round(this.teamIntensity());
+      console.log(`[director ${this.code}] t=${this.time.toFixed(1)} ${PHASE_NAMES[this.phase]} -> ${PHASE_NAMES[ph]} (${why}) intensity=${team} best=${this.best}`);
+    }
+    this.phase = ph; this.phaseT = 0; this.phaseBest = this.best;
+    this.phaseLen = ph === Phase.SUSTAIN ? roll(DIRECTOR.sustain) : ph === Phase.RELAX ? roll(DIRECTOR.relaxMax) : 0;
+  }
+
+  /** A holdout (crescendo) just ended: L4D's post-crescendo breather, and no horde right after it. */
+  private crescendoOver(): void {
+    this.setPhase(Phase.RELAX, 'holdout over');
+    this.t.horde = Math.max(this.t.horde, roll(DIRECTOR.mobAfterHoldout));
+    this.campT = 0; this.advancedAt = this.time;
+    // Team-sourced leftovers of the crescendo's horde are dropped; noise/goo waves are still owed.
+    this.waves = this.waves.filter((w) => w.anchor >= 0 || w.hunt > this.time);
+  }
+
+  private teamIntensity(): number {
+    let m = 0;
+    for (const p of this.players.values()) if (p.st === PSTATE.ALIVE) m = Math.max(m, p.intensity);
+    return m;
+  }
+
+  /** Decay each survivor's intensity, but only while nothing active is on them (the L4D rule). */
+  private decayIntensity(dt: number): void {
+    const R = DIRECTOR.engageR;
+    for (const p of this.players.values()) {
+      if (p.intensity <= 0 || p.st === PSTATE.DEAD) continue;
+      let engaged = !!p.pinned;
+      if (!engaged) for (const z of this.zombies.values()) {
+        if (z.dormant) continue;
+        const dx = z.x - p.x, dz = z.z - p.z;
+        if (dx * dx + dz * dz < R * R) { engaged = true; break; }
+      }
+      if (!engaged) p.intensity = Math.max(0, p.intensity - DIRECTOR.decay * dt);
+    }
+  }
+
+  /** Advance BUILD_UP -> SUSTAIN -> FADE -> RELAX -> BUILD_UP. Frozen during holdouts (they force RELAX when they end). */
+  private updatePhase(dt: number, nearCommons: number): void {
+    this.phaseT += dt;
+    const D = DIRECTOR;
+    switch (this.phase) {
+      case Phase.BUILD_UP:
+        if (this.teamIntensity() >= D.peak) this.setPhase(Phase.SUSTAIN, 'peak');
+        break;
+      case Phase.SUSTAIN:
+        if (this.phaseT >= this.phaseLen) this.setPhase(Phase.FADE, 'sustained');
+        break;
+      case Phase.FADE:
+        if (this.phaseT >= D.fadeMax) this.setPhase(Phase.RELAX, 'fade timeout');
+        else if (!this.waves.length && nearCommons <= D.fadeQuiet) this.setPhase(Phase.RELAX, 'cleared');
+        break;
+      case Phase.RELAX:
+        if (this.phaseT >= D.relaxMin && (this.phaseT >= this.phaseLen || this.best - this.phaseBest >= D.relaxAdvance)) {
+          this.setPhase(Phase.BUILD_UP, this.phaseT >= this.phaseLen ? 'relaxed' : 'advanced');
+        }
+        break;
+    }
+  }
+
   private director(dt: number): void {
     const n = this.players.size;
     const stand = this.standing();
@@ -1029,20 +1172,45 @@ export class Room {
       if (allSafe) return;
       this.started = true;
     }
-    // Furthest progress drives the wanderer belt.
-    for (const p of stand) this.best = Math.max(this.best, this.progressAt(p.x, p.z));
-    const t = this.t;
+    // Furthest progress drives the wanderer belt; it and closing on the objective (collect steps
+    // may lead back the way they came) count as advancing for the mob timer and anti-camping.
+    let advanced = false;
+    for (const p of stand) {
+      const pr = this.progressAt(p.x, p.z);
+      if (pr > this.best) { this.best = pr; advanced = true; }
+    }
+    const obj = this.objectiveField();
+    if (obj) {
+      let lead = INF;
+      for (const p of stand) lead = Math.min(lead, obj[cellOf(p.z) * this.L.W + cellOf(p.x)]);
+      if (this.objKey !== this.objSeenKey) { this.objSeenKey = this.objKey; this.objBest = lead; advanced = true; }
+      else if (lead < this.objBest) { this.objBest = lead; advanced = true; }
+    }
+    if (advanced) { this.advancedAt = this.time; this.campT = 0; }
+    const t = this.t, D = DIRECTOR;
     t.belt -= dt;
     if (t.belt <= 0) { t.belt = 2; this.fillBelt(BELT_MAX); }
 
-    let commons = 0, specials = 0;
+    let commons = 0, specials = 0, nearCommons = 0;
     const byType = ZTYPES.map(() => 0);
-    for (const z of this.zombies.values()) { if (z.dormant) continue; byType[z.type]++; if (z.type === ZT.WALKER) commons++; else specials++; }
+    const W = this.L.W;
+    for (const z of this.zombies.values()) {
+      if (z.dormant) continue;
+      byType[z.type]++;
+      if (z.type !== ZT.WALKER) { specials++; continue; }
+      commons++;
+      if (this.flow[cellOf(z.z) * W + cellOf(z.x)] <= D.fadeNear) nearCommons++;
+    }
     const cap = Math.min(46, 20 + 6 * n);
 
+    this.decayIntensity(dt);
+    if (this.holdout < 0) this.updatePhase(dt, nearCommons);
+
+    // ---- Deliberate events: bypass the pacing phases.
     if (this.pendingBrute && this.spawnAt(ZT.BRUTE, 12, 24)) { this.pendingBrute = false; this.events.push(['brute']); }
 
     // Drain queued hordes a walker at a time (oldest wave first), each from its wave's source.
+    // Waves already queued are committed, so they keep draining in FADE/RELAX too.
     const wave = this.waves[0];
     if (wave) {
       t.hordeTick -= dt;
@@ -1068,15 +1236,14 @@ export class Room {
     // Safe rooms are a breather: no new pressure while the whole team is inside one.
     if (allSafe) return;
 
+    // ---- Paced pressure: ambient and specials in BUILD_UP/SUSTAIN, timed mobs in BUILD_UP only.
+    const ph = this.phase;
+    if (ph !== Phase.BUILD_UP && ph !== Phase.SUSTAIN) return;
+
     t.ambient -= dt;
     if (t.ambient <= 0) {
       t.ambient = rand(1.6, 3.2) - 0.25 * n;
       if (commons < 6 + 3 * n) this.spawnAt(ZT.WALKER, 10, 22);
-    }
-    t.horde -= dt;
-    if (t.horde <= 0) {
-      t.horde = rand(90, 150);
-      this.horde();
     }
     t.special -= dt;
     if (t.special <= 0) {
@@ -1086,6 +1253,23 @@ export class Room {
         // Alarm clocks lurk a bit further out so they have room to keep their distance.
         if (this.spawnAt(type, 12, 24)) this.alarmAt = this.time + 75;
       } else if (type >= 0) this.spawnAt(type, 9, 20);
+    }
+    if (ph !== Phase.BUILD_UP) return;
+
+    // Mob timer: runs faster while the team pushes on, slower while it holds still.
+    const moving = this.time - this.advancedAt < D.advanceWindow;
+    t.horde -= dt * (moving ? D.mobMove : D.mobStill);
+    if (t.horde <= 0) {
+      t.horde = roll(D.mobEvery);
+      this.horde();
+    }
+    // Anti-camping: too long without progress brings a horde from behind, pushing them on.
+    if (!moving) this.campT += dt;
+    if (this.campT >= D.camp) {
+      this.campT = 0;
+      t.horde = Math.max(t.horde, roll(D.mobEvery));
+      if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} camping: horde from behind`);
+      this.horde(-1);
     }
   }
 
@@ -1275,6 +1459,7 @@ export class Room {
         for (const p of players) {
           if (p.st !== PSTATE.ALIVE || Math.hypot(p.x - z.x, p.z - z.z) > 1.15) continue;
           this.damagePlayer(p, T.leapDmg, z.x, z.z);
+          this.bumpIntensity(p, DIRECTOR.leap);
           this.events.push(['kb', p.id, r2(z.lx * 9), r2(z.lz * 9)]);
           done = true; break;
         }

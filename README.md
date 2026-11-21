@@ -79,7 +79,11 @@ docs/     campaign.md — story bible and per-chapter quest briefs
   the shot and in sight; grenade impacts must pair with a shell actually fired and be in range
   and sight of where it was fired). Fine for co-op with friends; not cheat-proof.
 - **AI:** zombies follow a breadth-first flow field towards the nearest survivor and
-  beeline when close with line of sight. The director spawns out of sight, a walk away.
+  beeline when close with line of sight. The director spawns out of sight, a walk away, and
+  paces itself like Left 4 Dead's: each survivor's intensity (hurt, downed, pinned, close kills)
+  drives a BUILD_UP → SUSTAIN → FADE → RELAX cycle; mobs come faster while the team pushes on,
+  and a team that camps gets a horde from behind. Run the server with `DIRECTOR_DEBUG=1` to log
+  phase changes.
 - **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
   custom GLSL shaders: 4-step banded lighting, a stepped flashlight cone, fog, and inverted-hull
   ink outlines. Architecture ink lines are thin beam geometry. Lamps light the scene through a
