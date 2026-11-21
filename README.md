@@ -86,7 +86,8 @@ docs/     campaign.md — story bible and per-chapter quest briefs
 - **AI:** zombies follow a breadth-first flow field towards the nearest survivor and
   beeline when close with line of sight. The director spawns out of sight, a walk away, and
   paces itself like Left 4 Dead's: each survivor's intensity (hurt, downed, pinned, close kills)
-  drives a BUILD_UP → SUSTAIN → FADE → RELAX cycle; mobs come faster while the team pushes on,
+  drives a BUILD_UP → SUSTAIN → FADE → RELAX cycle (a build-up that never peaks still ends after
+  60-90 s, scaled by difficulty, so a careful team gets its breathers too); mobs come faster while the team pushes on,
   and a team that camps gets a horde from behind. Specials fill a few slots (per-type respawn
   cooldowns), lurk out of sight until the slots are full or ~20 s pass, then attack together; a
   survivor who strays far from the team draws them. Besides the scripted Brute, each attempt may

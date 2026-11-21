@@ -48,10 +48,15 @@ const DIRECTOR = {
   // Intensity gains.
   dmg: 0.8, // per hp of damage taken
   down: 35, pin: 25, leap: 15, charge: 12, goo: 15,
-  kill: 2, killR: 6, // per zombie that dies within killR of the survivor
+  // Per zombie that dies within killR of the survivor; killFar for one further out, within killFarR
+  // (fighting at range still builds toward a breather, just slower).
+  kill: 2, killR: 6, killFar: 1, killFarR: 15,
   // Intensity decay: per second, only while no active zombie is within engageR (and not pinned).
   decay: 4, engageR: 9,
   peak: 70, // team intensity that ends BUILD_UP
+  // BUILD_UP also ends (-> SUSTAIN) after this long (rolled, x difficulty `build`), so a team that
+  // never gets hurt enough to peak still gets its FADE/RELAX breathers.
+  buildMax: [60, 90] as const,
   sustain: [3, 5] as const,
   // FADE ends when the wave queue is empty and at most fadeQuiet active walkers are within
   // fadeNear path tiles of the team, or after fadeMax.
@@ -116,7 +121,7 @@ const DIRECTOR = {
    * from one hidden spot with chance `clumpChance` (if the target has room).
    */
   ambient: {
-    every: [1.6, 3.2] as const, perPlayer: 0.25, minEvery: 0.5, target: [6, 3] as const,
+    every: [1.6, 3.2] as const, perPlayer: 0.25, minEvery: 0.5, target: [3, 3] as const,
     rampFrom: 0.45, rampTime: 60, ease: 0.4, sustain: 1, clumpChance: 0.25, clump: [2, 3] as const,
   },
   /**
@@ -168,6 +173,7 @@ const DIRECTOR = {
  *  - `peak`: x DIRECTOR.peak, the team intensity that ends BUILD_UP (also the ambient ease scale).
  *    Higher = the team has to take more before the director backs off. Capped at 95 (intensity tops out at 100).
  *  - `relax`: x DIRECTOR.relaxMin and relaxMax (the RELAX breather).
+ *  - `build`: x DIRECTOR.buildMax, the longest a BUILD_UP lasts without reaching the peak.
  *  - `mob`: x horde sizes: timed/camping/lever/step hordes (HORDE), holdout stage hordes, and the
  *    Alarm Clock and puffer-goo waves.
  *  - `mobEvery`: x the mob timer (mobFirst, mobEvery, mobAfterHoldout) and the anti-camping wait.
@@ -182,13 +188,13 @@ const DIRECTOR = {
  * Survivor-side rules (respawn, downs, medkit heal, solo self-revives) are shared/constants.ts SURVIVOR_RULES.
  */
 const DIFFICULTY: Record<DifficultyId, {
-  peak: number; relax: number; mob: number; mobEvery: number; slots: readonly number[]; spCd: number;
+  peak: number; relax: number; build: number; mob: number; mobEvery: number; slots: readonly number[]; spCd: number;
   ambient: number; wander: number; brute: number; bruteHp: number; spHp: number; dmg: number;
 }> = {
-  easy: { peak: 0.75, relax: 1.3, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.75, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5 },
-  normal: { peak: 1, relax: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1 },
-  hard: { peak: 1.2, relax: 0.75, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5 },
-  nightmare: { peak: 1.35, relax: 0.55, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2 },
+  easy: { peak: 0.75, relax: 1.3, build: 0.75, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.6, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5 },
+  normal: { peak: 1, relax: 1, build: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1 },
+  hard: { peak: 1.2, relax: 0.75, build: 1.3, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5 },
+  nightmare: { peak: 1.35, relax: 0.55, build: 1.6, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2 },
 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 const BRUTE_HP_PER = 1100;
@@ -1083,7 +1089,11 @@ export class Room {
     if (z.hold) this.blowAmbush(z, 'killed');
     if (z.type !== ZT.WALKER && z.type !== ZT.BRUTE) this.specialGone(z.type);
     if (by) by.kills++;
-    for (const p of this.players.values()) if (Math.hypot(p.x - z.x, p.z - z.z) < DIRECTOR.killR) this.bumpIntensity(p, DIRECTOR.kill);
+    for (const p of this.players.values()) {
+      const d = Math.hypot(p.x - z.x, p.z - z.z);
+      if (d < DIRECTOR.killR) this.bumpIntensity(p, DIRECTOR.kill);
+      else if (d < DIRECTOR.killFarR) this.bumpIntensity(p, DIRECTOR.killFar);
+    }
     this.events.push(['zdie', z.id, r2(z.x), r2(z.z), z.type, head ? 1 : 0, by ? by.id : 0]);
     if (z.type === ZT.PUFFER) this.explode(z);
     if (z.type === ZT.BRUTE) this.events.push(['msg', 'The Brute is down!']);
@@ -1237,9 +1247,10 @@ export class Room {
    */
   private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false, scaled = true): void {
     if (p.st === PSTATE.DEAD || this.state !== 'play') return;
+    // Intensity reads the damage before difficulty: a softer bite on Easy must not make breathers rarer.
+    if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
     if (scaled && this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
     p.hp -= dmg;
-    if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
     this.events.push(quiet ? ['sizzle', p.id, dmg] : ['hurt', p.id, dmg, r2(sx), r2(sz)]);
     if (p.hp > 0) return;
     if (p.st === PSTATE.ALIVE) {
@@ -1665,7 +1676,7 @@ export class Room {
   /** Fresh attempt or debug jump: calm team, BUILD_UP, timers from now. */
   private resetPacing(): void {
     for (const p of this.players.values()) p.intensity = 0;
-    this.phase = Phase.BUILD_UP; this.phaseT = 0; this.phaseLen = 0; this.phaseBest = this.best;
+    this.phase = Phase.BUILD_UP; this.phaseT = 0; this.phaseLen = roll(DIRECTOR.buildMax) * this.diff.build; this.phaseBest = this.best;
     this.advancedAt = this.time; this.campT = 0; this.objSeenKey = '';
     this.spReady.fill(0); this.ambushUntil = Infinity; this.loner = 0; this.isoT.clear();
   }
@@ -1676,7 +1687,8 @@ export class Room {
       console.log(`[director ${this.code}] t=${this.time.toFixed(1)} ${PHASE_NAMES[this.phase]} -> ${PHASE_NAMES[ph]} (${why}) intensity=${team} best=${this.best}`);
     }
     this.phase = ph; this.phaseT = 0; this.phaseBest = this.best;
-    this.phaseLen = ph === Phase.SUSTAIN ? roll(DIRECTOR.sustain) : ph === Phase.RELAX ? roll(DIRECTOR.relaxMax) * this.diff.relax : 0;
+    this.phaseLen = ph === Phase.SUSTAIN ? roll(DIRECTOR.sustain) : ph === Phase.RELAX ? roll(DIRECTOR.relaxMax) * this.diff.relax
+      : ph === Phase.BUILD_UP ? roll(DIRECTOR.buildMax) * this.diff.build : 0;
   }
 
   /** A holdout (crescendo) just ended: L4D's post-crescendo breather, and no horde right after it. */
@@ -1844,6 +1856,7 @@ export class Room {
     switch (this.phase) {
       case Phase.BUILD_UP:
         if (this.teamIntensity() >= this.peak) this.setPhase(Phase.SUSTAIN, 'peak');
+        else if (this.phaseT >= this.phaseLen) this.setPhase(Phase.SUSTAIN, 'build cap');
         break;
       case Phase.SUSTAIN:
         if (this.phaseT >= this.phaseLen) this.setPhase(Phase.FADE, 'sustained');
