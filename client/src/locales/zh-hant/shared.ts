@@ -1,0 +1,37 @@
+// zh-Hant: shared constants (weapons, difficulties, survivors) and server feed lines, keyed by their English text.
+export default {
+  // Weapons (shared/constants.ts WEAPONS)
+  "Pea Shooter": "豌豆槍",
+  "Buzz Blaster": "嗡嗡衝鋒槍",
+  "Boomstick": "轟天棍",
+  "Long Bonker": "長敲步槍",
+  "Rumble Drum": "隆隆鼓",
+  "Kebabber": "串燒狙擊槍",
+  "Bloop Tube": "噗噗管",
+  "Thunder Pea": "雷霆豌豆",
+  // Difficulties
+  "Easy": "簡單",
+  "Smaller hordes, softer bites": "屍潮較小，咬起來比較輕",
+  "Normal": "普通",
+  "The intended outbreak": "原汁原味的爆發",
+  "Hard": "困難",
+  "Bigger hordes, shorter breathers": "屍潮更大，喘息更短",
+  "Nightmare": "惡夢",
+  "No naps. Bring friends.": "不准打盹。記得揪朋友。",
+  // Survivors
+  "Mochi": "麻糬",
+  "Pip": "小皮",
+  "Nori": "海苔",
+  "Taro": "芋頭",
+  // Server feed lines (server/room.ts, server/index.ts); {name} = a player name
+  "{name} joined the squad": "{name} 加入了小隊",
+  "{name} left": "{name} 離開了",
+  "The Brute is down!": "巨漢倒下了！",
+  "Alarm Clock silenced!": "鬧鐘怪安靜了！",
+  "The goo is attracting more of them!": "黏液引來了更多殭屍！",
+  "{name} went down one time too many!": "{name} 倒下太多次了！",
+  "{name} is on their last legs — get them a medkit!": "{name} 撐不住了——快給他急救包！",
+  "{name} is back in the fight!": "{name} 重返戰場！",
+  "Here they come! Hold the line!": "牠們來了！守住防線！",
+  "Room {code} is full ({max} players max).": "房間 {code} 已滿（最多 {max} 人）。",
+} satisfies Record<string, string>;

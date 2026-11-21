@@ -5,7 +5,7 @@
   --yellow: #ffd43b;
   --teal: #39c5bb;
   --green: #7ddc6a;
-  --font: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito", "Segoe UI", system-ui, sans-serif;
+  --font: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito", "Segoe UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); color: var(--cream); font-family: var(--font); font-weight: 800; user-select: none; -webkit-user-select: none; }
@@ -126,6 +126,7 @@ input:focus { box-shadow: 3px 3px 0 var(--pink); }
 #radio { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); max-width: min(640px, 90vw); background: rgba(26, 18, 38, 0.82); border: 3px solid var(--ink); border-radius: 14px; padding: 8px 14px; font-size: 16px; line-height: 1.35; text-align: center; }
 #radio b { color: var(--yellow); margin-right: 8px; }
 #radio b::after { content: ":"; }
+:lang(zh) #radio b { margin-right: 2px; } :lang(zh) #radio b::after { content: "："; }
 
 /* Chapter title card. */
 #intro { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); text-align: center; width: min(620px, 92vw); text-shadow: 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink); animation: intro 9s ease-in-out forwards; }
@@ -142,7 +143,9 @@ input:focus { box-shadow: 3px 3px 0 var(--pink); }
 select { font: inherit; font-size: 16px; padding: 9px 10px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); outline: none; }
 
 /* Lobby: room browser + new room. */
-#lobby .card { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+#lobby .card { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow: auto; position: relative; }
+.langpick { position: absolute; top: 14px; right: 16px; z-index: 2; cursor: pointer; font-size: 13px; padding: 4px 8px; border-width: 2px; border-radius: 10px; }
+@media (max-width: 720px) { .langpick { position: static; display: block; margin: 0 0 10px auto; } }
 .namefield { max-width: 320px; margin: 0 auto 14px; text-align: left; }
 .lobbycols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; text-align: left; }
 @media (max-width: 720px) { .lobbycols { grid-template-columns: 1fr; } }

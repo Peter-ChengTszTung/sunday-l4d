@@ -1,5 +1,6 @@
 // DOM heads-up display. Only touches the DOM when a value actually changes.
 import { PSTATE, PLAYER } from '../../shared/constants';
+import { t } from './i18n';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const RING_LEN = 163.4;
@@ -34,13 +35,13 @@ export class Hud {
   show(on: boolean): void { this.el.hud.hidden = !on; }
   pause(on: boolean): void { this.el.pause.hidden = !on; }
 
-  /** `diff`: difficulty label, shown unless Normal. */
+  /** `diff`: difficulty label (English), shown unless Normal. */
   setRoom(code: string, diff = 'Normal'): void {
-    const b = this.el.room, label = `Room ${code}${diff === 'Normal' ? '' : ` · ${diff}`} · copy invite`;
+    const b = this.el.room, label = t('Room {code}', { code }) + (diff === 'Normal' ? '' : ` · ${t(diff)}`) + ` · ${t('copy invite')}`;
     b.textContent = label;
     b.onclick = () => {
       void navigator.clipboard?.writeText(location.href).then(() => {
-        b.textContent = 'Invite link copied!';
+        b.textContent = t('Invite link copied!');
         setTimeout(() => { b.textContent = label; }, 1600);
       });
     };
@@ -51,7 +52,7 @@ export class Hud {
     this.set('hp', `${shown}|${st}`, () => {
       this.el.hpbar.style.width = `${shown}%`;
       this.el.hpbar.style.background = st === PSTATE.DOWN ? 'var(--pink)' : shown > 60 ? 'var(--green)' : shown > 30 ? 'var(--yellow)' : 'var(--pink)';
-      this.el.hptext.textContent = st === PSTATE.DOWN ? `DOWN! ${shown}` : st === PSTATE.DEAD ? 'OUT' : String(shown);
+      this.el.hptext.textContent = st === PSTATE.DOWN ? t('DOWN! {hp}', { hp: shown }) : st === PSTATE.DEAD ? t('OUT') : String(shown);
     });
     this.set('mk', String(medkits), () => { this.el.medkit.hidden = medkits < 1; });
     // Low health keeps a faint red edge on screen.
@@ -60,8 +61,8 @@ export class Hud {
   }
 
   /** `primary` / `sidearm` name the slots ('' = empty primary). */
-  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = 'sidearm'): void {
-    this.set('wn', name + reloading, () => { this.el.wname.textContent = reloading ? `${name} · reloading…` : name; });
+  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = t('sidearm')): void {
+    this.set('wn', name + reloading, () => { this.el.wname.textContent = reloading ? `${name} · ${t('reloading…')}` : name; });
     this.set('mag', String(mag), (v) => { this.el.mag.textContent = v; });
     this.set('res', String(reserve), () => { this.el.reserve.textContent = Number.isFinite(reserve) ? `/ ${reserve}` : '/ ∞'; });
     this.set('low', String(mag <= magSize * 0.25), (v) => { this.el.acount.classList.toggle('low', v === 'true'); });
@@ -78,7 +79,7 @@ export class Hud {
         d.className = `mate ${m.st === PSTATE.DOWN ? 'down' : m.st === PSTATE.DEAD ? 'dead' : ''}`;
         const n = document.createElement('div');
         n.style.color = m.color;
-        n.textContent = m.st === PSTATE.DOWN ? `${m.name} — needs help!` : m.st === PSTATE.DEAD ? (m.respawn < 0 ? `${m.name} — rescue at the safe room` : `${m.name} — back in ${m.respawn}s`) : m.name;
+        n.textContent = m.st === PSTATE.DOWN ? t('{who} — needs help!', { who: m.name }) : m.st === PSTATE.DEAD ? (m.respawn < 0 ? t('{who} — rescue at the safe room', { who: m.name }) : t('{who} — back in {s}s', { who: m.name, s: m.respawn })) : m.name;
         const bar = document.createElement('div');
         bar.className = 'bar';
         const fill = document.createElement('i');
@@ -118,7 +119,7 @@ export class Hud {
 
   intro(chapterNo: number, title: string, subtitle: string, text: string): void {
     const e = this.el;
-    e.introch.textContent = `CHAPTER ${chapterNo}`;
+    e.introch.textContent = t('CHAPTER {n}', { n: chapterNo });
     e.introtitle.textContent = title; e.introsub.textContent = subtitle; e.introtext.textContent = text;
     e.intro.hidden = false;
     e.intro.style.animation = 'none'; void e.intro.offsetWidth; e.intro.style.animation = '';
@@ -132,7 +133,7 @@ export class Hud {
   }
   get noteOpen(): boolean { return !this.el.notecard.hidden; }
   setHoldout(seconds: number): void {
-    this.set('ho', String(seconds), () => { this.el.holdout.hidden = seconds < 0; this.el.holdout.textContent = `HOLD OUT! ${seconds}s`; });
+    this.set('ho', String(seconds), () => { this.el.holdout.hidden = seconds < 0; this.el.holdout.textContent = t('HOLD OUT! {s}s', { s: seconds }); });
   }
 
   feed(text: string): void {
@@ -190,14 +191,14 @@ export class Hud {
   showEnd(won: boolean, kills: number, seconds: number, board: { name: string; kills: number }[], next: string): void {
     this.el.end.hidden = false;
     this.el.endnext.textContent = next;
-    this.el.endtitle.textContent = won ? 'Chapter complete!' : 'Squad wiped…';
+    this.el.endtitle.textContent = t(won ? 'Chapter complete!' : 'Squad wiped…');
     this.el.endtitle.style.color = won ? '#2f9e44' : '#c92a4b';
     const m = Math.floor(seconds / 60), s = String(seconds % 60).padStart(2, '0');
-    this.el.endstats.textContent = `${kills} zombies bonked in ${m}:${s}`;
+    this.el.endstats.textContent = t('{kills} zombies bonked in {time}', { kills, time: `${m}:${s}` });
     this.el.endboard.replaceChildren(...board.sort((a, b) => b.kills - a.kills).map((r) => {
       const li = document.createElement('li');
       const a = document.createElement('span'), b = document.createElement('span');
-      a.textContent = r.name; b.textContent = `${r.kills} kills`;
+      a.textContent = r.name; b.textContent = t('{n} kills', { n: r.kills });
       li.append(a, b);
       return li;
     }));

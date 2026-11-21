@@ -14,6 +14,9 @@ import { FX } from './fx';
 import { Sfx } from './audio';
 import { Hud, type MateView } from './hud';
 import { Net, type JoinOpts } from './net';
+import { t, tMsg, lang, LANGS, setLang, translatePage, type Lang } from './i18n';
+
+translatePage();
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -79,7 +82,7 @@ const roster = new Map<number, RosterEntry>();
 /** This room's difficulty (from the welcome), for the survivor rules in messages. */
 let roomDiff: DifficultyId = 'normal';
 /** "rescue in 30s" / "rescue at the next safe room" for a respawn time (SURVIVOR_RULES). */
-const rescueIn = (secs: number): string => (Number.isFinite(secs) ? `rescue in ${secs}s` : 'rescue at the next safe room');
+const rescueIn = (secs: number): string => (Number.isFinite(secs) ? t('rescue in {s}s', { s: secs }) : t('rescue at the next safe room'));
 const mates = new Map<number, Mate>();
 const zeds = new Map<number, Zed>();
 const corpses: Corpse[] = [];
@@ -101,7 +104,7 @@ document.addEventListener('keydown', (e) => {
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
     case 'Digit2': switchWeapon(me.sidearm); break;
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
-    case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(sfx.muted ? 'Sound off' : 'Sound on'); break;
+    case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
   }
 });
@@ -353,7 +356,7 @@ function shove(): void {
   const fat = shoveFatigue(me.shoveFat, me.shoveRest);
   if (me.shoveRest < shoveCooldown(fat)) return;
   me.shoveFat = fat + 1; me.shoveRest = 0;
-  if (fat < PLAYER.shoveMax && me.shoveFat >= PLAYER.shoveMax) hud.feed('Arms tired — shoves slow down for a moment');
+  if (fat < PLAYER.shoveMax && me.shoveFat >= PLAYER.shoveMax) hud.feed(t('Arms tired — shoves slow down for a moment'));
   net.send({ t: 'v' });
   vm.shove(); sfx.shove();
   // Predict the stagger squash locally so the shove feels instant.
@@ -387,14 +390,14 @@ function findTarget(): Target {
     if (d >= bestD) continue;
     const k = pv.def.kind;
     let usable = true, text = '';
-    if (k === 'medkit') { usable = me.medkits < 1; text = usable ? 'Grab medkit' : 'Already carrying a medkit'; }
-    else if (k === 'ammo') { usable = me.primary >= 0; text = usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'; }
-    else if (k === 'obj') { if (holdout >= 0) continue; text = pv.def.label ?? 'Use'; }
-    else if (k === 'item') text = `Pick up ${pv.def.label ?? 'item'}`;
+    if (k === 'medkit') { usable = me.medkits < 1; text = t(usable ? 'Grab medkit' : 'Already carrying a medkit'); }
+    else if (k === 'ammo') { usable = me.primary >= 0; text = t(usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'); }
+    else if (k === 'obj') { if (holdout >= 0) continue; text = t(pv.def.label ?? 'Use'); }
+    else if (k === 'item') text = t('Pick up {item}', { item: t(pv.def.label ?? 'item') });
     else {
       const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : me.primary;
-      if (cur === wi) { usable = w.slot !== 'sidearm'; text = usable ? `Restock ${w.name}` : `Already carrying the ${w.name}`; }
-      else text = cur >= 0 ? `Swap your ${WEAPONS[cur].name} for the ${w.name}` : `Take the ${w.name}`;
+      if (cur === wi) { usable = w.slot !== 'sidearm'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
+      else text = cur >= 0 ? t('Swap your {old} for the {w}', { old: t(WEAPONS[cur].name), w: t(w.name) }) : t('Take the {w}', { w: t(w.name) });
     }
     bestD = d; best = { kind: 'pickup', pv, usable, text };
   }
@@ -405,7 +408,7 @@ function interact(): void {
   if (hud.noteOpen) { hud.note(null); return; }
   if (!target) return;
   if (target.kind === 'pickup' && target.usable) net.send({ t: 'u', id: target.pv.def.id });
-  if (target.kind === 'note') { hud.note(target.nv.def.title, target.nv.def.text); openNote = target.nv; world.setNoteRead(target.nv.def.id); sfx.pickup(); }
+  if (target.kind === 'note') { hud.note(t(target.nv.def.title), t(target.nv.def.text)); openNote = target.nv; world.setNoteRead(target.nv.def.id); sfx.pickup(); }
 }
 let openNote: NoteView | null = null;
 
@@ -413,7 +416,7 @@ function onGot(pickupId: number): void {
   const pv = world.pickups[pickupId];
   if (!pv) return;
   const k = pv.def.kind;
-  if (k === 'medkit') hud.feed('Medkit grabbed — hold Q to heal');
+  if (k === 'medkit') hud.feed(t('Medkit grabbed — hold Q to heal'));
   else if (k === 'ammo') {
     if (me.primary >= 0) {
       // Launchers are a support tool: an ammo pile tops them up to 6 shells, not a full reserve.
@@ -421,14 +424,14 @@ function onGot(pickupId: number): void {
       me.reserve[me.primary] = w.blast ? Math.min(w.reserve, Math.max(me.reserve[me.primary], LAUNCHER_PILE)) : w.reserve;
     }
     world.setTaken(pickupId, true); // spent for you; teammates can still use this pile
-    hud.feed('Ammo topped up');
+    hud.feed(t('Ammo topped up'));
   }
   else if (k !== 'obj' && k !== 'item') {
     const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi];
     if (w.slot === 'sidearm') me.sidearm = wi; else me.primary = wi;
     me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
     if (me.weapon === wi) me.reloadT = 0; else switchWeapon(wi);
-    hud.feed(`Picked up the ${w.name}`);
+    hud.feed(t('Picked up the {w}', { w: t(w.name) }));
   }
   sfx.pickup();
 }
@@ -459,7 +462,7 @@ function applyPlayers(list: PlayerSnap[]): void {
     const [id, x, y, z, ry, , hp, st, w, medkits, rev, , respawn] = p;
     if (id === me.id) {
       if (st !== me.st) {
-        if (st === PSTATE.DOWN) { hud.banner('You are down!', true); sfx.down(); me.reloadT = 0; }
+        if (st === PSTATE.DOWN) { hud.banner(t('You are down!'), true); sfx.down(); me.reloadT = 0; }
         vm.visible = st === PSTATE.ALIVE;
       }
       me.hp = hp; me.st = st; me.medkits = medkits; me.rev = rev; me.respawn = respawn;
@@ -554,13 +557,13 @@ function onEvent(ev: GameEvent): void {
       for (const id of taken) world.setTaken(id, true);
       enterStep(st, false);
       if (!keep || newChapter) showIntro();
-      else { hud.banner('Back to the checkpoint!'); hud.radio([], true); }
+      else { hud.banner(t('Back to the checkpoint!')); hud.radio([], true); }
       hud.hideEnd();
       hud.pause(inGame && !locked && !DEBUG);
       break;
     }
     case 'tp': if (ev[1] === me.id) { me.x = ev[2]; me.z = ev[3]; me.yaw = ev[4]; me.y = 0; me.vy = 0; me.vx = me.vz = 0; } break;
-    case 'msg': hud.feed(ev[1]); break;
+    case 'msg': hud.feed(tMsg(ev[1])); break;
     case 'heal': if (ev[1] === me.id) sfx.heal(); break;
     case 'shot': {
       if (ev[1] === me.id) break;
@@ -584,25 +587,25 @@ function onEvent(ev: GameEvent): void {
     case 'pk': world.setTaken(ev[1], true); break;
     case 'got': if (ev[1] === me.id) onGot(ev[2]); break;
     case 'loot': for (const id of ev[1]) world.setTaken(id, false); break;
-    case 'last': if (ev[1] === me.id) { hud.banner('Last legs! One more down and you\'re out — find a medkit', true); sfx.down(); } break;
+    case 'last': if (ev[1] === me.id) { hud.banner(t('Last legs! One more down and you\'re out — find a medkit'), true); sfx.down(); } break;
     case 'use': {
       world.setTaken(ev[2], true);
       const s = L.def.steps[step];
-      const who = ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone';
-      hud.feed(`${who}: ${(L.def.pickups[ev[2]]?.label ?? 'used it').replace(/\s*\(.*\)$/, '')}`);
+      const who = ev[1] === me.id ? t('You') : roster.get(ev[1])?.name ?? t('Someone');
+      hud.feed(t('{a}: {b}', { a: who, b: t(L.def.pickups[ev[2]]?.label ?? 'used it').replace(/\s*[(（].*[)）]$/, '') }));
       sfx.gate();
-      if (s?.hold) { hud.banner('HOLD OUT!', true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
+      if (s?.hold) { hud.banner(t('HOLD OUT!'), true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
       break;
     }
     case 'door': doors = ev[2] ? doors | (1 << ev[1]) : doors & ~(1 << ev[1]); world.setDoors(doors); sfx.gate(); break;
     case 'step': enterStep(ev[1], true); break;
     case 'item': {
-      const who = ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone';
-      hud.feed(`${who} found a ${L.def.pickups[ev[2]]?.label ?? 'item'} (${ev[3]}/${ev[4]})`);
+      const who = ev[1] === me.id ? t('You') : roster.get(ev[1])?.name ?? t('Someone');
+      hud.feed(t('{who} found a {item} ({have}/{need})', { who, item: t(L.def.pickups[ev[2]]?.label ?? 'item'), have: ev[3], need: ev[4] }));
       sfx.pickup();
       break;
     }
-    case 'checkpoint': hud.banner('Checkpoint saved'); sfx.heal(); break;
+    case 'checkpoint': hud.banner(t('Checkpoint saved')); sfx.heal(); break;
     case 'zdie': killZed(ev[1], ev[5] === 1); if (ev[6] === me.id) hud.hitmark(ev[5] === 1, true); break;
     case 'boom': {
       const p = { x: ev[1], y: 0.9, z: ev[2] };
@@ -620,16 +623,17 @@ function onEvent(ev: GameEvent): void {
         sfx.hurt(); me.slowT = 0.35; me.trauma = Math.min(1, me.trauma + 0.25 + ev[2] * 0.02);
       }
       break;
-    case 'down': if (ev[1] !== me.id) { hud.feed(`${roster.get(ev[1])?.name ?? 'A teammate'} is down!`); sfx.down(); } break;
-    case 'dead': hud.feed(`${ev[1] === me.id ? 'You are' : (roster.get(ev[1])?.name ?? 'A teammate') + ' is'} out — ${rescueIn(SURVIVOR_RULES[roomDiff].respawn)}`); break;
+    case 'down': if (ev[1] !== me.id) { hud.feed(t('{who} is down!', { who: roster.get(ev[1])?.name ?? t('A teammate') })); sfx.down(); } break;
+    case 'dead': hud.feed(ev[1] === me.id ? t('You are out — {rescue}', { rescue: rescueIn(SURVIVOR_RULES[roomDiff].respawn) })
+      : t('{who} is out — {rescue}', { who: roster.get(ev[1])?.name ?? t('A teammate'), rescue: rescueIn(SURVIVOR_RULES[roomDiff].respawn) })); break;
     case 'revived':
-      if (ev[1] === me.id) { hud.banner(ev[2] === me.id ? 'You got yourself up!' : 'Back on your feet!'); sfx.heal(); }
-      else hud.feed(`${roster.get(ev[1])?.name ?? 'A teammate'} was helped up`);
+      if (ev[1] === me.id) { hud.banner(t(ev[2] === me.id ? 'You got yourself up!' : 'Back on your feet!')); sfx.heal(); }
+      else hud.feed(t('{who} was helped up', { who: roster.get(ev[1])?.name ?? t('A teammate') }));
       break;
     case 'blast': if (ev[1] !== me.id) boomFx(ev[2], ev[3], ev[4], ev[5]); break;
     case 'kb': if (ev[1] === me.id) { me.kx = ev[2]; me.kz = ev[3]; me.vy = 4; me.onGround = false; me.trauma = 1; } break;
-    case 'horde': hud.banner('HORDE INCOMING!', true); sfx.horde(); break;
-    case 'brute': hud.banner('A BRUTE approaches…', true); sfx.brute(); break;
+    case 'horde': hud.banner(t('HORDE INCOMING!'), true); sfx.horde(); break;
+    case 'brute': hud.banner(t('A BRUTE approaches…'), true); sfx.brute(); break;
     case 'slam': {
       const d = Math.hypot(ev[2] - me.x, ev[3] - me.z);
       fx.burst({ x: ev[2], y: 0.6, z: ev[3] }, 0xffffff, 6, 4, 0.14, true, 0.35, 4);
@@ -641,25 +645,25 @@ function onEvent(ev: GameEvent): void {
       pinned.add(ev[1]);
       if (ev[1] === me.id) {
         Object.assign(me, { pinned: true, pinX: ev[3], pinZ: ev[4], x: ev[3], z: ev[4], kx: 0, kz: 0, vx: 0, vz: 0, reloadT: 0, healT: 0, trauma: 1 });
-        hud.banner('PINNED! Hang on…', true);
+        hud.banner(t('PINNED! Hang on…'), true);
       } else {
-        const who = roster.get(ev[1])?.name ?? 'A teammate';
-        hud.banner(`${who} is PINNED — shoot the Charger!`, true);
-        hud.feed(`A Charger slammed ${who} into a wall!`);
+        const who = roster.get(ev[1])?.name ?? t('A teammate');
+        hud.banner(t('{who} is PINNED — shoot the Charger!', { who }), true);
+        hud.feed(t('A Charger slammed {who} into a wall!', { who }));
       }
       sfx.down();
       break;
     }
     case 'unpin':
       pinned.delete(ev[1]);
-      if (ev[1] === me.id) { me.pinned = false; if (me.st === PSTATE.ALIVE) hud.feed('Free from the Charger!'); }
+      if (ev[1] === me.id) { me.pinned = false; if (me.st === PSTATE.ALIVE) hud.feed(t('Free from the Charger!')); }
       break;
     case 'spit': {
       const [, , x0, z0, x1, z1, flight] = ev;
       fx.glob(x0, z0, x1, z1, flight);
       sfx.spit(Math.hypot(x0 - me.x, z0 - me.z));
       // Warn whoever is about to be gooed: the target spot is where they stand.
-      if (Math.hypot(x1 - me.x, z1 - me.z) < 3.5 && me.st !== PSTATE.DEAD) hud.feed('Goo incoming — move!');
+      if (Math.hypot(x1 - me.x, z1 - me.z) < 3.5 && me.st !== PSTATE.DEAD) hud.feed(t('Goo incoming — move!'));
       break;
     }
     case 'puddle': fx.puddle(ev[1], ev[2], ev[3], ev[4], ev[5]); break;
@@ -670,23 +674,23 @@ function onEvent(ev: GameEvent): void {
     case 'ring': {
       const zd = zeds.get(ev[1]);
       const d = zd ? Math.hypot(zd.x - me.x, zd.z - me.z) : 20;
-      hud.banner(`ALARM CLOCK! Shoot it — ${ALARM.ringTime} s!`, true);
-      hud.feed(`An Alarm Clock is ringing ${Math.round(d)} m away`);
+      hud.banner(t('ALARM CLOCK! Shoot it — {s} s!', { s: ALARM.ringTime }), true);
+      hud.feed(t('An Alarm Clock is ringing {m} m away', { m: Math.round(d) }));
       break;
     }
     case 'alarm': {
-      hud.banner('The alarm rang out — sleepers incoming!', true);
+      hud.banner(t('The alarm rang out — sleepers incoming!'), true);
       sfx.alarmOut();
       fx.burst({ x: ev[2], y: 1.4, z: ev[3] }, 0xffd43b, 10, 5, 0.16, true, 0.5, 2);
       break;
     }
     case 'end': {
       ended = true;
-      const board = (ev[4] ?? []).map(([id, kills]) => ({ name: id === me.id ? 'You' : roster.get(id)?.name ?? '???', kills }));
+      const board = (ev[4] ?? []).map(([id, kills]) => ({ name: id === me.id ? t('You') : roster.get(id)?.name ?? '???', kills }));
       const ni = ev[5] ?? -1, next = CHAPTERS[ni];
       hud.showEnd(ev[1] === 1, ev[2], ev[3], board,
-        ev[1] === 1 ? (next ? (ni === 0 ? 'Campaign complete! Back to chapter 1…' : `Next: Chapter ${ni + 1} — ${next.title}`) : '')
-          : 'Back to the last checkpoint (or the chapter start)…');
+        ev[1] === 1 ? (next ? (ni === 0 ? t('Campaign complete! Back to chapter 1…') : t('Next: Chapter {n} — {title}', { n: ni + 1, title: t(next.title) })) : '')
+          : t('Back to the last checkpoint (or the chapter start)…'));
       hud.pause(false);
       if (ev[1] === 1) sfx.win(); else sfx.lose();
       break;
@@ -711,7 +715,7 @@ net.onMessage = (m: ServerMsg) => {
       enterGame();
       break;
     case 'ro': syncRoster(m.players); break;
-    case 'err': $('lobbymsg').textContent = m.msg; break;
+    case 'err': $('lobbymsg').textContent = tMsg(m.msg); break;
     case 's':
       serverState = m.st; holdout = m.ho; qc = m.qc;
       if (m.g !== doors) { doors = m.g; world.setDoors(doors); }
@@ -727,7 +731,7 @@ net.onClose = () => {
   document.exitPointerLock();
   hud.show(false); hud.pause(false);
   $('lobby').hidden = false;
-  $('lobbymsg').textContent = 'Disconnected from the server.';
+  $('lobbymsg').textContent = t('Disconnected from the server.');
   for (const b of lobbyButtons()) b.disabled = false;
   void refreshRooms();
 };
@@ -735,8 +739,12 @@ net.onClose = () => {
 // --------------------------------------------------------------------- lobby
 const nameInput = $<HTMLInputElement>('name');
 /** New-room difficulty (remembered like the chapter). */
+const langSelect = $<HTMLSelectElement>('lang');
+langSelect.replaceChildren(...LANGS.map((l) => { const o = document.createElement('option'); o.value = l.id; o.textContent = l.label; return o; }));
+langSelect.value = lang;
+langSelect.addEventListener('change', () => { setLang(langSelect.value as Lang); });
 const diffSelect = $<HTMLSelectElement>('difficulty');
-diffSelect.replaceChildren(...DIFFICULTIES.map((d) => { const o = document.createElement('option'); o.value = d.id; o.textContent = `${d.label}: ${d.hint}`; return o; }));
+diffSelect.replaceChildren(...DIFFICULTIES.map((d) => { const o = document.createElement('option'); o.value = d.id; o.textContent = t('{a}: {b}', { a: t(d.label), b: t(d.hint) }); return o; }));
 diffSelect.value = parseDifficulty(localStorage.getItem('chibi.diff') ?? 'normal');
 nameInput.value = params.get('name') ?? localStorage.getItem('chibi.name') ?? '';
 const inviteCode = (params.get('room') ?? location.hash.slice(1)).toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -751,7 +759,7 @@ async function join(opts: Omit<JoinOpts, 'name'>): Promise<void> {
     localStorage.setItem('chibi.diff', diffSelect.value);
   } catch { /* private mode */ }
   try { await net.connect({ name: nameInput.value.trim(), ...opts }); }
-  catch (e) { $('lobbymsg').textContent = (e as Error).message; for (const b of lobbyButtons()) b.disabled = false; }
+  catch (e) { $('lobbymsg').textContent = tMsg((e as Error).message); for (const b of lobbyButtons()) b.disabled = false; }
 }
 $('create').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -772,21 +780,21 @@ async function refreshRooms(): Promise<void> {
   try { list = await (await fetch('/api/rooms', { cache: 'no-store' })).json(); } catch { return; }
   const ul = $('rooms');
   $('roomcount').textContent = list.length ? `(${list.length})` : '';
-  if (!list.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No open rooms yet. Create one!'; ul.replaceChildren(li); return; }
+  if (!list.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = t('No open rooms yet. Create one!'); ul.replaceChildren(li); return; }
   ul.replaceChildren(...list.map((r) => {
     const li = document.createElement('li');
-    const t = document.createElement('div'); t.className = 'rt';
+    const rt = document.createElement('div'); rt.className = 'rt';
     const code = document.createElement('b'); code.textContent = r.code;
-    t.append(code, `Ch ${r.ch + 1} · ${r.title}`);
+    rt.append(code, t('Ch {n} · {title}', { n: r.ch + 1, title: t(r.title) }));
     const diff = parseDifficulty(r.diff ?? 'normal');
-    if (diff !== 'normal') { const d = document.createElement('span'); d.className = `rd ${diff}`; d.textContent = difficultyLabel(diff); t.append(d); }
+    if (diff !== 'normal') { const d = document.createElement('span'); d.className = `rd ${diff}`; d.textContent = t(difficultyLabel(diff)); rt.append(d); }
     const st = document.createElement('div'); st.className = 'rs';
-    st.textContent = `${r.state === 'play' ? `Step ${r.step}/${r.steps}: ${r.objective}` : r.state === 'won' ? 'Chapter complete' : 'Regrouping'} · ${r.players.length}/${r.max} ${r.players.join(', ')}`;
+    st.textContent = `${r.state === 'play' ? t('Step {n}/{of}: {obj}', { n: r.step, of: r.steps, obj: t(r.objective) }) : t(r.state === 'won' ? 'Chapter complete' : 'Regrouping')} · ${r.players.length}/${r.max} ${r.players.join(', ')}`;
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn';
-    btn.textContent = r.players.length >= r.max ? 'FULL' : 'JOIN';
+    btn.textContent = t(r.players.length >= r.max ? 'FULL' : 'JOIN');
     btn.disabled = r.players.length >= r.max;
     btn.addEventListener('click', () => { void join({ room: r.code }); });
-    li.append(t, btn, st);
+    li.append(rt, btn, st);
     return li;
   }));
 }
@@ -805,21 +813,26 @@ if ((DEBUG || params.has('step')) && params.has('room')) void join({ room: invit
 
 // Chapter picker (also swaps the lobby backdrop).
 const chapterSelect = $<HTMLSelectElement>('chapter');
-chapterSelect.replaceChildren(...CHAPTERS.map((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = `${i + 1}. ${c.title}`; return o; }));
+chapterSelect.replaceChildren(...CHAPTERS.map((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = `${i + 1}. ${t(c.title)}`; return o; }));
 chapterSelect.value = String(chapter);
 const startSelect = $<HTMLSelectElement>('startat');
 /** "Start at" choices: the chapter start or any of its checkpoint safe rooms. */
 function fillStarts(): void {
-  const opts: [number, string][] = [[-1, 'Chapter start']];
-  L.def.steps.forEach((s, i) => { if (s.kind === 'gather' && s.checkpoint) opts.push([i, `Safe room ${opts.length}: ${s.objective.replace(/^(Get everyone into|Regroup in|Shelter in|Hole up in|Rest up in|Lock yourselves in)\s+/i, '')}`]); });
-  startSelect.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement('option'); o.value = String(v); o.textContent = t; return o; }));
+  const opts: [number, string][] = [[-1, t('Chapter start')]];
+  L.def.steps.forEach((s, i) => {
+    if (s.kind !== 'gather' || !s.checkpoint) return;
+    // English drops the verb ("Regroup in the diner" → "the diner"); other languages show the whole objective.
+    const where = lang === 'en' ? s.objective.replace(/^(Get everyone into|Regroup in|Shelter in|Hole up in|Rest up in|Lock yourselves in)\s+/i, '') : t(s.objective);
+    opts.push([i, t('Safe room {n}: {where}', { n: opts.length, where })]);
+  });
+  startSelect.replaceChildren(...opts.map(([v, label]) => { const o = document.createElement('option'); o.value = String(v); o.textContent = label; return o; }));
 }
 fillStarts();
 chapterSelect.addEventListener('change', () => { loadChapter(Number(chapterSelect.value)); fillStarts(); });
 
 function showIntro(): void {
   const d = L.def;
-  hud.intro(chapter + 1, d.title, d.subtitle, d.intro);
+  hud.intro(chapter + 1, t(d.title), t(d.subtitle), t(d.intro));
 }
 
 /** A new quest step became active: update markers, play its radio lines. */
@@ -828,7 +841,7 @@ function enterStep(i: number, announce: boolean): void {
   world.setStep(i);
   const s = L.def.steps[i];
   if (!s) return;
-  hud.radio(s.radio, true);
+  hud.radio(s.radio.map(([who, line]): [string, string] => [t(who), t(line)]), true);
   if (announce) { hud.flashObjective(); sfx.pickup(); }
 }
 
@@ -1014,7 +1027,7 @@ const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
   hud.setHealth(me.hp, me.st, me.medkits);
-  hud.setAmmo(w.name, me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, WEAPONS[me.primary]?.name ?? '', me.weapon === me.primary ? 1 : 2, WEAPONS[me.sidearm].name);
+  hud.setAmmo(t(w.name), me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '', me.weapon === me.primary ? 1 : 2, t(WEAPONS[me.sidearm].name));
   let n = 0;
   for (const m of mates.values()) {
     const v = team[n] ?? (team[n] = { id: 0, name: '', color: '', hp: 0, st: 0, respawn: 0 });
@@ -1025,26 +1038,26 @@ function updateHud(dt: number): void {
   hud.setTeam(team);
   hud.setHoldout(holdout);
   const s = L.def.steps[step];
-  hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${s.objective} ${qc}/${s.count}` : s.objective);
+  hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
   if (openNote && Math.hypot(openNote.def.x - me.x, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
   hud.crosshair(me.st === PSTATE.ALIVE);
   hud.spread(6 + (w.spread + me.bloom) * 260);
   const solo = roster.size <= 1;
-  hud.spectate(me.st === PSTATE.DEAD ? `Knocked out — ${me.respawn < 0 ? 'your team can rescue you at the next safe room' : `a teammate will rescue you in ${me.respawn}s`}`
-    : me.st === PSTATE.DOWN ? (solo ? (me.rev > 0 ? 'You are down! Getting yourself up…' : 'You are down — and alone.') : 'You are down! Wait for a teammate to help you up')
-    : me.pinned ? 'Pinned by a Charger! Teammates can shoot or shove it off you' : null);
+  hud.spectate(me.st === PSTATE.DEAD ? (me.respawn < 0 ? t('Knocked out — your team can rescue you at the next safe room') : t('Knocked out — a teammate will rescue you in {s}s', { s: me.respawn }))
+    : me.st === PSTATE.DOWN ? t(solo ? (me.rev > 0 ? 'You are down! Getting yourself up…' : 'You are down — and alone.') : 'You are down! Wait for a teammate to help you up')
+    : me.pinned ? t('Pinned by a Charger! Teammates can shoot or shove it off you') : null);
 
-  if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, solo ? 'Getting up…' : 'Being helped up…'); hud.prompt(null); }
-  else if (me.healT > 0) { hud.ring(me.healT / PLAYER.healTime, 'Patching up…', 'var(--pink)'); hud.prompt(null); }
+  if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, t(solo ? 'Getting up…' : 'Being helped up…')); hud.prompt(null); }
+  else if (me.healT > 0) { hud.ring(me.healT / PLAYER.healTime, t('Patching up…'), 'var(--pink)'); hud.prompt(null); }
   else if (target?.kind === 'revive') {
-    if (me.reviving) { hud.ring(target.mate.rev, `Helping ${target.mate.name}…`); hud.prompt(null); }
-    else { hud.ring(null); hud.prompt(`<kbd>Hold E</kbd> Help ${target.mate.name} up`); }
+    if (me.reviving) { hud.ring(target.mate.rev, t('Helping {who}…', { who: target.mate.name })); hud.prompt(null); }
+    else { hud.ring(null); hud.prompt(`<kbd>${t('Hold E')}</kbd> ${t('Help {who} up', { who: target.mate.name })}`); }
   } else {
     hud.ring(null);
     hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
-      : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> Read: ${target.nv.def.title}`
-        : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z) ? 'Get out of the goo!' : null);
+      : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> ${t('Read: {title}', { title: t(target.nv.def.title) })}`
+        : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z) ? t('Get out of the goo!') : null);
   }
   hud.update(dt);
 }

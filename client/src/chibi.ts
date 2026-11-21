@@ -367,7 +367,7 @@ export function nameTag(text: string, color: string): pc.Entity {
     const c = document.createElement('canvas');
     c.width = 256; c.height = 64;
     const g = c.getContext('2d')!;
-    g.font = '800 34px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';
+    g.font = '800 34px ui-rounded, "Arial Rounded MT Bold", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.lineWidth = 8; g.strokeStyle = '#1a1226'; g.lineJoin = 'round';
     g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);

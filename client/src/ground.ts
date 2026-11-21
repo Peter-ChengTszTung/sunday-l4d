@@ -7,6 +7,7 @@ import { F, isIndoor, hash2, type PropType } from '../../shared/level';
 import { type Geo } from './geo';
 import { Batch, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
 import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css } from './worldkit';
+import { t } from './i18n';
 
 const T = TILE;
 const PX = 32; // ground texture pixels per tile (6 cm texels)
@@ -225,8 +226,9 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       g.stroke(); g.fill();
     });
     for (const l of def.labels) glyph(l.x, l.z, l.rot, () => {
-      g.font = `900 ${l.size}px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.lineWidth = 5; g.strokeStyle = '#1a1226'; g.lineJoin = 'round'; g.strokeText(l.text, 0, 0); g.fillStyle = l.color; g.fillText(l.text, 0, 0);
+      const text = t(l.text);
+      g.font = `900 ${l.size}px ui-rounded, "Arial Rounded MT Bold", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.lineWidth = 5; g.strokeStyle = '#1a1226'; g.lineJoin = 'round'; g.strokeText(text, 0, 0); g.fillStyle = l.color; g.fillText(text, 0, 0);
     });
     return cv;
   };
