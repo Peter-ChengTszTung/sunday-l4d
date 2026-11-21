@@ -7,7 +7,7 @@ import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
-import { ViewModel, worldGun } from './viewmodel';
+import { ViewModel, worldGun, gunMuzzle } from './viewmodel';
 import { app, setTorch } from './gfx';
 import { quatYXZ } from './geo';
 import { FX } from './fx';
@@ -186,6 +186,7 @@ function startReload(): void {
 
 type V3 = { x: number; y: number; z: number };
 const _d: V3 = { x: 0, y: 0, z: 0 }, _end: V3 = { x: 0, y: 0, z: 0 }, _muz: V3 = { x: 0, y: 0, z: 0 };
+const _v3 = new pc.Vec3();
 interface ShotHit { zed: Zed; head: boolean; t: number }
 
 /**
@@ -224,11 +225,10 @@ function castShot(o: V3, d: V3, range: number, pierce = 1): { t: number; hits: S
   return { t, hits };
 }
 
-/** Camera basis for a shot: forward (cam.f*), right (rx, rz) and up (ux, uy, uz); also places `_muz`. */
+/** Camera basis for a shot: forward (cam.f*), right (rx, rz) and up (ux, uy, uz). */
 function aimBasis(): { fwx: number; fwy: number; fwz: number; rx: number; rz: number; ux: number; uy: number; uz: number } {
   const fwx = cam.fx, fwy = cam.fy, fwz = cam.fz, rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw);
   const ux = -rz * fwy, uy = rz * fwx - rx * fwz, uz = rx * fwy;
-  _muz.x = cam.x + rx * 0.2 - ux * 0.15 + fwx * 0.7; _muz.y = cam.y - uy * 0.15 + fwy * 0.7; _muz.z = cam.z + rz * 0.2 - uz * 0.15 + fwz * 0.7;
   return { fwx, fwy, fwz, rx, rz, ux, uy, uz };
 }
 /** Random direction in a disc of radius `spread` around forward, into `_d`. */
@@ -237,6 +237,40 @@ function spreadDir(b: ReturnType<typeof aimBasis>, spread: number): void {
   const ca = Math.cos(a) * r, sa = Math.sin(a) * r;
   _d.x = b.fwx + b.rx * ca + b.ux * sa; _d.y = b.fwy + b.uy * sa; _d.z = b.fwz + b.rz * ca + b.uz * sa;
   const dl = Math.hypot(_d.x, _d.y, _d.z); _d.x /= dl; _d.y /= dl; _d.z /= dl;
+}
+
+/**
+ * Own tracers ([end x, y, z, width] each) and the grenade launched this frame, waiting for their
+ * muzzle point. Shots are cast from the eye, but drawn from the gun: that needs this frame's camera
+ * and first-person rig pose, which are only final after `updateCamera` and `vm.update`.
+ */
+const ownTracers: number[] = [];
+/** Scoped tracers start this far ahead of the eye (m). */
+const SCOPE_TRACER_Z = 3;
+let ownNade: Nade | null = null;
+/** Draw this frame's own shots from the first-person gun's muzzle to where the eye ray ended. */
+function flushOwnShots(): void {
+  if (!ownTracers.length && !ownNade) return;
+  const tanF = Math.tan((camera.camera!.fov * Math.PI) / 360);
+  if (me.zoom < 0.5) vm.muzzleWorld(camera, _muz);
+  else {
+    // Scoped, the gun is hidden: the streak rises from just under the bottom edge of the screen, on
+    // the centre line and well out in front so its near end stays thin. It still ends at the world
+    // point the eye ray hit at fire time, which recoil has since pushed below the crosshair.
+    camera.getRotation().transformVector(_v3.set(0, -tanF * SCOPE_TRACER_Z * 1.05, -SCOPE_TRACER_Z), _v3);
+    _muz.x = cam.x + _v3.x; _muz.y = cam.y + _v3.y; _muz.z = cam.z + _v3.z;
+  }
+  // Keep the streak the same thickness on screen when the world FOV narrows (scope zoom).
+  const thin = tanF / Math.tan((baseFov * Math.PI) / 360);
+  const mx = _muz.x - cam.x, my = _muz.y - cam.y, mz = _muz.z - cam.z;
+  for (let i = 0; i < ownTracers.length; i += 4) {
+    _end.x = ownTracers[i]; _end.y = ownTracers[i + 1]; _end.z = ownTracers[i + 2];
+    // Point-blank hits end nearer than the muzzle: no streak rather than one flying backwards.
+    const ex = _end.x - cam.x, ey = _end.y - cam.y, ez = _end.z - cam.z;
+    if ((ex * mx + ey * my + ez * mz) > mx * mx + my * my + mz * mz) fx.tracer(_muz, _end, ownTracers[i + 3] * thin);
+  }
+  ownTracers.length = 0;
+  if (ownNade) { ownNade.mx = mx; ownNade.my = my; ownNade.mz = mz; placeNade(ownNade); ownNade = null; }
 }
 
 function fire(): void {
@@ -264,7 +298,7 @@ function fire(): void {
       const shot = castShot(cam, _d, w.range, w.pierce);
       _end.x = cam.x + _d.x * shot.t; _end.y = cam.y + _d.y * shot.t; _end.z = cam.z + _d.z * shot.t;
       if (i === 0) first = [_end.x, _end.y, _end.z];
-      if (i < 4) fx.tracer(_muz, _end, w.pellets > 1 ? 0.02 : w.pierce > 2 ? 0.05 : 0.032);
+      if (i < 4) ownTracers.push(_end.x, _end.y, _end.z, w.pellets > 1 ? 0.02 : w.pierce > 2 ? 0.05 : 0.032);
       for (const hit of shot.hits) {
         const p = { x: cam.x + _d.x * hit.t, y: cam.y + _d.y * hit.t, z: cam.z + _d.z * hit.t };
         const e = hits.get(hit.zed.id) ?? [hit.zed.id, 0, 0];
@@ -330,12 +364,13 @@ function launchNade(wi: number): [number, number, number] {
   const B = WEAPONS[wi].blast!;
   const n: Nade = {
     x: cam.x, y: cam.y, z: cam.z, vx: _d.x * B.speed, vy: _d.y * B.speed, vz: _d.z * B.speed, t: 0, w: wi,
-    mine: true, ox: me.x, oz: me.z, shell: fx.shell(), trail: 0, mx: _muz.x - cam.x, my: _muz.y - cam.y, mz: _muz.z - cam.z, life: 0,
+    mine: true, ox: me.x, oz: me.z, shell: fx.shell(), trail: 0, mx: 0, my: 0, mz: 0, life: 0, // muzzle offset: flushOwnShots
     seq: ++nadeSeq,
   };
   const ghost = { ...n };
   for (let i = 0; i < 400 && !flyNade(ghost, 1 / 60, false); i++);
   nades.push(n);
+  ownNade = n;
   placeNade(n);
   return [ghost.x, ghost.y, ghost.z];
 }
@@ -385,7 +420,7 @@ function debugGive(wi: number): void {
 
 function clearNades(): void {
   for (const n of nades) fx.dropShell(n.shell);
-  nades.length = 0;
+  nades.length = 0; ownNade = null; ownTracers.length = 0;
 }
 
 function shove(): void {
@@ -607,9 +642,16 @@ function onEvent(ev: GameEvent): void {
       if (ev[1] === me.id) break;
       const m = mates.get(ev[1]);
       if (!m) break;
-      _muz.x = m.x - Math.sin(m.ry) * 0.5; _muz.y = m.y + 0.78; _muz.z = m.z - Math.cos(m.ry) * 0.5;
       _end.x = ev[3]; _end.y = ev[4]; _end.z = ev[5];
       const w = WEAPONS[ev[2]];
+      if (m.gun && WEAPONS[m.gunW] && m.st === PSTATE.ALIVE) {
+        // From the muzzle of the gun the chibi is holding (as posed last frame).
+        const [gx, gy, gz] = gunMuzzle(WEAPONS[m.gunW].id);
+        m.gun.getWorldTransform().transformPoint(_v3.set(gx, gy, gz), _v3);
+        _muz.x = _v3.x; _muz.y = _v3.y; _muz.z = _v3.z;
+      } else { // no gun shown (downed, or not built yet): roughly the hands
+        _muz.x = m.x - Math.sin(m.ry) * 0.5; _muz.y = m.y + (m.st === PSTATE.DOWN ? 0.3 : 0.78); _muz.z = m.z - Math.cos(m.ry) * 0.5;
+      }
       if (w?.blast) {
         // A visual arc to the predicted landing point; the boom arrives as 'blast'.
         const B = w.blast, dist = Math.hypot(_end.x - _muz.x, _end.y - _muz.y, _end.z - _muz.z);
@@ -1220,6 +1262,7 @@ app.on('update', (dt: number) => {
     const moving = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed) * (me.onGround ? 1 : 0.2);
     vm.visible = me.st === PSTATE.ALIVE && me.zoom < 0.5; // the scope overlay replaces the gun
     vm.update(dt, moving, lookDX, lookDY);
+    flushOwnShots();
     lookDX = lookDY = 0;
   } else {
     // Lobby backdrop: a slow drift down the main street.
