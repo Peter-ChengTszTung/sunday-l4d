@@ -164,7 +164,7 @@ export function build() {
   car(48, 142, N); car(72, 142, N);
   b.prop('barrier', 82, 140, 2, 1);
   for (let z = 104; z <= 140; z += 4) b.prop('barrier', 86, z, 1, 4);   // parapet: see over, can't walk over
-  b.pick('rifle', 81, 122); b.pick('sniper', 81, 123); b.pick('rifle', 81, 124); b.pick('smg', 82, 123); b.pick('ammo', 84, 123); b.pick('ammo', 83, 123);
+  b.pick('rifle', 81, 122); b.pick('shotgun', 81, 123); b.pick('rifle', 81, 124); b.pick('smg', 82, 123); b.pick('ammo', 84, 123); b.pick('ammo', 83, 123);
   b.label('SWEET DREAMS NIGHT VIEWPOINT', 83, 128, 16, LAV, WEST);
   b.lamp(80.6, 114); b.lamp(80.6, 132);
   // Stair tower down to the square.
@@ -218,7 +218,7 @@ export function build() {
   b.prop('desk', 127, 117, 2, 1); b.prop('desk', 134, 117, 2, 1); b.prop('shelf', 125, 112, 1, 3);
   for (const x of [127, 128, 129, 130]) b.pick('medkit', x, 112);
   b.pick('ammo', 135, 119); b.pick('ammo', 136, 119); b.pick('ammo', 137, 119);
-  b.pick('rifle', 133, 112); b.pick('shotgun', 134, 112); b.pick('rifle', 135, 112); b.pick('smg', 136, 112); b.pick('autoshotgun', 137, 112);
+  b.pick('rifle', 133, 112); b.pick('shotgun', 134, 112); b.pick('rifle', 135, 112); b.pick('smg', 136, 112); b.pick('smg', 137, 112); // tier 2 waits for the second half (tram line on)
   b.label('SAFE ROOM', 131, 114, 26, RED); b.label('SHHH', 131, 118.5, 18, CREAM);
   b.carve(138, 114, 138, 116, F.INTERIOR);
   const libraryDoor = b.door(138, 114, 138, 116, 'shutter', 'LIBRARY BACK DOOR');

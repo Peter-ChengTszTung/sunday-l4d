@@ -52,15 +52,20 @@ chapter and the room moves on to the next. Pick the starting chapter in the lobb
 weapon stops: the *Buzz Blaster* (SMG), *Boomstick* (pump shotgun) and *Long Bonker* (rifle),
 then rarer finds later on: the *Rumble Drum* (auto shotgun), the *Kebabber* (sniper; each
 round skewers up to four sleepers in a line), the *Bloop Tube* (grenade launcher; lobbed
-shells, a big blast that never hurts the squad, only half-armed closer than 3 m) and the
-*Thunder Pea* (magnum; replaces the Pea Shooter, still endless). Guns and ammo piles are
-single-use: the first survivor to grab one takes it, so share them out. Loot comes back on a
-checkpoint restart.
+shells, a big blast that only nicks the squad near its centre, half-armed closer than 3 m) and the
+*Thunder Pea* (magnum; replaces the Pea Shooter, still endless). Guns are
+single-use: the first survivor to grab one takes it, so share them out. Each ammo pile refills
+every survivor once. Medkits (one carried, healing most of your missing health) are rolled each
+attempt and scale with the squad's size. Loot comes back on a checkpoint restart.
 
 **The horde:** walkers, plus three specials — the *Leaper* (pounces from range), the
 *Puffer* (explodes into goo that calls more walkers) and the *Brute* (one or two per run, hits
-like a truck). At 0 HP you go down and bleed out unless a teammate helps you up; knocked-out
-players are rescued next to a teammate after 25 s. If nobody is left standing the squad restarts at the last checkpoint.
+like a truck). At 0 HP you go down and bleed out unless a teammate helps you up (solo, you can get
+yourself up once per attempt). Going down again before a medkit or a safe room counts: the
+third down (second on Nightmare) knocks you out. Knocked-out players are rescued next to a
+teammate after 15/30/45 s (Easy/Normal/Hard; on Nightmare only at the next safe room), and every
+safe room rescues them. Shoving tires you: spam it and it slows down. If nobody is left standing
+the squad restarts at the last checkpoint.
 
 ## Layout
 

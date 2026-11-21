@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, DIFFICULTIES, difficultyLabel, parseDifficulty, weaponIndex, type WeaponId } from '../../shared/constants';
+import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
 import { F, isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -71,11 +71,15 @@ const me = {
   id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
   hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, medkits: 0, respawn: 0, rev: 0,
   weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve),
-  fireCd: 0, reloadT: 0, shoveCd: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
+  fireCd: 0, reloadT: 0, /** Seconds since the last shove, and shove fatigue (PLAYER.shoveMax). */ shoveRest: 99, shoveFat: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
   /** Pinned to a wall by a Charger: no moving, shooting or healing until 'unpin'. */
   pinned: false, pinX: 0, pinZ: 0,
 };
 const roster = new Map<number, RosterEntry>();
+/** This room's difficulty (from the welcome), for the survivor rules in messages. */
+let roomDiff: DifficultyId = 'normal';
+/** "rescue in 30s" / "rescue at the next safe room" for a respawn time (SURVIVOR_RULES). */
+const rescueIn = (secs: number): string => (Number.isFinite(secs) ? `rescue in ${secs}s` : 'rescue at the next safe room');
 const mates = new Map<number, Mate>();
 const zeds = new Map<number, Zed>();
 const corpses: Corpse[] = [];
@@ -344,8 +348,12 @@ function clearNades(): void {
 }
 
 function shove(): void {
-  if (me.st !== PSTATE.ALIVE || me.shoveCd > 0 || !active()) return;
-  me.shoveCd = PLAYER.shoveCd;
+  if (me.st !== PSTATE.ALIVE || me.pinned || !active()) return;
+  // Same fatigue rule as the server (onShove), so a tired shove isn't shown and then ignored.
+  const fat = shoveFatigue(me.shoveFat, me.shoveRest);
+  if (me.shoveRest < shoveCooldown(fat)) return;
+  me.shoveFat = fat + 1; me.shoveRest = 0;
+  if (fat < PLAYER.shoveMax && me.shoveFat >= PLAYER.shoveMax) hud.feed('Arms tired — shoves slow down for a moment');
   net.send({ t: 'v' });
   vm.shove(); sfx.shove();
   // Predict the stagger squash locally so the shove feels instant.
@@ -412,6 +420,7 @@ function onGot(pickupId: number): void {
       const w = WEAPONS[me.primary];
       me.reserve[me.primary] = w.blast ? Math.min(w.reserve, Math.max(me.reserve[me.primary], LAUNCHER_PILE)) : w.reserve;
     }
+    world.setTaken(pickupId, true); // spent for you; teammates can still use this pile
     hud.feed('Ammo topped up');
   }
   else if (k !== 'obj' && k !== 'item') {
@@ -527,7 +536,7 @@ function onEvent(ev: GameEvent): void {
       zeds.clear();
       for (const c of corpses) c.chibi.dispose();
       corpses.length = 0;
-      fx.clearGoo(); pinned.clear(); me.pinned = false;
+      fx.clearGoo(); pinned.clear(); me.pinned = false; me.shoveFat = 0;
       const newChapter = ch !== chapter;
       clearNades();
       loadChapter(ch);
@@ -574,6 +583,8 @@ function onEvent(ev: GameEvent): void {
     case 'shove': { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.6; break; }
     case 'pk': world.setTaken(ev[1], true); break;
     case 'got': if (ev[1] === me.id) onGot(ev[2]); break;
+    case 'loot': for (const id of ev[1]) world.setTaken(id, false); break;
+    case 'last': if (ev[1] === me.id) { hud.banner('Last legs! One more down and you\'re out — find a medkit', true); sfx.down(); } break;
     case 'use': {
       world.setTaken(ev[2], true);
       const s = L.def.steps[step];
@@ -610,9 +621,9 @@ function onEvent(ev: GameEvent): void {
       }
       break;
     case 'down': if (ev[1] !== me.id) { hud.feed(`${roster.get(ev[1])?.name ?? 'A teammate'} is down!`); sfx.down(); } break;
-    case 'dead': hud.feed(`${ev[1] === me.id ? 'You are' : (roster.get(ev[1])?.name ?? 'A teammate') + ' is'} out — rescue in ${PLAYER.respawnTime}s`); break;
+    case 'dead': hud.feed(`${ev[1] === me.id ? 'You are' : (roster.get(ev[1])?.name ?? 'A teammate') + ' is'} out — ${rescueIn(SURVIVOR_RULES[roomDiff].respawn)}`); break;
     case 'revived':
-      if (ev[1] === me.id) { hud.banner('Back on your feet!'); sfx.heal(); }
+      if (ev[1] === me.id) { hud.banner(ev[2] === me.id ? 'You got yourself up!' : 'Back on your feet!'); sfx.heal(); }
       else hud.feed(`${roster.get(ev[1])?.name ?? 'A teammate'} was helped up`);
       break;
     case 'blast': if (ev[1] !== me.id) boomFx(ev[2], ev[3], ev[4], ev[5]); break;
@@ -695,7 +706,8 @@ net.onMessage = (m: ServerMsg) => {
       enterStep(m.step, false);
       showIntro();
       history.replaceState(null, '', `${location.pathname}${location.search}#${m.room}`);
-      hud.setRoom(m.room, difficultyLabel(m.diff ?? 'normal'));
+      roomDiff = parseDifficulty(m.diff ?? 'normal');
+      hud.setRoom(m.room, difficultyLabel(roomDiff));
       enterGame();
       break;
     case 'ro': syncRoster(m.players); break;
@@ -864,7 +876,7 @@ function updateWaypoint(): void {
 function updateMe(dt: number): void {
   if (me.pinned && me.st !== PSTATE.ALIVE) me.pinned = false;
   const alive = me.st === PSTATE.ALIVE, on = active() && alive && !me.pinned;
-  me.fireCd -= dt; me.shoveCd -= dt; me.slowT -= dt;
+  me.fireCd -= dt; me.shoveRest += dt; me.slowT -= dt;
   me.bloom = Math.max(0, me.bloom - dt * 0.09);
   me.recoil += (0 - me.recoil) * Math.min(1, dt * 9);
 
@@ -1018,10 +1030,12 @@ function updateHud(dt: number): void {
   if (openNote && Math.hypot(openNote.def.x - me.x, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
   hud.crosshair(me.st === PSTATE.ALIVE);
   hud.spread(6 + (w.spread + me.bloom) * 260);
-  hud.spectate(me.st === PSTATE.DEAD ? `Knocked out — a teammate will rescue you in ${me.respawn}s` : me.st === PSTATE.DOWN ? 'You are down! Wait for a teammate to help you up'
+  const solo = roster.size <= 1;
+  hud.spectate(me.st === PSTATE.DEAD ? `Knocked out — ${me.respawn < 0 ? 'your team can rescue you at the next safe room' : `a teammate will rescue you in ${me.respawn}s`}`
+    : me.st === PSTATE.DOWN ? (solo ? (me.rev > 0 ? 'You are down! Getting yourself up…' : 'You are down — and alone.') : 'You are down! Wait for a teammate to help you up')
     : me.pinned ? 'Pinned by a Charger! Teammates can shoot or shove it off you' : null);
 
-  if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, 'Being helped up…'); hud.prompt(null); }
+  if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, solo ? 'Getting up…' : 'Being helped up…'); hud.prompt(null); }
   else if (me.healT > 0) { hud.ring(me.healT / PLAYER.healTime, 'Patching up…', 'var(--pink)'); hud.prompt(null); }
   else if (target?.kind === 'revive') {
     if (me.reviving) { hud.ring(target.mate.rev, `Helping ${target.mate.name}…`); hud.prompt(null); }

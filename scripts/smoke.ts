@@ -15,16 +15,16 @@ const L = getLevel(0), MAP = L.def;
 const fail = (msg: string): never => { console.error('FAIL:', msg); server.kill(); process.exit(1); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-interface Bot { ws: WebSocket; id: number; room: string; snap: Extract<ServerMsg, { t: 's' }> | null; events: GameEvent[]; send(m: ClientMsg): void }
+interface Bot { ws: WebSocket; id: number; room: string; /** Pickups taken at join (includes thinned loot). */ taken: Set<number>; snap: Extract<ServerMsg, { t: 's' }> | null; events: GameEvent[]; send(m: ClientMsg): void }
 function bot(name: string, room: string): Promise<Bot> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-    const b: Bot = { ws, id: 0, room: '', snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
+    const b: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
     ws.on('open', () => b.send({ t: 'j', name, room, ch: 0 }));
     ws.on('error', reject);
     ws.on('message', (raw) => {
       const m = JSON.parse(raw.toString()) as ServerMsg;
-      if (m.t === 'w') { b.id = m.id; b.room = m.room; resolve(b); }
+      if (m.t === 'w') { b.id = m.id; b.room = m.room; b.taken = new Set(m.taken); resolve(b); }
       else if (m.t === 's') { b.snap = m; b.events.push(...m.ev); }
     });
   });
@@ -43,9 +43,10 @@ const dormant = a.snap!.z.length;
 if (dormant < 10) fail(`expected wandering zombies, saw ${dormant}`);
 console.log(`ok: 2 players joined room ${a.room}, ${dormant} wanderers placed`);
 
-// Pick up the first weapon and medkit in the chapter.
+// Pick up the first weapon and medkit in the chapter (loot thinning may hide some medkits; b's join only reveals more).
 const gun = MAP.pickups.find((p) => p.kind === 'smg' || p.kind === 'shotgun' || p.kind === 'rifle')!;
-const kit = MAP.pickups.find((p) => p.kind === 'medkit')!;
+const kit = MAP.pickups.find((p) => p.kind === 'medkit' && !a.taken.has(p.id))!;
+if (!kit) fail('no medkit left after loot thinning');
 a.send({ t: 'p', x: gun.x, y: 0, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
 await sleep(100);
 a.send({ t: 'u', id: gun.id });
@@ -61,6 +62,14 @@ b.send({ t: 'u', id: gun.id });
 await sleep(200);
 if (b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === gun.id)) fail('a taken weapon was granted twice');
 if (a.snap!.p.find((p) => p[0] === a.id)![9] !== 1) fail('medkit not carried');
+// Ammo piles serve each survivor once and never vanish for teammates.
+const pile = MAP.pickups.find((p) => p.kind === 'ammo' && !a.taken.has(p.id))!;
+a.send({ t: 'p', x: pile.x, y: 0, z: pile.z, ry: 0, rx: 0, w: 1, a: 0 });
+await sleep(100);
+a.send({ t: 'u', id: pile.id }); a.send({ t: 'u', id: pile.id });
+await sleep(200);
+if (a.events.filter((e) => e[0] === 'got' && e[1] === a.id && e[2] === pile.id).length !== 1) fail('ammo pile should serve a survivor exactly once');
+if (b.events.some((e) => e[0] === 'pk' && e[1] === pile.id)) fail('ammo pile disappeared for a teammate');
 console.log('ok: pickups work');
 
 // Start rooms are sealed until step 1 (usually "use the radio") opens the door: do that first.
@@ -200,7 +209,7 @@ console.log(`ok: all ${MAP.steps.length} quest steps of "${MAP.title}" completed
 const cpStep = MAP.steps.findIndex((s) => s.kind === 'gather' && s.checkpoint);
 const c = await new Promise<Bot>((resolve, reject) => {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-  const bt: Bot = { ws, id: 0, room: '', snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
+  const bt: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
   ws.on('open', () => bt.send({ t: 'j', name: 'Gamma', room: '', create: true, ch: 0, cp: cpStep, diff: 'hard' }));
   ws.on('error', reject);
   ws.on('message', (raw) => {

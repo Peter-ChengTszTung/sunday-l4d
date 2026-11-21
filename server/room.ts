@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, HEAD_MULT, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, type DifficultyId } from '../shared/constants';
+import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, headMult, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type DifficultyId } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -140,7 +140,7 @@ const DIRECTOR = {
    * (`split[2]` = the middle brute/specials stage). The Brute stage is rolled with `bruteChance`, never
    * on a step that already brings one; if a Brute is up when it begins it plays as a specials push.
    * Holds under `shortHold` s are just wave -> final.
-   * Per stage kind: `horde` (fraction of a full horde, 12 + 4n; the first stage's horde is the step's
+   * Per stage kind: `horde` (fraction of a full horde, HORDE.base + HORDE.per x n; the first stage's horde is the step's
    * `horde` flag), `trickle` (s between walkers at one survivor, minus `triPer` per extra one, at
    * least `triMin`; 0 = none) and `push[kind][n - 1]` specials spawned lurking that strike together
    * after at most `pushWait` s (spotting or hurting one blows it sooner). The default script's second
@@ -168,26 +168,41 @@ const DIRECTOR = {
  *  - `peak`: x DIRECTOR.peak, the team intensity that ends BUILD_UP (also the ambient ease scale).
  *    Higher = the team has to take more before the director backs off. Capped at 95 (intensity tops out at 100).
  *  - `relax`: x DIRECTOR.relaxMin and relaxMax (the RELAX breather).
- *  - `mob`: x horde sizes: timed/camping/lever/step hordes (12 + 4n), holdout stage hordes, and the
+ *  - `mob`: x horde sizes: timed/camping/lever/step hordes (HORDE), holdout stage hordes, and the
  *    Alarm Clock and puffer-goo waves.
  *  - `mobEvery`: x the mob timer (mobFirst, mobEvery, mobAfterHoldout) and the anti-camping wait.
- *  - `slots`: + special slots (DIRECTOR.specials.slots and holdout.maxSpecials), at least 1.
+ *  - `slots[n - 1]`: + special slots for n survivors (DIRECTOR.specials.slots and holdout.maxSpecials), at least 1.
  *  - `spCd`: x special timers: per-type cooldowns, the first fill and the gap between fills.
  *  - `ambient`: x ambient trickle rate and target (and the holdout trickle rate).
  *  - `wander`: x each wanderer region's rolled budget (WANDERERS; the live cap `max` is unchanged).
  *  - `brute`: x roaming Brute chance (boss.chance and scriptedChance, at most 1) and the default
  *    holdout script's Brute stage chance; `bruteHp`: x Brute health.
+ *  - `spHp`: x health of the other specials (leaper, puffer, charger, drooler, alarm clock).
  *  - `dmg`: x all damage zombies (and goo puddles) deal to survivors.
+ * Survivor-side rules (respawn, downs, medkit heal, solo self-revives) are shared/constants.ts SURVIVOR_RULES.
  */
 const DIFFICULTY: Record<DifficultyId, {
-  peak: number; relax: number; mob: number; mobEvery: number; slots: number; spCd: number;
-  ambient: number; wander: number; brute: number; bruteHp: number; dmg: number;
+  peak: number; relax: number; mob: number; mobEvery: number; slots: readonly number[]; spCd: number;
+  ambient: number; wander: number; brute: number; bruteHp: number; spHp: number; dmg: number;
 }> = {
-  easy: { peak: 0.75, relax: 1.3, mob: 0.7, mobEvery: 1.3, slots: -1, spCd: 1.35, ambient: 0.75, wander: 0.8, brute: 0.6, bruteHp: 0.8, dmg: 0.6 },
-  normal: { peak: 1, relax: 1, mob: 1, mobEvery: 1, slots: 0, spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, dmg: 1 },
-  hard: { peak: 1.2, relax: 0.75, mob: 1.25, mobEvery: 0.85, slots: 0, spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, dmg: 1.3 },
-  nightmare: { peak: 1.35, relax: 0.55, mob: 1.5, mobEvery: 0.7, slots: 1, spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, dmg: 1.6 },
+  easy: { peak: 0.75, relax: 1.3, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.75, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5 },
+  normal: { peak: 1, relax: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1 },
+  hard: { peak: 1.2, relax: 0.75, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5 },
+  nightmare: { peak: 1.35, relax: 0.55, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2 },
 };
+/** Brute health: base + this per survivor beyond the first (before difficulty). */
+const BRUTE_HP_PER = 1100;
+/** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */
+const BRUTE_CATCHUP = { mult: 1.3, far: 9 };
+/** A full horde: base + per survivor walkers (before difficulty). Solo gets a smaller one, a full squad the same as before. */
+const HORDE = { base: 8, per: 5 };
+/**
+ * Loot thinning, rolled each attempt: medkits kept on the map are at most base + per x survivors;
+ * `ammo` of the ammo piles are kept (each pile serves every survivor once, see onUse).
+ */
+const LOOT = { medBase: 3, medPer: 2, ammo: 0.5 };
+/** Most a launcher blast does to a survivor at its centre (falls to 0 at half its radius). */
+const BLAST_FF = 20;
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -239,6 +254,10 @@ export interface Player {
   pinned: number;
   /** Director pacing: how hard-pressed this survivor is (0..100, server-only). */
   intensity: number;
+  /** Times downed since the last medkit, rescue or safe room (SURVIVOR_RULES.downs). */ downs: number;
+  /** Solo self-revives left this attempt, and the revive time the current one needs (s). */ selfRev: number; revNeed: number;
+  /** Shove fatigue (PLAYER.shoveMax). */ shoveFat: number;
+  /** Ammo piles this survivor has used (each pile serves every survivor once). */ ammoUsed: Set<number>;
 }
 
 interface Zombie {
@@ -359,6 +378,9 @@ export class Room {
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
+  /** Loot thinning (thinLoot): this attempt's medkits in reveal order, and those currently held back. */
+  private medOrder: number[] = [];
+  private thinned = new Set<number>();
   private events: GameEvent[] = [];
   private time = 0;
   private kills = 0;
@@ -419,8 +441,12 @@ export class Room {
   /** Team intensity that ends BUILD_UP, after difficulty. */
   private get peak(): number { return Math.min(95, DIRECTOR.peak * this.diff.peak); }
   /** Special slots for `n` survivors, after difficulty. */
-  private specialSlots(n: number): number { const S = DIRECTOR.specials.slots; return Math.max(1, S[Math.min(Math.max(n, 1), S.length) - 1] + this.diff.slots); }
-  /** A wave of `base` walkers (a full horde is 12 + 4n), after difficulty. */
+  private specialSlots(n: number): number { const S = DIRECTOR.specials.slots; return Math.max(1, S[Math.min(Math.max(n, 1), S.length) - 1] + this.slotBonus(n)); }
+  /** Extra special slots from difficulty for `n` survivors. */
+  private slotBonus(n: number): number { const B = this.diff.slots; return B[Math.min(Math.max(n, 1), B.length) - 1]; }
+  /** Survivor-side rules for this room's difficulty. */
+  private get rules() { return SURVIVOR_RULES[this.difficulty]; }
+  /** A wave of `base` walkers (a full horde is HORDE.base + HORDE.per x n), after difficulty. */
   private mobSize(base: number): number { return Math.max(1, Math.round(base * this.diff.mob)); }
   private get def() { return this.L.def; }
   private get cur(): Step | undefined { return this.def.steps[this.step]; }
@@ -487,6 +513,7 @@ export class Room {
     this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst) * this.diff.mobEvery, special: roll(DIRECTOR.specials.first) * this.diff.spCd, hordeTick: 0, wander: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
+    this.thinLoot();
     this.step = cp ? cp.step + 1 : 0;
     this.started = !!cp;
     this.events = [['reset', this.ch, this.step, this.doors, [...this.taken], cp && !freshStart ? 1 : 0]];
@@ -503,9 +530,34 @@ export class Room {
     this.placeWanderers();
   }
 
+  /**
+   * Roll which loot this attempt leaves out (LOOT): marked taken, so clients never show it. Medkits
+   * outside safe rooms scale with the squad; ammo piles are halved because each one now serves every survivor.
+   */
+  private thinLoot(): void {
+    const shuffle = <T>(a: T[]): T[] => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    // Safe-room medkits (inside a checkpoint's gather area) are always stocked; the rest are rolled.
+    const safe = this.def.steps.filter((s) => s.checkpoint && s.area).map((s) => s.area!);
+    const inSafe = (x: number, z: number) => safe.some((a) => cellOf(x) >= a.x0 && cellOf(x) <= a.x1 && cellOf(z) >= a.z0 && cellOf(z) <= a.z1);
+    this.medOrder = shuffle(this.def.pickups.filter((p) => p.kind === 'medkit' && !this.taken.has(p.id) && !inSafe(p.x, p.z)).map((p) => p.id));
+    this.thinned = new Set(this.medOrder.slice(this.medLimit()));
+    for (const id of this.thinned) this.taken.add(id);
+    const ammo = shuffle(this.def.pickups.filter((p) => p.kind === 'ammo' && !this.taken.has(p.id)));
+    for (const p of ammo.slice(Math.ceil(ammo.length * LOOT.ammo))) this.taken.add(p.id);
+  }
+  private medLimit(): number { return LOOT.medBase + LOOT.medPer * Math.max(1, this.players.size); }
+  /** The squad grew: put back thinned medkits up to the new limit (clients get a 'loot' event). */
+  private revealLoot(): void {
+    const back = this.medOrder.slice(0, this.medLimit()).filter((id) => this.thinned.has(id));
+    if (!back.length) return;
+    for (const id of back) { this.thinned.delete(id); this.taken.delete(id); }
+    this.events.push(['loot', back]);
+  }
+
   private spawnPlayer(p: Player, s: Vec2, fresh: boolean): void {
     Object.assign(p, { x: s.x, y: 0, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
-      revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0 });
+      revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0,
+      downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>() });
     if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; }
     if (fresh) { p.medkits = 0; p.kills = 0; }
     this.events.push(['tp', p.id, s.x, s.z, Math.PI]);
@@ -517,8 +569,10 @@ export class Room {
     let look = 0;
     while (used.has(look)) look++;
     const p = { id: this.nextPid++, ws, name: name || SURVIVORS[look].name, look, medkits: 0, kills: 0 } as Player;
-    const mate = this.standing()[0];
+    // Beside a standing survivor, else beside a downed one (a solo self-reviving player gets their helper right there).
+    const mate = this.standing()[0] ?? this.watchers()[0];
     this.players.set(p.id, p);
+    this.revealLoot();
     const spawns = this.spawnPoints();
     this.spawnPlayer(p, spawns[look % spawns.length], true);
     // Late joiners start beside the team if the run is already under way.
@@ -585,6 +639,12 @@ export class Room {
       const keep = [...this.taken].filter((id) => { const k = this.def.pickups[id]?.kind; return k === 'obj' || k === 'item'; });
       this.checkpoint = { step: this.step, doors: this.doors, taken: keep };
       this.events.push(['checkpoint']);
+      // A safe room rescues the dead (beside whoever made it) and clears everyone's downs.
+      const mate = this.standing()[0];
+      for (const p of this.players.values()) {
+        p.downs = 0;
+        if (p.st === PSTATE.DEAD && mate) this.rescue(p, mate);
+      }
     }
     this.step++;
     if (this.step >= this.def.steps.length) { this.win(); return; }
@@ -685,7 +745,8 @@ export class Room {
       case 'u': if (!p.pinned) this.onUse(p, m.id | 0); break;
       case 'h': {
         if (p.st !== PSTATE.ALIVE || p.pinned || p.medkits < 1 || p.hp >= PLAYER.hp) return;
-        p.medkits--; p.hp = Math.min(PLAYER.hp, p.hp + PLAYER.healAmount);
+        p.medkits--; p.hp = Math.min(PLAYER.hp, p.hp + Math.max(HEAL_MIN, (PLAYER.hp - p.hp) * this.rules.heal));
+        p.downs = 0;
         this.events.push(['heal', p.id]);
         break;
       }
@@ -727,7 +788,7 @@ export class Room {
       const nh = Math.max(0, Math.min(budget, h[2] | 0)); budget -= nh;
       if (nb + nh === 0) continue;
       if (Math.hypot(z.x - p.x, z.z - p.z) > wp.range + 4) continue;
-      this.damageZombie(z, wp.dmg * (nb + nh * HEAD_MULT), p, nh > 0);
+      this.damageZombie(z, wp.dmg * (nb + nh * headMult(z.type)), p, nh > 0);
     }
   }
 
@@ -763,7 +824,7 @@ export class Room {
         if (side > 1.4 + ZTYPES[z.type].radius || ox * lx + oz * lz < -1) continue;
         if (!this.L.hasLOS(p.x, p.z, z.x, z.z, this.doors)) break;
       }
-      this.damageZombie(z, wp.dmg * (head ? HEAD_MULT : 1), p, head);
+      this.damageZombie(z, wp.dmg * (head ? headMult(z.type) : 1), p, head);
       if (z.type === ZT.BRUTE) break;
     }
   }
@@ -771,7 +832,8 @@ export class Room {
   /**
    * Launcher impact claim. Pairs with the oldest unclaimed grenade, checks the impact is in
    * range of where it was fired and in sight of it (2D, through the grid), then blasts:
-   * linear falloff, walls block, no damage to survivors (a hop of knockback instead).
+   * linear falloff, walls block. Survivors near the centre take a little (BLAST_FF, not scaled by
+   * difficulty) and a hop of knockback.
    */
   private onBlast(p: Player, m: Extract<ClientMsg, { t: 'g' }>): void {
     if (this.state !== 'play' || p.st === PSTATE.DEAD) return;
@@ -808,15 +870,21 @@ export class Room {
     for (const q of this.players.values()) {
       if (q.st !== PSTATE.ALIVE || q.pinned) continue;
       const qd = Math.hypot(q.x - bx, q.z - bz);
-      if (qd > R * 0.5 || qd < 0.01) continue;
+      if (qd > R * 0.5) continue;
+      const ff = Math.round(BLAST_FF * power * (1 - qd / (R * 0.5)));
+      if (ff >= 1) this.damagePlayer(q, ff, bx, bz, false, false);
+      if (qd < 0.01) continue;
       this.events.push(['kb', q.id, r2(((q.x - bx) / qd) * 6 * power), r2(((q.z - bz) / qd) * 6 * power)]);
     }
     this.alertNear(bx, bz, 30);
   }
 
   private onShove(p: Player): void {
-    if (p.st !== PSTATE.ALIVE || p.pinned || this.time - p.lastShove < PLAYER.shoveCd * 0.8) return;
-    p.lastShove = this.time;
+    if (p.st !== PSTATE.ALIVE || p.pinned) return;
+    // Fatigue gets the same 0.8 slack as the cooldown, so arrival jitter can't tip it past shoveMax before the client.
+    const rest = this.time - p.lastShove, fat = shoveFatigue(p.shoveFat, rest / 0.8);
+    if (rest < shoveCooldown(fat) * 0.8) return;
+    p.lastShove = this.time; p.shoveFat = fat + 1;
     const fx = -Math.sin(p.ry), fz = -Math.cos(p.ry);
     for (const z of [...this.zombies.values()]) {
       const dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz);
@@ -824,7 +892,13 @@ export class Room {
       if (d > PLAYER.shoveRange + T.radius || d < 0.001) continue;
       if ((dx * fx + dz * fz) / d < 0.3) continue;
       if (z.type === ZT.BRUTE) continue;
-      // A shove interrupts any windup, charge, pin or ring. Chargers are heavy and barely budge.
+      // A pinning Charger isn't freed by one shove: it counts toward CHARGER.pinBreakDmg.
+      if (z.type === ZT.CHARGER && z.st === ZSTATE.PIN) {
+        z.pinHit += CHARGER.shovePin - 8;
+        this.damageZombie(z, 8, p, false);
+        continue;
+      }
+      // A shove interrupts any windup, charge or ring. Chargers are heavy and barely budge.
       const kick = z.type === ZT.CHARGER ? 3 : 9;
       z.stun = z.type === ZT.WALKER ? 1.1 : 0.7;
       z.vx = (dx / d) * kick; z.vz = (dz / d) * kick;
@@ -858,7 +932,13 @@ export class Room {
       this.events.push(['pk', id], ['item', p.id, id, this.collected, s.count ?? 0]);
       return;
     }
-    // Weapons and ammo are single-use: whoever grabs it first takes it off the map.
+    // Ammo piles serve each survivor once (hidden only for them); weapons are single-use.
+    if (pk.kind === 'ammo') {
+      if (this.taken.has(id) || p.ammoUsed.has(id) || p.primary < 0) return;
+      p.ammoUsed.add(id);
+      this.events.push(['got', p.id, id]);
+      return;
+    }
     if (this.taken.has(id)) return;
     this.taken.add(id);
     const wi = WEAPONS.findIndex((w) => w.id === pk.kind);
@@ -871,7 +951,8 @@ export class Room {
     const T = ZTYPES[type];
     const zb: Zombie = {
       id: this.nextZid++, type, x, z, ry: rand(0, Math.PI * 2), st: dormant ? ZSTATE.IDLE : ZSTATE.RUN,
-      hp: type === ZT.BRUTE ? Math.round((T.hp + 700 * (this.players.size - 1)) * this.diff.bruteHp) : T.hp,
+      hp: type === ZT.BRUTE ? Math.round((T.hp + BRUTE_HP_PER * (this.players.size - 1)) * this.diff.bruteHp)
+        : type === ZT.WALKER ? T.hp : Math.round(T.hp * this.diff.spHp),
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
       sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1,
@@ -991,6 +1072,7 @@ export class Room {
     if (z.hp > 0 && by && z.type === ZT.CHARGER && z.st === ZSTATE.PIN) {
       z.pinHit += dmg;
       if (z.pinHit >= CHARGER.pinBreakDmg) {
+        z.pinHit = 0;
         for (const q of this.players.values()) if (q.pinned === z.id) this.unpin(q);
         z.st = ZSTATE.STAGGER; z.stun = 1.2; z.vx = -z.lx * 2; z.vz = -z.lz * 2;
       }
@@ -1149,18 +1231,30 @@ export class Room {
     if (gooed) { this.recomputeMarks(); this.spawnWave(this.mobSize(6 + this.players.size), { hunt: GOO_HUNT }); this.events.push(['msg', 'The goo is attracting more of them!']); }
   }
 
-  /** `quiet`: damage over time (goo) that shouldn't stagger/slow the victim on their client. */
-  private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false): void {
+  /**
+   * `quiet`: damage over time (goo) that shouldn't stagger/slow the victim on their client.
+   * `scaled`: zombie damage: the difficulty multiplier applies and it raises intensity (off for friendly fire).
+   */
+  private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false, scaled = true): void {
     if (p.st === PSTATE.DEAD || this.state !== 'play') return;
-    if (this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
+    if (scaled && this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
     p.hp -= dmg;
-    this.bumpIntensity(p, dmg * DIRECTOR.dmg);
+    if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
     this.events.push(quiet ? ['sizzle', p.id, dmg] : ['hurt', p.id, dmg, r2(sx), r2(sz)]);
     if (p.hp > 0) return;
     if (p.st === PSTATE.ALIVE) {
       this.bumpIntensity(p, DIRECTOR.down);
       this.unpin(p);
+      p.downs++;
+      // The down that kills (SURVIVOR_RULES.downs): no getting back up this time.
+      if (p.downs >= this.rules.downs) {
+        this.events.push(['msg', `${p.name} went down one time too many!`]);
+        this.killPlayer(p);
+        return;
+      }
       p.st = PSTATE.DOWN; p.hp = PLAYER.hp; p.revT = 0;
+      // Alone: get yourself up (slowly) while self-revives last.
+      p.revNeed = this.players.size === 1 && p.selfRev > 0 ? PLAYER.reviveTime * PLAYER.selfReviveMul : PLAYER.reviveTime;
       this.events.push(['down', p.id]);
     } else {
       this.killPlayer(p);
@@ -1169,7 +1263,7 @@ export class Room {
 
   private killPlayer(p: Player): void {
     this.unpin(p);
-    p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = PLAYER.respawnTime;
+    p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = this.rules.respawn;
     this.events.push(['dead', p.id]);
   }
 
@@ -1438,7 +1532,7 @@ export class Room {
    * behind the team. `flank`: also from a second side.
    */
   private horde(side: Side = 1, size = 1, flank = false): void {
-    const at = this.spawnWave(this.mobSize((12 + 4 * this.players.size) * size), { side, flank });
+    const at = this.spawnWave(this.mobSize((HORDE.base + HORDE.per * this.players.size) * size), { side, flank });
     this.events.push(at ? ['horde', r2(at.x), r2(at.z)] : ['horde']);
   }
 
@@ -1641,7 +1735,7 @@ export class Room {
       byType[z.type]++;
       if (z.type !== ZT.WALKER && z.type !== ZT.BRUTE) alive++;
     }
-    k = Math.min(k, Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.diff.slots) - alive);
+    k = Math.min(k, Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.slotBonus(n)) - alive);
     let got = 0;
     for (let j = 0; j < k; j++) {
       const type = this.pickSpecial(byType, true);
@@ -2177,7 +2271,7 @@ export class Room {
       }
       const len = Math.hypot(dx, dz);
       if (len > 0.01) {
-        const sp = z.speed * (this.holdout >= 0 || d > 16 ? 1.12 : 1) * dt;
+        const sp = z.speed * (this.holdout >= 0 || d > 16 ? 1.12 : 1) * (z.type === ZT.BRUTE && d > BRUTE_CATCHUP.far ? BRUTE_CATCHUP.mult : 1) * dt;
         L.moveSlide(z, (dx / len) * sp, (dz / len) * sp, T.radius, go);
         z.ry = Math.atan2(-dx, -dz);
       }
@@ -2260,31 +2354,53 @@ export class Room {
       if (!tg || tg.st !== PSTATE.DOWN || Math.hypot(tg.x - p.x, tg.z - p.z) > PLAYER.useRange + 0.8) continue;
       if (revived.has(tg.id)) continue;
       revived.add(tg.id);
+      tg.revNeed = PLAYER.reviveTime;
       tg.revT += dt;
-      if (tg.revT >= PLAYER.reviveTime) {
-        tg.st = PSTATE.ALIVE; tg.hp = 30; tg.revT = 0; p.reviving = 0;
-        this.events.push(['revived', tg.id, p.id]);
-      }
+      if (tg.revT >= tg.revNeed) { this.standUp(tg); p.reviving = 0; this.events.push(['revived', tg.id, p.id]); }
     }
     for (const p of all) {
       if (p.st === PSTATE.DOWN) {
-        if (!revived.has(p.id)) { p.revT = 0; p.hp -= PLAYER.bleedRate * dt; }
+        // Solo self-revive: progress on your own, bleeding as usual.
+        const self = !revived.has(p.id) && this.players.size === 1 && p.selfRev > 0;
+        if (self) {
+          const need = PLAYER.reviveTime * PLAYER.selfReviveMul;
+          if (p.revNeed !== need) { p.revNeed = need; p.revT = 0; } // a teammate's progress (they left) doesn't carry over
+          p.revT += dt; p.hp -= PLAYER.bleedRate * dt;
+          if (p.revT >= p.revNeed && p.hp > 0) {
+            p.selfRev--; this.standUp(p);
+            this.events.push(['revived', p.id, p.id]);
+            continue;
+          }
+        } else if (!revived.has(p.id)) { p.revT = 0; p.hp -= PLAYER.bleedRate * dt; }
         if (p.hp <= 0) this.killPlayer(p);
       } else if (p.st === PSTATE.DEAD) {
         p.respawnT -= dt;
         if (p.respawnT <= 0) {
           const mate = this.standing()[0];
-          if (mate) {
-            p.st = PSTATE.ALIVE; p.hp = 50; p.x = mate.x; p.z = mate.z; p.y = 0;
-            this.events.push(['tp', p.id, r2(p.x), r2(p.z), mate.ry], ['msg', `${p.name} is back in the fight!`]);
-          } else p.respawnT = 1;
+          if (mate) this.rescue(p, mate); else p.respawnT = 1;
         }
       }
     }
   }
 
+  /** Back on their feet after a revive: weak, and one down closer to the last. */
+  private standUp(p: Player): void {
+    p.st = PSTATE.ALIVE; p.hp = 30; p.revT = 0;
+    if (p.downs === this.rules.downs - 1) {
+      this.events.push(['last', p.id], ['msg', `${p.name} is on their last legs — get them a medkit!`]);
+    }
+  }
+
+  /** A dead survivor rejoins beside `mate` with a clean slate of downs. */
+  private rescue(p: Player, mate: Player): void {
+    p.st = PSTATE.ALIVE; p.hp = 50; p.x = mate.x; p.z = mate.z; p.y = 0; p.downs = 0; p.revT = 0;
+    this.events.push(['tp', p.id, r2(p.x), r2(p.z), mate.ry], ['msg', `${p.name} is back in the fight!`]);
+  }
+
   private checkEnd(): void {
     if (!this.players.size || this.standing().length) return;
+    // A lone survivor still getting themselves up isn't beaten yet.
+    if (this.players.size === 1 && [...this.players.values()].some((p) => p.st === PSTATE.DOWN && p.selfRev > 0)) return;
     this.state = 'lost'; this.endTimer = this.checkpoint ? 6 : 9;
     this.events.push(['end', 0, this.kills, Math.round(this.time)]);
   }
@@ -2317,7 +2433,7 @@ export class Room {
     const p: PlayerSnap[] = [];
     for (const q of this.players.values()) {
       p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, q.medkits,
-        r2(q.revT / PLAYER.reviveTime), q.anim, q.st === PSTATE.DEAD ? Math.ceil(q.respawnT) : 0]);
+        r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1]);
     }
     const z: ZombieSnap[] = [];
     for (const q of this.zombies.values()) z.push([q.id, q.type, r2(q.x), r2(q.z), r2(q.ry), q.st]);

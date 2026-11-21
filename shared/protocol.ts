@@ -14,7 +14,10 @@ export type GameEvent =
   | ['shot', pid: number, weapon: number, ex: number, ey: number, ez: number]
   | ['shove', pid: number]
   | ['pk', pickupId: number]
+  // `pid` picked up `pickupId`. Ammo piles send only this (no 'pk'): a pile is spent for that survivor alone.
   | ['got', pid: number, pickupId: number]
+  // Loot held back by thinning comes back (a survivor joined): show these pickups again.
+  | ['loot', pickupIds: number[]]
   | ['use', pid: number, pickupId: number]
   | ['door', doorId: number, open: number]
   | ['step', index: number]
@@ -27,6 +30,8 @@ export type GameEvent =
   | ['down', pid: number]
   | ['dead', pid: number]
   | ['revived', pid: number, by: number]
+  // `pid` is one down from death (SURVIVOR_RULES.downs) until a medkit, rescue or safe room.
+  | ['last', pid: number]
   | ['kb', pid: number, vx: number, vz: number]
   // A horde is coming; (x, z): where its main body spawns from (absent if it trickles in from all over).
   | ['horde', x?: number, z?: number]

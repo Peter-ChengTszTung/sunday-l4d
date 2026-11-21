@@ -78,7 +78,7 @@ export class Hud {
         d.className = `mate ${m.st === PSTATE.DOWN ? 'down' : m.st === PSTATE.DEAD ? 'dead' : ''}`;
         const n = document.createElement('div');
         n.style.color = m.color;
-        n.textContent = m.st === PSTATE.DOWN ? `${m.name} — needs help!` : m.st === PSTATE.DEAD ? `${m.name} — back in ${m.respawn}s` : m.name;
+        n.textContent = m.st === PSTATE.DOWN ? `${m.name} — needs help!` : m.st === PSTATE.DEAD ? (m.respawn < 0 ? `${m.name} — rescue at the safe room` : `${m.name} — back in ${m.respawn}s`) : m.name;
         const bar = document.createElement('div');
         bar.className = 'bar';
         const fill = document.createElement('i');
