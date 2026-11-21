@@ -34,13 +34,14 @@ export class Hud {
   show(on: boolean): void { this.el.hud.hidden = !on; }
   pause(on: boolean): void { this.el.pause.hidden = !on; }
 
-  setRoom(code: string): void {
-    const b = this.el.room;
-    b.textContent = `Room ${code} · copy invite`;
+  /** `diff`: difficulty label, shown unless Normal. */
+  setRoom(code: string, diff = 'Normal'): void {
+    const b = this.el.room, label = `Room ${code}${diff === 'Normal' ? '' : ` · ${diff}`} · copy invite`;
+    b.textContent = label;
     b.onclick = () => {
       void navigator.clipboard?.writeText(location.href).then(() => {
         b.textContent = 'Invite link copied!';
-        setTimeout(() => { b.textContent = `Room ${code} · copy invite`; }, 1600);
+        setTimeout(() => { b.textContent = label; }, 1600);
       });
     };
   }

@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, weaponIndex, type WeaponId } from '../../shared/constants';
+import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, DIFFICULTIES, difficultyLabel, parseDifficulty, weaponIndex, type WeaponId } from '../../shared/constants';
 import { F, isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -695,7 +695,7 @@ net.onMessage = (m: ServerMsg) => {
       enterStep(m.step, false);
       showIntro();
       history.replaceState(null, '', `${location.pathname}${location.search}#${m.room}`);
-      hud.setRoom(m.room);
+      hud.setRoom(m.room, difficultyLabel(m.diff ?? 'normal'));
       enterGame();
       break;
     case 'ro': syncRoster(m.players); break;
@@ -722,6 +722,10 @@ net.onClose = () => {
 
 // --------------------------------------------------------------------- lobby
 const nameInput = $<HTMLInputElement>('name');
+/** New-room difficulty (remembered like the chapter). */
+const diffSelect = $<HTMLSelectElement>('difficulty');
+diffSelect.replaceChildren(...DIFFICULTIES.map((d) => { const o = document.createElement('option'); o.value = d.id; o.textContent = `${d.label}: ${d.hint}`; return o; }));
+diffSelect.value = parseDifficulty(localStorage.getItem('chibi.diff') ?? 'normal');
 nameInput.value = params.get('name') ?? localStorage.getItem('chibi.name') ?? '';
 const inviteCode = (params.get('room') ?? location.hash.slice(1)).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
@@ -730,13 +734,16 @@ async function join(opts: Omit<JoinOpts, 'name'>): Promise<void> {
   for (const b of lobbyButtons()) b.disabled = true;
   $('lobbymsg').textContent = '';
   sfx.unlock();
-  try { localStorage.setItem('chibi.name', nameInput.value.trim()); localStorage.setItem('chibi.ch', String(chapter)); } catch { /* private mode */ }
+  try {
+    localStorage.setItem('chibi.name', nameInput.value.trim()); localStorage.setItem('chibi.ch', String(chapter));
+    localStorage.setItem('chibi.diff', diffSelect.value);
+  } catch { /* private mode */ }
   try { await net.connect({ name: nameInput.value.trim(), ...opts }); }
   catch (e) { $('lobbymsg').textContent = (e as Error).message; for (const b of lobbyButtons()) b.disabled = false; }
 }
 $('create').addEventListener('submit', (e) => {
   e.preventDefault();
-  void join({ room: '', create: true, ch: chapter, cp: Number($<HTMLSelectElement>('startat').value), priv: $<HTMLInputElement>('priv').checked });
+  void join({ room: '', create: true, ch: chapter, cp: Number($<HTMLSelectElement>('startat').value), priv: $<HTMLInputElement>('priv').checked, diff: diffSelect.value });
 });
 $('quick').addEventListener('click', () => { void join({ room: '' }); });
 $('pause').addEventListener('mousedown', () => { void canvas.requestPointerLock(); });
@@ -759,6 +766,8 @@ async function refreshRooms(): Promise<void> {
     const t = document.createElement('div'); t.className = 'rt';
     const code = document.createElement('b'); code.textContent = r.code;
     t.append(code, `Ch ${r.ch + 1} · ${r.title}`);
+    const diff = parseDifficulty(r.diff ?? 'normal');
+    if (diff !== 'normal') { const d = document.createElement('span'); d.className = `rd ${diff}`; d.textContent = difficultyLabel(diff); t.append(d); }
     const st = document.createElement('div'); st.className = 'rs';
     st.textContent = `${r.state === 'play' ? `Step ${r.step}/${r.steps}: ${r.objective}` : r.state === 'won' ? 'Chapter complete' : 'Regrouping'} · ${r.players.length}/${r.max} ${r.players.join(', ')}`;
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn';

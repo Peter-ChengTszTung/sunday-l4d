@@ -152,6 +152,8 @@ select { font: inherit; font-size: 16px; padding: 9px 10px; border: 3px solid va
 #rooms li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; background: #fff; border: 3px solid var(--ink); border-radius: 12px; padding: 8px 10px; }
 #rooms li.empty { display: block; background: none; border: 2px dashed rgba(26, 18, 38, 0.3); text-align: center; font-weight: 700; opacity: 0.7; }
 #rooms .rt { font-size: 15px; } #rooms .rt b { color: var(--pink); margin-right: 6px; }
+#rooms .rd { margin-left: 8px; padding: 1px 7px; border: 2px solid var(--ink); border-radius: 8px; font-size: 12px; vertical-align: 2px; background: var(--yellow); }
+#rooms .rd.easy { background: var(--green); } #rooms .rd.nightmare { background: var(--ink); color: var(--cream); }
 #rooms .rs { grid-column: 1; font-size: 12px; font-weight: 700; opacity: 0.75; }
 #rooms button { grid-row: 1 / span 2; grid-column: 2; }
 .btn { font: inherit; font-size: 18px; padding: 8px 14px; border: 3px solid var(--ink); border-radius: 12px; background: var(--yellow); color: var(--ink); cursor: pointer; box-shadow: 3px 3px 0 var(--ink); }

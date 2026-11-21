@@ -109,3 +109,24 @@ export const SURVIVORS: SurvivorLook[] = [
   { name: 'Nori', shirt: 0xb18cff, hair: 0x2b2d5b, style: 'buns' },
   { name: 'Taro', shirt: 0xffa94d, hair: 0xe8e8f0, style: 'bob' },
 ];
+
+/**
+ * Room difficulty, picked when a room is created (quick play and code joins are always 'normal').
+ * The wire carries the id ('j' create path, the 'w' welcome and GET /api/rooms); the director's
+ * multipliers per id live server-side in room.ts DIFFICULTY.
+ */
+export const DIFFICULTIES = [
+  { id: 'easy', label: 'Easy', hint: 'Smaller hordes, softer bites' },
+  { id: 'normal', label: 'Normal', hint: 'The intended outbreak' },
+  { id: 'hard', label: 'Hard', hint: 'Bigger hordes, shorter breathers' },
+  { id: 'nightmare', label: 'Nightmare', hint: 'No naps. Bring friends.' },
+] as const;
+export type DifficultyId = (typeof DIFFICULTIES)[number]['id'];
+/** A client-supplied difficulty (an id, or its index in DIFFICULTIES) as an id; anything else is 'normal'. */
+export function parseDifficulty(v: unknown): DifficultyId {
+  if (typeof v === 'string') return DIFFICULTIES.find((d) => d.id === v)?.id ?? 'normal';
+  if (Number.isInteger(v) && (v as number) >= 0 && (v as number) < DIFFICULTIES.length) return DIFFICULTIES[v as number].id;
+  return 'normal';
+}
+/** Display label for a difficulty id (unknown or missing: Normal). */
+export const difficultyLabel = (id: unknown): string => DIFFICULTIES.find((d) => d.id === id)?.label ?? 'Normal';

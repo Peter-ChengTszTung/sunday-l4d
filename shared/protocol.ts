@@ -52,12 +52,14 @@ export type GameEvent =
   | ['blast', pid: number, x: number, y: number, z: number, power: number];
 
 /** GET /api/rooms entry (listed rooms only). */
-export interface RoomInfo { code: string; ch: number; title: string; step: number; steps: number; objective: string; players: string[]; max: number; state: string }
+/** `diff`: DifficultyId (shared/constants.ts DIFFICULTIES); absent = 'normal'. */
+export interface RoomInfo { code: string; ch: number; title: string; step: number; steps: number; objective: string; players: string[]; max: number; state: string; diff?: string }
 
 export interface RosterEntry { id: number; name: string; look: number }
 
 export type ServerMsg =
-  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; debug: number }
+  // diff: the room's DifficultyId (absent = 'normal').
+  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; debug: number; diff?: string }
   | { t: 'ro'; players: RosterEntry[] }
   | { t: 'err'; msg: string }
   // g = open door mask, ho = holdout seconds left (-1 none), q = active step, qc = collected items for a collect step.
@@ -65,7 +67,8 @@ export type ServerMsg =
 
 export type ClientMsg =
   // room '' = quick play; create = open a new room on chapter `ch` starting at checkpoint step `cp` (-1 = chapter start).
-  | { t: 'j'; name: string; room: string; ch?: number; create?: boolean; cp?: number; priv?: boolean }
+  // diff (create only): a DifficultyId or its index in DIFFICULTIES; missing/unknown = 'normal'. Ignored when joining.
+  | { t: 'j'; name: string; room: string; ch?: number; create?: boolean; cp?: number; priv?: boolean; diff?: string | number }
   | { t: 'p'; x: number; y: number; z: number; ry: number; rx: number; w: number; a: number }
   // n: grenade sequence number (launcher only), echoed by the matching 'g' impact claim.
   | { t: 'f'; w: number; h: [number, number, number][]; e: [number, number, number]; n?: number }

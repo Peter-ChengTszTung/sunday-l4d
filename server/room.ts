@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, HEAD_MULT, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM } from '../shared/constants';
+import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, HEAD_MULT, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, type DifficultyId } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -160,6 +160,32 @@ const DIRECTOR = {
     pushWait: 6, maxSpecials: [2, 2, 3, 4] as const, drip: 7,
     finalMsg: 'Here they come! Hold the line!',
   },
+};
+/**
+ * Room difficulty (ids and labels: shared/constants.ts DIFFICULTIES). Multipliers on DIRECTOR /
+ * WANDERERS / zombie tuning, read through `this.diff`; 'normal' is all 1 / 0 = the base tuning.
+ *  - `peak`: x DIRECTOR.peak, the team intensity that ends BUILD_UP (also the ambient ease scale).
+ *    Higher = the team has to take more before the director backs off. Capped at 95 (intensity tops out at 100).
+ *  - `relax`: x DIRECTOR.relaxMin and relaxMax (the RELAX breather).
+ *  - `mob`: x horde sizes: timed/camping/lever/step hordes (12 + 4n), holdout stage hordes, and the
+ *    Alarm Clock and puffer-goo waves.
+ *  - `mobEvery`: x the mob timer (mobFirst, mobEvery, mobAfterHoldout) and the anti-camping wait.
+ *  - `slots`: + special slots (DIRECTOR.specials.slots and holdout.maxSpecials), at least 1.
+ *  - `spCd`: x special timers: per-type cooldowns, the first fill and the gap between fills.
+ *  - `ambient`: x ambient trickle rate and target (and the holdout trickle rate).
+ *  - `wander`: x each wanderer region's rolled budget (WANDERERS; the live cap `max` is unchanged).
+ *  - `brute`: x roaming Brute chance (boss.chance and scriptedChance, at most 1) and the default
+ *    holdout script's Brute stage chance; `bruteHp`: x Brute health.
+ *  - `dmg`: x all damage zombies (and goo puddles) deal to survivors.
+ */
+const DIFFICULTY: Record<DifficultyId, {
+  peak: number; relax: number; mob: number; mobEvery: number; slots: number; spCd: number;
+  ambient: number; wander: number; brute: number; bruteHp: number; dmg: number;
+}> = {
+  easy: { peak: 0.75, relax: 1.3, mob: 0.7, mobEvery: 1.3, slots: -1, spCd: 1.35, ambient: 0.75, wander: 0.8, brute: 0.6, bruteHp: 0.8, dmg: 0.6 },
+  normal: { peak: 1, relax: 1, mob: 1, mobEvery: 1, slots: 0, spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, dmg: 1 },
+  hard: { peak: 1.2, relax: 0.75, mob: 1.25, mobEvery: 0.85, slots: 0, spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, dmg: 1.3 },
+  nightmare: { peak: 1.35, relax: 0.55, mob: 1.5, mobEvery: 0.7, slots: 1, spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, dmg: 1.6 },
 };
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
@@ -375,9 +401,9 @@ export class Room {
 
   /**
    * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
-   * or -1 for the chapter start. `listed`: shown in the lobby's room list.
+   * or -1 for the chapter start. `listed`: shown in the lobby's room list. `difficulty`: DIFFICULTY row, fixed for the room's life.
    */
-  constructor(public code: string, chapter = 0, private allowDebug = false, startAt = -1, readonly listed = true) {
+  constructor(public code: string, chapter = 0, private allowDebug = false, startAt = -1, readonly listed = true, readonly difficulty: DifficultyId = 'normal') {
     this.loadChapter(chapter);
     const cp = this.checkpointFor(startAt);
     if (cp) { this.checkpoint = cp; this.reset(true, true); } else this.reset(false);
@@ -387,6 +413,14 @@ export class Room {
   destroy(): void { clearInterval(this.interval); }
 
   get chapter(): number { return this.ch; }
+  /** This room's difficulty multipliers (DIFFICULTY). */
+  private get diff() { return DIFFICULTY[this.difficulty]; }
+  /** Team intensity that ends BUILD_UP, after difficulty. */
+  private get peak(): number { return Math.min(95, DIRECTOR.peak * this.diff.peak); }
+  /** Special slots for `n` survivors, after difficulty. */
+  private specialSlots(n: number): number { const S = DIRECTOR.specials.slots; return Math.max(1, S[Math.min(Math.max(n, 1), S.length) - 1] + this.diff.slots); }
+  /** A wave of `base` walkers (a full horde is 12 + 4n), after difficulty. */
+  private mobSize(base: number): number { return Math.max(1, Math.round(base * this.diff.mob)); }
   private get def() { return this.L.def; }
   private get cur(): Step | undefined { return this.def.steps[this.step]; }
 
@@ -426,6 +460,7 @@ export class Room {
     return {
       code: this.code, ch: this.ch, title: this.def.title, step: this.step + 1, steps: this.def.steps.length,
       objective: s ? s.objective : '', players: [...this.players.values()].map((p) => p.name), max: MAX_PLAYERS, state: this.state,
+      diff: this.difficulty,
     };
   }
 
@@ -448,7 +483,7 @@ export class Room {
     this.clearHazards();
     this.alarmAt = 0;
     this.waves = []; this.marks.clear();
-    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, wander: 0 };
+    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst) * this.diff.mobEvery, special: roll(DIRECTOR.specials.first) * this.diff.spCd, hordeTick: 0, wander: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -491,7 +526,7 @@ export class Room {
       this.events.pop();
       this.events.push(['tp', p.id, p.x, p.z, mate.ry]);
     }
-    this.send(p, { t: 'w', id: p.id, room: this.code, ch: this.ch, step: this.step, taken: [...this.taken], doors: this.doors, x: p.x, z: p.z, debug: this.allowDebug ? 1 : 0 });
+    this.send(p, { t: 'w', id: p.id, room: this.code, ch: this.ch, step: this.step, taken: [...this.taken], doors: this.doors, x: p.x, z: p.z, debug: this.allowDebug ? 1 : 0, diff: this.difficulty });
     this.broadcastRoster();
     this.events.push(['msg', `${p.name} joined the squad`]);
     return p;
@@ -833,7 +868,7 @@ export class Room {
     const T = ZTYPES[type];
     const zb: Zombie = {
       id: this.nextZid++, type, x, z, ry: rand(0, Math.PI * 2), st: dormant ? ZSTATE.IDLE : ZSTATE.RUN,
-      hp: type === ZT.BRUTE ? T.hp + 700 * (this.players.size - 1) : T.hp,
+      hp: type === ZT.BRUTE ? Math.round((T.hp + 700 * (this.players.size - 1)) * this.diff.bruteHp) : T.hp,
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
       sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1,
@@ -847,7 +882,7 @@ export class Room {
     const list = this.cd.regions.list, n = list.length;
     const budget = new Int16Array(n);
     for (let i = 0; i < n; i++) {
-      const v = list[i].weight * roll(WANDERERS.roll);
+      const v = list[i].weight * roll(WANDERERS.roll) * this.diff.wander;
       budget[i] = Math.floor(v) + (Math.random() < v % 1 ? 1 : 0);
     }
     this.wander = { budget, placed: new Int16Array(n), spent: new Uint8Array(n), minD: new Int16Array(n) };
@@ -1108,12 +1143,13 @@ export class Room {
       if (Math.hypot(o.x - z.x, o.z - z.z) < 3) this.damageZombie(o, 60, null, false);
     }
     // Like bile: the called wave comes at the gooed survivors and goes for them first.
-    if (gooed) { this.recomputeMarks(); this.spawnWave(6 + this.players.size, { hunt: GOO_HUNT }); this.events.push(['msg', 'The goo is attracting more of them!']); }
+    if (gooed) { this.recomputeMarks(); this.spawnWave(this.mobSize(6 + this.players.size), { hunt: GOO_HUNT }); this.events.push(['msg', 'The goo is attracting more of them!']); }
   }
 
   /** `quiet`: damage over time (goo) that shouldn't stagger/slow the victim on their client. */
   private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false): void {
     if (p.st === PSTATE.DEAD || this.state !== 'play') return;
+    if (this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
     p.hp -= dmg;
     this.bumpIntensity(p, dmg * DIRECTOR.dmg);
     this.events.push(quiet ? ['sizzle', p.id, dmg] : ['hurt', p.id, dmg, r2(sx), r2(sz)]);
@@ -1280,7 +1316,7 @@ export class Room {
   private specialGone(type: number): void {
     for (const o of this.zombies.values()) if (o.type === type && !o.dormant) return;
     const cd = DIRECTOR.specials.cd[type];
-    if (cd) this.spReady[type] = this.time + roll(cd);
+    if (cd) this.spReady[type] = this.time + roll(cd) * this.diff.spCd;
   }
 
   /** Holder `z` was found out: it attacks now, and the rest of the ambush follows shortly. */
@@ -1399,7 +1435,7 @@ export class Room {
    * behind the team. `flank`: also from a second side.
    */
   private horde(side: Side = 1, size = 1, flank = false): void {
-    const at = this.spawnWave(Math.max(1, Math.round((12 + 4 * this.players.size) * size)), { side, flank });
+    const at = this.spawnWave(this.mobSize((12 + 4 * this.players.size) * size), { side, flank });
     this.events.push(at ? ['horde', r2(at.x), r2(at.z)] : ['horde']);
   }
 
@@ -1543,13 +1579,13 @@ export class Room {
       console.log(`[director ${this.code}] t=${this.time.toFixed(1)} ${PHASE_NAMES[this.phase]} -> ${PHASE_NAMES[ph]} (${why}) intensity=${team} best=${this.best}`);
     }
     this.phase = ph; this.phaseT = 0; this.phaseBest = this.best;
-    this.phaseLen = ph === Phase.SUSTAIN ? roll(DIRECTOR.sustain) : ph === Phase.RELAX ? roll(DIRECTOR.relaxMax) : 0;
+    this.phaseLen = ph === Phase.SUSTAIN ? roll(DIRECTOR.sustain) : ph === Phase.RELAX ? roll(DIRECTOR.relaxMax) * this.diff.relax : 0;
   }
 
   /** A holdout (crescendo) just ended: L4D's post-crescendo breather, and no horde right after it. */
   private crescendoOver(): void {
     this.setPhase(Phase.RELAX, 'holdout over');
-    this.t.horde = Math.max(this.t.horde, roll(DIRECTOR.mobAfterHoldout));
+    this.t.horde = Math.max(this.t.horde, roll(DIRECTOR.mobAfterHoldout) * this.diff.mobEvery);
     this.campT = 0; this.advancedAt = this.time;
     // Team-sourced leftovers of the crescendo's horde are dropped; noise/goo waves are still owed.
     this.waves = this.waves.filter((w) => w.anchor >= 0 || w.hunt > this.time);
@@ -1559,7 +1595,7 @@ export class Room {
   /** Start step `s`'s holdout: the timer, its script (authored or the default curve) and the first stage. */
   private startHoldout(s: Step): void {
     const n = this.players.size, H = DIRECTOR.holdout, hold = s.hold ?? 60;
-    const stages = s.holdScript ?? defaultHoldScript(hold, n, !s.brute && hold >= H.longHold && Math.random() < H.bruteChance);
+    const stages = s.holdScript ?? defaultHoldScript(hold, n, !s.brute && hold >= H.longHold && Math.random() < H.bruteChance * this.diff.brute);
     let acc = 0;
     const ends = stages.map((g) => (acc += g.secs) * HOLD_SCALE);
     ends[ends.length - 1] = Infinity; // the last stage runs until the timer does, whatever the script adds up to
@@ -1602,7 +1638,7 @@ export class Room {
       byType[z.type]++;
       if (z.type !== ZT.WALKER && z.type !== ZT.BRUTE) alive++;
     }
-    k = Math.min(k, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] - alive);
+    k = Math.min(k, Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.diff.slots) - alive);
     let got = 0;
     for (let j = 0; j < k; j++) {
       const type = this.pickSpecial(byType, true);
@@ -1632,7 +1668,7 @@ export class Room {
     if (every > 0) {
       this.t.ambient -= dt;
       if (this.t.ambient <= 0) {
-        this.t.ambient = Math.max(H.triMin, every - H.triPer * (n - 1));
+        this.t.ambient = Math.max(H.triMin, every - H.triPer * (n - 1)) / this.diff.ambient;
         if (room) this.spawnAt(ZT.WALKER, 6, 18);
       }
     }
@@ -1650,7 +1686,7 @@ export class Room {
     const scripted = this.def.steps.some((s) => s.brute);
     const lo = Math.max(r.total * B.band[0], this.routeBest + B.minAhead), hi = r.total * B.band[1];
     let rejected = 0, why = 'no roll';
-    if (Math.random() < (scripted ? B.scriptedChance : B.chance)) {
+    if (Math.random() < Math.min(1, (scripted ? B.scriptedChance : B.chance) * this.diff.brute)) {
       why = lo < hi ? 'all rejected' : 'band behind';
       for (let i = 0; lo < hi && i < B.tries; i++) {
         const v = Math.round(rand(lo, hi));
@@ -1710,7 +1746,7 @@ export class Room {
     const D = DIRECTOR;
     switch (this.phase) {
       case Phase.BUILD_UP:
-        if (this.teamIntensity() >= D.peak) this.setPhase(Phase.SUSTAIN, 'peak');
+        if (this.teamIntensity() >= this.peak) this.setPhase(Phase.SUSTAIN, 'peak');
         break;
       case Phase.SUSTAIN:
         if (this.phaseT >= this.phaseLen) this.setPhase(Phase.FADE, 'sustained');
@@ -1720,7 +1756,7 @@ export class Room {
         else if (!this.waves.length && nearCommons <= D.fadeQuiet) this.setPhase(Phase.RELAX, 'cleared');
         break;
       case Phase.RELAX:
-        if (this.phaseT >= D.relaxMin && (this.phaseT >= this.phaseLen || this.best - this.phaseBest >= D.relaxAdvance)) {
+        if (this.phaseT >= D.relaxMin * this.diff.relax && (this.phaseT >= this.phaseLen || this.best - this.phaseBest >= D.relaxAdvance)) {
           this.setPhase(Phase.BUILD_UP, this.phaseT >= this.phaseLen ? 'relaxed' : 'advanced');
         }
         break;
@@ -1776,7 +1812,7 @@ export class Room {
     if (this.holdout < 0) this.updatePhase(dt, nearCommons);
 
     // Holding specials attack together: slots full, waited long enough (in any phase), or a crescendo began.
-    const slots = S.slots[Math.min(n, S.slots.length) - 1];
+    const slots = this.specialSlots(n);
     if (!holders) this.ambushUntil = Infinity;
     // In a holdout only its special pushes hold (startHoldout released the rest), on their own clock.
     else if ((specials >= slots && this.holdout < 0) || this.time >= this.ambushUntil) {
@@ -1818,8 +1854,8 @@ export class Room {
     t.ambient -= dt;
     if (t.ambient <= 0) {
       const A = D.ambient, f = this.ambientScale();
-      t.ambient = Math.max(A.minEvery, (roll(A.every) - A.perPlayer * n) / f);
-      const room = Math.round((A.target[0] + A.target[1] * n) * f) - commons;
+      t.ambient = Math.max(A.minEvery, (roll(A.every) - A.perPlayer * n) / (f * this.diff.ambient));
+      const room = Math.round((A.target[0] + A.target[1] * n) * f * this.diff.ambient) - commons;
       if (room > 0) this.spawnAmbient(room);
     }
     // Fill a free slot with a holding special (one at a time); re-check soon if every type is cooling down.
@@ -1830,7 +1866,7 @@ export class Room {
       const zb = type < 0 ? null : type === ZT.ALARM ? this.spawnSpecial(type, 12, 24, false) : this.spawnSpecial(type, 9, 20, true);
       if (zb && type === ZT.ALARM) this.alarmAt = this.time + 75;
       if (zb?.hold && !holders) this.ambushUntil = this.time + S.maxWait;
-      t.special = zb ? roll(S.fill) : 1.5;
+      t.special = zb ? roll(S.fill) * this.diff.spCd : 1.5;
     }
     // A Brute fight is the peak: no timed mobs or camping hordes on top of it.
     if (ph !== Phase.BUILD_UP || brute) return;
@@ -1839,14 +1875,14 @@ export class Room {
     const moving = this.time - this.advancedAt < D.advanceWindow;
     t.horde -= dt * (moving ? D.mobMove : D.mobStill);
     if (t.horde <= 0) {
-      t.horde = roll(D.mobEvery);
+      t.horde = roll(D.mobEvery) * this.diff.mobEvery;
       this.horde();
     }
     // Anti-camping: too long without progress brings a horde from behind, pushing them on.
     if (!moving) this.campT += dt;
-    if (this.campT >= D.camp) {
+    if (this.campT >= D.camp * this.diff.mobEvery) {
       this.campT = 0;
-      t.horde = Math.max(t.horde, roll(D.mobEvery));
+      t.horde = Math.max(t.horde, roll(D.mobEvery) * this.diff.mobEvery);
       if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} camping: horde from behind`);
       this.horde(-1);
     }
@@ -1858,7 +1894,7 @@ export class Room {
     if (this.phase === Phase.SUSTAIN) return A.sustain;
     if (this.phase !== Phase.BUILD_UP) return 0;
     const ramp = A.rampFrom + (1 - A.rampFrom) * Math.min(1, this.phaseT / A.rampTime);
-    return ramp * (1 - A.ease * Math.min(1, this.teamIntensity() / DIRECTOR.peak));
+    return ramp * (1 - A.ease * Math.min(1, this.teamIntensity() / this.peak));
   }
 
   /** One ambient walker, or (clumpChance) a small clump from one hidden spot; at most `room` of them. */
@@ -2056,7 +2092,7 @@ export class Room {
         if (z.t <= 0) {
           // Rang out: sleepers for streets around wake, and a mini-horde comes from round the clock.
           this.alertNear(z.x, z.z, 25);
-          this.spawnWave(5 + 3 * this.players.size, { noise: cellOf(z.z) * W + cellOf(z.x) });
+          this.spawnWave(this.mobSize(5 + 3 * this.players.size), { noise: cellOf(z.z) * W + cellOf(z.x) });
           this.events.push(['alarm', z.id, r2(z.x), r2(z.z)]);
           z.st = ZSTATE.RUN; z.flee = ALARM.flee; z.sp = ALARM.cooldown;
         }

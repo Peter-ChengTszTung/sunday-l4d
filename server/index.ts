@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { Room, type Player } from './room';
-import { MAX_PLAYERS } from '../shared/constants';
+import { MAX_PLAYERS, parseDifficulty } from '../shared/constants';
 import type { ClientMsg } from '../shared/protocol';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -67,11 +67,11 @@ function newCode(): string {
 // Dev servers accept the step-jump debug message (map testing).
 const ALLOW_DEBUG = !PROD || process.env.ALLOW_DEBUG === '1';
 
-function findRoom(requested: unknown, chapter: unknown, create = false, cp: unknown = -1, priv = false): Room {
+function findRoom(requested: unknown, chapter: unknown, create = false, cp: unknown = -1, priv = false, diff: unknown = undefined): Room {
   const code = String(requested ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   const ch = Number.isInteger(chapter) ? (chapter as number) : -1;
   if (create) {
-    const r = new Room(newCode(), Math.max(0, ch), ALLOW_DEBUG, Number.isInteger(cp) ? (cp as number) : -1, !priv);
+    const r = new Room(newCode(), Math.max(0, ch), ALLOW_DEBUG, Number.isInteger(cp) ? (cp as number) : -1, !priv, parseDifficulty(diff));
     rooms.set(r.code, r);
     return r;
   }
@@ -80,8 +80,8 @@ function findRoom(requested: unknown, chapter: unknown, create = false, cp: unkn
     if (!r) { r = new Room(code, Math.max(0, ch), ALLOW_DEBUG); rooms.set(code, r); }
     return r;
   }
-  // Quick play: any room on the requested chapter (or any, if none asked) with a free seat, otherwise a fresh one.
-  for (const r of rooms.values()) if (r.listed && r.players.size < MAX_PLAYERS && (ch < 0 || r.chapter === ch)) return r;
+  // Quick play: any listed Normal room on the requested chapter (or any, if none asked) with a free seat, otherwise a fresh (Normal) one.
+  for (const r of rooms.values()) if (r.listed && r.difficulty === 'normal' && r.players.size < MAX_PLAYERS && (ch < 0 || r.chapter === ch)) return r;
   const fresh = new Room(newCode(), Math.max(0, ch), ALLOW_DEBUG);
   rooms.set(fresh.code, fresh);
   return fresh;
@@ -106,7 +106,7 @@ wss.on('connection', (ws: WebSocket) => {
     if (!m || typeof m !== 'object') return;
     if (!player || !room) {
       if (m.t !== 'j') return;
-      room = findRoom(m.room, m.ch, m.create === true, m.cp, m.priv === true);
+      room = findRoom(m.room, m.ch, m.create === true, m.cp, m.priv === true, m.diff);
       const name = String(m.name ?? '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 14);
       player = room.addPlayer(ws, name);
       if (!player) {
