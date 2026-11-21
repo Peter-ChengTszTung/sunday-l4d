@@ -65,7 +65,9 @@ function useLevel(next: Level): void {
 }
 const fx = new FX();
 const sfx = new Sfx();
-fx.onSplat = (x, z) => sfx.splat(Math.hypot(x - me.x, z - me.z));
+fx.onSplat = (x, z) => sfx.splat(x, z);
+// Walls between you and a sound muffle it.
+sfx.occluded = (x, z) => !L.hasLOS(cam.x, cam.z, x, z, doors);
 const hud = new Hud();
 const net = new Net();
 const vm = new ViewModel(WEAPONS.map((w) => w.id));
@@ -74,9 +76,10 @@ const vm = new ViewModel(WEAPONS.map((w) => w.id));
 interface Mate {
   id: number; name: string; look: number; /** Shirt colour as CSS, for the name tag and HUD. */ color: string; chibi: Chibi; tag: pc.Entity; gun: pc.Entity | null; gunW: number;
   x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number;
-  hp: number; st: number; respawn: number; rev: number; speed: number;
+  hp: number; st: number; respawn: number; rev: number; speed: number; /** Metres since the last footstep sound. */ stride: number;
 }
-interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry: number; tx: number; tz: number; tr: number; st: number; sfxT: number }
+/** `sfxT`: alarm-ring timer; `vox`: seconds until a special's next presence cue. */
+interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry: number; tx: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
 interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; z: number; scale: number }
 
 const me = {
@@ -88,6 +91,7 @@ const me = {
   pinned: false, pinX: 0, pinZ: 0,
   /** Right mouse held (a scoped weapon aims while it is), and how far the scope has zoomed in (0..1). */
   scopeHeld: false, zoom: 0,
+  /** Metres since the last footstep sound. */ stride: 0,
 };
 /** The scope of the weapon in hand while it is up (held, and not reloading/healing/pinned), else null. */
 function scopeUp(): NonNullable<(typeof WEAPONS)[number]['scope']> | null {
@@ -118,7 +122,7 @@ let inGame = false, locked = false, ended = false;
 let doors = 0, step = 0, qc = 0, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play', debugServer = false;
 /** The offline shooting range, while you are in it (it stands in for the server). */
 let range: ShootingRange | null = null;
-let torchOn = true, groanT = 2, sendT = 0, lookDX = 0, lookDY = 0, time = 0;
+let torchOn = true, groanT = 2, sendT = 0, lookDX = 0, lookDY = 0, time = 0, lastSwipe = 0;
 const keys = new Set<string>();
 const mouse = { left: false };
 
@@ -174,6 +178,7 @@ function switchWeapon(i: number): void {
   if (i === me.weapon || me.st !== PSTATE.ALIVE) return;
   me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0;
   vm.setWeapon(i);
+  sfx.cancelReload(); sfx.draw(i);
   range?.resetStats(); // each weapon's numbers start clean
 }
 
@@ -181,7 +186,7 @@ function startReload(): void {
   const w = WEAPONS[me.weapon];
   if (me.reloadT > 0 || me.mag[me.weapon] >= w.mag || me.reserve[me.weapon] <= 0 || me.st !== PSTATE.ALIVE) return;
   me.reloadT = w.reload;
-  sfx.reload();
+  sfx.reload(me.weapon);
 }
 
 type V3 = { x: number; y: number; z: number };
@@ -384,7 +389,7 @@ function placeNade(n: Nade): void {
 function boomFx(x: number, y: number, z: number, power: number): void {
   fx.blast({ x, y, z }, power);
   const d = Math.hypot(x - me.x, z - me.z);
-  sfx.blast(d, power);
+  sfx.blast(x, z, power);
   me.trauma = Math.min(1, me.trauma + (power < 1 ? 0.5 : 1) / (1 + d * 0.15));
 }
 
@@ -518,7 +523,7 @@ function addMate(r: RosterEntry): Mate {
   chibi.group.addChild(tag);
   chibi.group.enabled = false;
   app.root.addChild(chibi.group);
-  const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0 };
+  const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0, stride: 0 };
   mates.set(r.id, m);
   return m;
 }
@@ -535,7 +540,7 @@ function applyPlayers(list: PlayerSnap[]): void {
     const [id, x, y, z, ry, , hp, st, w, medkits, rev, , respawn] = p;
     if (id === me.id) {
       if (st !== me.st) {
-        if (st === PSTATE.DOWN) { hud.banner(t('You are down!'), true); sfx.down(); me.reloadT = 0; }
+        if (st === PSTATE.DOWN) { hud.banner(t('You are down!'), true); sfx.down(); sfx.cancelReload(); me.reloadT = 0; }
         vm.visible = st === PSTATE.ALIVE;
       }
       me.hp = hp; me.st = st; me.medkits = medkits; me.rev = rev; me.respawn = respawn;
@@ -568,18 +573,20 @@ function applyZombies(list: ZombieSnap[]): void {
       chibi.group.setLocalScale(sc, sc, sc);
       chibi.group.setPosition(x, 0, z);
       app.root.addChild(chibi.group);
-      zd = { id, type, chibi, x, z, ry, tx: x, tz: z, tr: ry, st, sfxT: 0 };
+      zd = { id, type, chibi, x, z, ry, tx: x, tz: z, tr: ry, st, sfxT: 0, vox: Math.random() * 3 };
       zeds.set(id, zd);
     }
     zd.tx = x; zd.tz = z; zd.tr = ry;
     if (st !== zd.st) {
       const dist = Math.hypot(x - me.x, z - me.z);
       if (st === ZSTATE.WINDUP) {
-        if (type === ZT.CHARGER) { sfx.chargeTell(dist); if (dist < 24) fx.poof({ x, y: 0.1, z }, 0xd8cfe8, 4, 0.22); }
-        else if (type === ZT.DROOLER) sfx.gurgle(dist);
-        else sfx.leap(dist);
+        if (type === ZT.CHARGER) { sfx.chargeTell(x, z); if (dist < 24) fx.poof({ x, y: 0.1, z }, 0xd8cfe8, 4, 0.22); }
+        else if (type === ZT.DROOLER) sfx.gurgle(x, z);
+        else sfx.leap(x, z);
       }
-      if (st === ZSTATE.CHARGE) sfx.chargeGo(dist);
+      if (st === ZSTATE.CHARGE) sfx.chargeGo(x, z);
+      // Swipes: at most ~7 a second however big the crowd around you is.
+      if (st === ZSTATE.ATTACK && dist < 14 && time - lastSwipe > 0.14) { lastSwipe = time; sfx.swipe(x, z); }
     }
     zd.st = st;
   }
@@ -595,7 +602,7 @@ function killZed(id: number, head: boolean): void {
   corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3, x: zd.x, z: zd.z, scale: s });
   if (head) fx.burst({ x: zd.x, y: 1.1 * s, z: zd.z }, 0xffd43b, 5, 4, 0.14, true, 0.4, 5);
   fx.burst({ x: zd.x, y: 0.8 * s, z: zd.z }, 0xb4f05a, zd.type === ZT.BRUTE ? 16 : zd.type === ZT.CHARGER ? 9 : 4, 4, 0.1 * s);
-  sfx.pop(d);
+  sfx.pop(zd.x, zd.z, zd.type);
 }
 
 // Indexed by ZSTATE.
@@ -660,7 +667,7 @@ function onEvent(ev: GameEvent): void {
           t: 0, w: ev[2], mine: false, ox: 0, oz: 0, shell: fx.shell(), trail: 0, mx: 0, my: 0, mz: 0, life });
       } else fx.tracer(_muz, _end, w?.pierce > 2 ? 0.05 : 0.03);
       fx.burst(_muz, 0xffd43b, 1, 0.5, 0.16, true, 0.08, 0);
-      sfx.shoot(ev[2], Math.max(1, Math.hypot(m.x - me.x, m.z - me.z)));
+      sfx.shoot(ev[2], m.x, m.z);
       break;
     }
     case 'shove': { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.6; break; }
@@ -691,12 +698,12 @@ function onEvent(ev: GameEvent): void {
       const p = { x: ev[1], y: 0.9, z: ev[2] };
       fx.burst(p, 0xc8f25a, 26, 8, 0.22); fx.poof(p, 0xe9f76a, 10, 0.5);
       const d = Math.hypot(ev[1] - me.x, ev[2] - me.z);
-      sfx.boom(d); me.trauma = Math.min(1, me.trauma + 1 / (1 + d * 0.2));
+      sfx.boom(ev[1], ev[2]); me.trauma = Math.min(1, me.trauma + 1 / (1 + d * 0.2));
       break;
     }
     case 'goo': if (ev[1] === me.id) hud.goo(); break;
     case 'hurt':
-      if (ev[1] !== me.id) { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.8; break; }
+      if (ev[1] !== me.id) { const m = mates.get(ev[1]); if (m) { m.chibi.punch = 0.8; sfx.oof(m.x, m.z); } break; }
       {
         const dx = ev[3] - me.x, dz = ev[4] - me.z;
         hud.hurt(Math.atan2(dx * Math.cos(me.yaw) - dz * Math.sin(me.yaw), -dx * Math.sin(me.yaw) - dz * Math.cos(me.yaw)));
@@ -718,7 +725,7 @@ function onEvent(ev: GameEvent): void {
       const d = Math.hypot(ev[2] - me.x, ev[3] - me.z);
       fx.burst({ x: ev[2], y: 0.6, z: ev[3] }, 0xffffff, 6, 4, 0.14, true, 0.35, 4);
       fx.poof({ x: ev[2], y: 0.3, z: ev[3] }, 0xd8cfe8, 7, 0.35);
-      sfx.thud(d); me.trauma = Math.min(1, me.trauma + 0.8 / (1 + d * 0.25));
+      sfx.thud(ev[2], ev[3]); me.trauma = Math.min(1, me.trauma + 0.8 / (1 + d * 0.25));
       break;
     }
     case 'pin': {
@@ -741,7 +748,7 @@ function onEvent(ev: GameEvent): void {
     case 'spit': {
       const [, , x0, z0, x1, z1, flight] = ev;
       fx.glob(x0, z0, x1, z1, flight);
-      sfx.spit(Math.hypot(x0 - me.x, z0 - me.z));
+      sfx.spit(x0, z0);
       // Warn whoever is about to be gooed: the target spot is where they stand.
       if (Math.hypot(x1 - me.x, z1 - me.z) < 3.5 && me.st !== PSTATE.DEAD) hud.feed(t('Goo incoming — move!'));
       break;
@@ -1089,7 +1096,12 @@ function updateMe(dt: number): void {
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
     if (on && keys.has('Space') && me.onGround) { me.vy = 6.4; me.onGround = false; }
     me.vy -= 19 * dt; me.y += me.vy * dt;
-    if (me.y <= 0) { me.y = 0; me.vy = 0; me.onGround = true; }
+    if (me.y <= 0) { if (!me.onGround) sfx.land(-me.vy, indoorAt(me.x, me.z)); me.y = 0; me.vy = 0; me.onGround = true; }
+    // Footsteps every stride on the ground.
+    if (me.onGround) {
+      me.stride += Math.hypot(me.vx, me.vz) * dt;
+      if (me.stride > 1.8) { me.stride = 0; sfx.step(indoorAt(me.x, me.z)); }
+    }
     // Zombies are solid: get shouldered out of them.
     for (const z of zeds.values()) {
       const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
@@ -1108,7 +1120,7 @@ function updateMe(dt: number): void {
     if (me.reloadT <= 0) {
       const take = Math.min(w.mag - me.mag[me.weapon], me.reserve[me.weapon]);
       me.mag[me.weapon] += take; me.reserve[me.weapon] -= take;
-      vm.setReload(0); sfx.reloadDone();
+      vm.setReload(0); sfx.reloadDone(me.weapon);
     }
   }
   if (on && mouse.left) fire();
@@ -1117,6 +1129,7 @@ function updateMe(dt: number): void {
   // Medkit channel.
   const healing = on && keys.has('KeyQ') && !me.healLatch && me.medkits > 0 && me.hp < PLAYER.hp;
   if (healing) {
+    if (me.healT === 0) sfx.bandage();
     me.healT += dt;
     if (me.healT >= PLAYER.healTime) { net.send({ t: 'h' }); me.healT = 0; me.healLatch = true; }
   } else me.healT = 0;
@@ -1169,6 +1182,10 @@ function updateEntities(dt: number): void {
     const px = m.x, pz = m.z;
     m.x += (m.tx - m.x) * k; m.y += (m.ty - m.y) * k; m.z += (m.tz - m.z) * k; m.ry = lerpAngle(m.ry, m.tr, k);
     m.speed += (Math.hypot(m.x - px, m.z - pz) / Math.max(dt, 1e-4) - m.speed) * 0.2;
+    if (m.st === PSTATE.ALIVE && m.y < 0.05 && m.speed > 1 && m.speed < 12) {
+      m.stride += m.speed * dt;
+      if (m.stride > 1.8) { m.stride = 0; if (Math.hypot(m.x - cam.x, m.z - cam.z) < 16) sfx.step(indoorAt(m.x, m.z), m.x, m.z); }
+    }
     m.chibi.group.setPosition(m.x, m.y, m.z);
     m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
     if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE;
@@ -1183,7 +1200,7 @@ function updateEntities(dt: number): void {
     // A ringing Alarm Clock keeps rattling until it is shot (or rings out).
     if (z.st === ZSTATE.RING) {
       z.sfxT -= dt;
-      if (z.sfxT <= 0) { z.sfxT = 0.3; sfx.ring(Math.hypot(z.x - me.x, z.z - me.z)); if (Math.random() < 0.5) fx.burst({ x: z.x, y: 1.45 * ZTYPES[z.type].scale, z: z.z }, 0xffd43b, 1, 2, 0.1, true, 0.25, 0); }
+      if (z.sfxT <= 0) { z.sfxT = 0.3; sfx.ring(z.x, z.z); if (Math.random() < 0.5) fx.burst({ x: z.x, y: 1.45 * ZTYPES[z.type].scale, z: z.z }, 0xffd43b, 1, 2, 0.1, true, 0.25, 0); }
     }
   }
   for (let i = corpses.length - 1; i >= 0; i--) {
@@ -1198,12 +1215,51 @@ function updateEntities(dt: number): void {
       corpses.splice(i, 1);
     }
   }
+  zedAudio(dt);
+}
+
+/** Awake infected within 22 m of the listener, for the horde murmur and tension bed (see `listen`). */
+let threat = 0;
+/**
+ * Crowd voices, throttled: one walker voice at a time (more often in a crowd, at most ~5 a second;
+ * the horde murmur bed carries the mass), dozing walkers snore, and each special nearby makes its
+ * own presence cue on its own timer.
+ */
+function zedAudio(dt: number): void {
+  let awake = 0;
+  for (const z of zeds.values()) {
+    const d = Math.hypot(z.x - cam.x, z.z - cam.z);
+    if (z.st !== ZSTATE.IDLE && d < 22) awake++;
+    if (z.type !== ZT.WALKER && z.st !== ZSTATE.RING && d < 40) {
+      z.vox -= dt;
+      if (z.vox <= 0) z.vox = sfx.special(z.type, z.x, z.z, z.st);
+    }
+  }
+  threat = awake;
   groanT -= dt;
   if (groanT <= 0 && zeds.size) {
-    groanT = 0.5 + Math.random() * 1.6;
-    const near = [...zeds.values()].filter((z) => z.st !== ZSTATE.IDLE && Math.hypot(z.x - me.x, z.z - me.z) < 26);
-    if (near.length) { const z = near[(Math.random() * near.length) | 0]; sfx.groan(Math.hypot(z.x - me.x, z.z - me.z), z.type === ZT.BRUTE); }
+    groanT = (0.4 + Math.random() * 1.3) / Math.min(2.5, 1 + awake / 8);
+    const near = [...zeds.values()].filter((z) => z.type === ZT.WALKER && Math.hypot(z.x - cam.x, z.z - cam.z) < (z.st === ZSTATE.IDLE ? 14 : 26));
+    if (near.length) {
+      const z = near[(Math.random() * near.length) | 0];
+      if (z.st === ZSTATE.IDLE) sfx.snore(z.x, z.z); else sfx.groan(z.x, z.z);
+    }
   }
+}
+
+const indoorAt = (x: number, z: number): boolean => isIndoor(L.floorAt(x, z));
+const _fwd = new pc.Vec3();
+/** Feed the audio listener: where you hear from (the camera, so spectating works), and how you are. */
+function listen(dt: number): void {
+  _fwd.copy(camera.forward);
+  const h = Math.hypot(_fwd.x, _fwd.z) || 1;
+  sfx.setScene(range ? -1 : chapter);
+  sfx.update(dt, {
+    x: cam.x, z: cam.z, fx: _fwd.x / h, fz: _fwd.z / h, indoor: indoorAt(cam.x, cam.z),
+    hurt: inGame && me.st === PSTATE.ALIVE ? 1 - me.hp / PLAYER.hp : 0,
+    down: inGame && me.st === PSTATE.DOWN, dead: !inGame || me.st === PSTATE.DEAD, pinned: inGame && me.pinned,
+    threat: inGame ? threat : 0, holdout: inGame && holdout >= 0,
+  });
 }
 
 /** Reused every frame by `updateHud`. */
@@ -1278,6 +1334,7 @@ app.on('update', (dt: number) => {
     vm.update(dt, 0, 0, 0);
   }
   world.update(time, dt, cam.x, cam.y, cam.z);
+  listen(dt);
   fx.update(dt, cam.rot);
 });
 app.start();
