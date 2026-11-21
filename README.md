@@ -53,7 +53,13 @@ weapon stops: the *Buzz Blaster* (SMG), *Boomstick* (pump shotgun) and *Long Bon
 then rarer finds later on: the *Rumble Drum* (auto shotgun), the *Kebabber* (sniper; each
 round skewers up to four sleepers in a line), the *Bloop Tube* (grenade launcher; lobbed
 shells, a big blast that only nicks the squad near its centre, half-armed closer than 3 m) and the
-*Thunder Pea* (magnum; replaces the Pea Shooter, still endless). Guns are
+*Thunder Pea* (magnum; replaces the Pea Shooter, still endless). Each gun has a reach: full
+damage out to a distance, then falling off to a floor (shotguns hit hard up close and barely
+tickle at 20 m; rifle and magnum hold up far longer) and nothing past its maximum range. Heavy
+guns slow you a little. Accuracy is per gun too: holding the trigger widens the spray (the SMG
+settles fast; the rifle stays tight in bursts but drifts on long full-auto), and running or
+jumping throws shots wide. The Kebabber is wild from the hip: hold right mouse to scope in (about
+4x zoom, pin-point aim, slow walk); **V** shoves with any weapon. Guns are
 single-use: the first survivor to grab one takes it, so share them out. Each ammo pile refills
 every survivor once. Medkits (one carried, healing most of your missing health) are rolled each
 attempt and scale with the squad's size. Loot comes back on a checkpoint restart.

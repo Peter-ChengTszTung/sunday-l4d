@@ -176,3 +176,11 @@ label.check input { width: 18px; height: 18px; }
   color: var(--cream); border: 3px solid var(--ink); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.45; }
 #rangepanel b { color: var(--yellow); margin-right: 6px; }
 #leaverange { margin-top: 12px; }
+
+/* Sniper scope: a dark mask with a round lens, thin cross hairs and a centre dot. */
+#scope { position: absolute; inset: 0; pointer-events: none; --r: min(42vh, 42vw);
+  background: radial-gradient(circle at center, transparent 0 calc(var(--r) - 3px), #1a1226 calc(var(--r) - 2px) var(--r), rgba(8, 6, 18, 0.96) calc(var(--r) + 1px)); }
+#scope::before, #scope::after { content: ''; position: absolute; left: 50%; top: 50%; background: rgba(26, 18, 38, 0.85); }
+#scope::before { width: calc(var(--r) * 2); height: 2px; transform: translate(-50%, -50%); }
+#scope::after { width: 2px; height: calc(var(--r) * 2); transform: translate(-50%, -50%); }
+#scope[hidden] { display: none; }

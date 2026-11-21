@@ -37,9 +37,12 @@ camera.addComponent('camera', { fov: 74, nearClip: 0.08, farClip: 600, clearColo
 // 74° vertical FOV (about 105° horizontal at 16:9). On wider screens, hold the horizontal angle
 // instead so ultrawide monitors don't get a fish-eye view.
 const FOV_V = 74, FOV_H_MAX = 2 * Math.atan(Math.tan((FOV_V * Math.PI) / 360) * (16 / 9));
+/** The unzoomed vertical FOV for this window; a sniper scope narrows from it (see updateCamera). */
+let baseFov = FOV_V;
 function fitFov(): void {
   const aspect = (canvas.clientWidth || 16) / (canvas.clientHeight || 9);
-  camera.camera!.fov = aspect > 16 / 9 ? (2 * Math.atan(Math.tan(FOV_H_MAX / 2) / aspect) * 180) / Math.PI : FOV_V;
+  baseFov = aspect > 16 / 9 ? (2 * Math.atan(Math.tan(FOV_H_MAX / 2) / aspect) * 180) / Math.PI : FOV_V;
+  camera.camera!.fov = baseFov;
 }
 fitFov();
 window.addEventListener('resize', fitFov);
@@ -83,7 +86,26 @@ const me = {
   fireCd: 0, reloadT: 0, /** Seconds since the last shove, and shove fatigue (PLAYER.shoveMax). */ shoveRest: 99, shoveFat: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
   /** Pinned to a wall by a Charger: no moving, shooting or healing until 'unpin'. */
   pinned: false, pinX: 0, pinZ: 0,
+  /** Right mouse held (a scoped weapon aims while it is), and how far the scope has zoomed in (0..1). */
+  scopeHeld: false, zoom: 0,
 };
+/** The scope of the weapon in hand while it is up (held, and not reloading/healing/pinned), else null. */
+function scopeUp(): NonNullable<(typeof WEAPONS)[number]['scope']> | null {
+  const s = WEAPONS[me.weapon].scope;
+  return s && me.scopeHeld && me.st === PSTATE.ALIVE && !me.pinned && me.reloadT <= 0 && me.healT <= 0 ? s : null;
+}
+/** Current spread before bloom: the scoped figure once the scope is (nearly) all the way in. */
+function baseSpread(): number {
+  const w = WEAPONS[me.weapon];
+  return w.scope && me.zoom > 0.85 ? w.scope.spread : w.spread;
+}
+/** Spread added by moving (scaled by speed) and by being in the air (WeaponDef.moving). */
+function moveSpread(): number {
+  const run = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed);
+  return WEAPONS[me.weapon].moving * (run + (me.onGround ? 0 : 1.5));
+}
+/** Everything that decides where the next shot can go: base, bloom from firing, and movement. */
+const shotSpread = (): number => baseSpread() + me.bloom + moveSpread();
 const roster = new Map<number, RosterEntry>();
 /** This room's difficulty (from the welcome), for the survivor rules in messages. */
 let roomDiff: DifficultyId = 'normal';
@@ -117,14 +139,17 @@ document.addEventListener('keydown', (e) => {
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
+    case 'KeyV': shove(); break;
   }
 });
 document.addEventListener('keyup', (e) => { keys.delete(e.code); if (e.code === 'KeyQ') me.healLatch = false; });
-window.addEventListener('blur', () => { keys.clear(); mouse.left = false; });
+window.addEventListener('blur', () => { keys.clear(); mouse.left = false; me.scopeHeld = false; });
 document.addEventListener('mousemove', (e) => {
   if (!locked || me.st === PSTATE.DEAD) return;
-  me.yaw -= e.movementX * 0.0023;
-  me.pitch = Math.max(-1.5, Math.min(1.5, me.pitch - e.movementY * 0.0023));
+  // Scoped: slow the look down with the zoom so the crosshair moves the same on screen.
+  const sens = 0.0023 * (camera.camera!.fov / baseFov);
+  me.yaw -= e.movementX * sens;
+  me.pitch = Math.max(-1.5, Math.min(1.5, me.pitch - e.movementY * sens));
   lookDX += e.movementX; lookDY += e.movementY;
 });
 document.addEventListener('mousedown', (e) => {
@@ -132,21 +157,22 @@ document.addEventListener('mousedown', (e) => {
   sfx.unlock();
   if (!locked && !DEBUG) { if (!ended) void canvas.requestPointerLock(); return; }
   if (e.button === 0) mouse.left = true;
-  if (e.button === 2) shove();
+  // Right mouse: aim down the scope with a scoped weapon (hold), else shove. V always shoves.
+  if (e.button === 2) { if (WEAPONS[me.weapon].scope) me.scopeHeld = true; else shove(); }
 });
-document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; });
+document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; if (e.button === 2) me.scopeHeld = false; });
 document.addEventListener('contextmenu', (e) => { if (inGame) e.preventDefault(); });
 document.addEventListener('wheel', () => { if (active() && me.primary >= 0) switchWeapon(me.weapon === me.primary ? me.sidearm : me.primary); }, { passive: true });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  if (!locked) { keys.clear(); mouse.left = false; }
+  if (!locked) { keys.clear(); mouse.left = false; me.scopeHeld = false; }
   hud.pause(inGame && !locked && !ended && !DEBUG);
 });
 
 // ------------------------------------------------------------------- weapons
 function switchWeapon(i: number): void {
   if (i === me.weapon || me.st !== PSTATE.ALIVE) return;
-  me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3);
+  me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0;
   vm.setWeapon(i);
   range?.resetStats(); // each weapon's numbers start clean
 }
@@ -225,7 +251,7 @@ function fire(): void {
   // (resetting to `rate` lost up to a frame per shot: the SMG ran at ~12 rounds/s at 60 FPS).
   me.fireCd = (me.fireCd < -w.rate ? 0 : me.fireCd) + w.rate;
   const b = aimBasis();
-  const spread = w.spread + me.bloom;
+  const spread = shotSpread();
   let first: [number, number, number] = [0, 0, 0];
   const hits = new Map<number, [number, number, number]>();
   let anyHead = false;
@@ -255,7 +281,7 @@ function fire(): void {
   net.send({ t: 'f', w: wi, h: [...hits.values()], e: first, ...(w.blast ? { n: nadeSeq } : {}) });
   vm.fire(); sfx.shoot(wi);
   me.recoil += w.recoil;
-  me.bloom = Math.min(0.05, me.bloom + w.spread * 0.45);
+  me.bloom = Math.min(w.bloom[1], me.bloom + w.bloom[0]);
   me.trauma = Math.min(1, me.trauma + w.shake);
   if (me.mag[wi] === 0 && me.reserve[wi] > 0) startReload();
 }
@@ -855,6 +881,7 @@ function enterRange(): void {
   $('leaverange').hidden = false;
   hud.banner(t('Shooting range'));
   hud.feed(t('1-8: any weapon · R: reload · X: clear stats · Esc: leave'));
+  hud.feed(t('Sniper (7): hold right mouse to scope · V: shove'));
   enterGame();
 }
 
@@ -880,6 +907,8 @@ $('leaverange').addEventListener('click', leaveRange);
 
 const ZNAMES: Record<string, string> = { walker: 'Walker', leaper: 'Leaper', puffer: 'Puffer', brute: 'Brute', charger: 'Charger', drooler: 'Drooler', alarm: 'Alarm Clock' };
 const zname = (type: number) => t(ZNAMES[ZTYPES[type]?.id] ?? 'Zombie');
+/** Radians as degrees for the range panel (spread is a cone half-angle). */
+const deg = (r: number) => ((r * 180) / Math.PI).toFixed(2);
 const fmt = (v: number) => (v >= 100 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString());
 
 /** The range's numbers: this weapon's stats, the last shot, DPS, the last kill and the target's health. */
@@ -889,9 +918,21 @@ function updateRangePanel(): void {
   const spec = w.blast
     ? t('{dmg} blast dmg · {r} m radius', { dmg: w.blast.dmg, r: w.blast.radius })
     : t('{dmg} dmg', { dmg: w.pellets > 1 ? `${w.dmg}×${w.pellets}` : w.dmg }) + (w.pierce > 1 ? ` · ${t('pierces {n}', { n: w.pierce })}` : '');
+  const [near, far, floor] = w.falloff;
+  const reach = floor >= 1 ? t('full damage to {max} m', { max: w.range })
+    : t('full to {near} m, {pct}% from {far} m, max {max} m', { near, far, pct: Math.round(floor * 100), max: w.range });
+  const handling = [t('move {pct}%', { pct: Math.round(w.move * 100) })];
+  if (w.scope) handling.push(t('RMB scope: {x}x zoom, move {pct}%', { x: fmt(baseFov / w.scope.fov), pct: Math.round(w.move * w.scope.move * 100) }));
+  const shot = s.shot;
   const lines = [
     `<b>${t(w.name)}</b> ${spec} · ${t('{rpm} RPM', { rpm: Math.round(60 / w.rate) })} · ${t('mag {n}', { n: w.mag })} · ${t('reload {s} s', { s: w.reload })}`,
-    s.shot ? t('Last shot: {dmg} dmg ({body} body, {head} head, {n} hit)', { dmg: fmt(s.shot.dmg), body: s.shot.body, head: s.shot.head, n: s.shot.zeds }) : t('Last shot: —'),
+    `${reach} · ${handling.join(' · ')}`,
+    t('Spread {base}° · firing +{bloom}° max · moving +{move}° · now {now}°', {
+      base: deg(baseSpread()), bloom: deg(w.bloom[1]), move: deg(w.moving), now: deg(shotSpread()),
+    }),
+    !shot ? t('Last shot: —')
+      : t('Last shot: {dmg} dmg ({body} body, {head} head, {n} hit)', { dmg: fmt(shot.dmg), body: shot.body, head: shot.head, n: shot.zeds })
+        + (shot.dist >= 0 && !w.blast ? ` · ${t('{m} m, {pct}% damage', { m: fmt(shot.dist), pct: Math.round(shot.falloff * 100) })}` : ''),
     t('DPS: {dps} · Total: {total} · Hits: {hit}/{shots}', { dps: fmt(s.dps), total: fmt(s.total), hit: s.shotsHit, shots: s.shotsFired }),
     !s.kill ? t('Last kill: —')
       : s.kill.shots <= 1 ? t('Last kill: {who} in one shot', { who: zname(s.kill.type) })
@@ -985,14 +1026,17 @@ function updateMe(dt: number): void {
   if (me.pinned && me.st !== PSTATE.ALIVE) me.pinned = false;
   const alive = me.st === PSTATE.ALIVE, on = active() && alive && !me.pinned;
   me.fireCd -= dt; me.shoveRest += dt; me.slowT -= dt;
-  me.bloom = Math.max(0, me.bloom - dt * 0.09);
+  me.bloom = Math.max(0, me.bloom - dt * WEAPONS[me.weapon].bloom[2]);
   me.recoil += (0 - me.recoil) * Math.min(1, dt * 9);
 
   // Movement.
   let f = 0, s = 0;
   if (on) { f = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0); s = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0); }
   const len = Math.hypot(f, s) || 1;
-  const speed = PLAYER.speed * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? 0.35 : 1);
+  const sc = scopeUp();
+  me.zoom += ((sc ? 1 : 0) - me.zoom) * Math.min(1, dt * 14);
+  if (me.zoom < 0.01) me.zoom = 0;
+  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? 0.35 : 1);
   const sin = Math.sin(me.yaw), cos = Math.cos(me.yaw);
   const wx = ((-sin * f + cos * s) / len) * speed, wz = ((-cos * f - sin * s) / len) * speed;
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
@@ -1048,6 +1092,8 @@ function updateMe(dt: number): void {
 }
 
 function updateCamera(dt: number): void {
+  const scopeFov = WEAPONS[me.weapon].scope?.fov ?? baseFov;
+  camera.camera!.fov = baseFov + (scopeFov - baseFov) * me.zoom;
   me.trauma = Math.max(0, me.trauma - dt * 2.2);
   const shake = me.trauma * me.trauma * 0.05;
   if (me.st === PSTATE.DEAD) {
@@ -1137,8 +1183,9 @@ function updateHud(dt: number): void {
   hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
   if (openNote && Math.hypot(openNote.def.x - me.x, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
-  hud.crosshair(me.st === PSTATE.ALIVE);
-  hud.spread(6 + (w.spread + me.bloom) * 260);
+  hud.crosshair(me.st === PSTATE.ALIVE && me.zoom < 0.5);
+  hud.scope(me.st === PSTATE.ALIVE && me.zoom >= 0.5);
+  hud.spread(6 + shotSpread() * 260);
   const solo = roster.size <= 1;
   hud.spectate(me.st === PSTATE.DEAD ? (me.respawn < 0 ? t('Knocked out — your team can rescue you at the next safe room') : t('Knocked out — a teammate will rescue you in {s}s', { s: me.respawn }))
     : me.st === PSTATE.DOWN ? t(solo ? (me.rev > 0 ? 'You are down! Getting yourself up…' : 'You are down — and alone.') : 'You are down! Wait for a teammate to help you up')
@@ -1171,6 +1218,7 @@ app.on('update', (dt: number) => {
     updateEntities(dt);
     updateHud(dt);
     const moving = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed) * (me.onGround ? 1 : 0.2);
+    vm.visible = me.st === PSTATE.ALIVE && me.zoom < 0.5; // the scope overlay replaces the gun
     vm.update(dt, moving, lookDX, lookDY);
     lookDX = lookDY = 0;
   } else {
@@ -1183,6 +1231,7 @@ app.on('update', (dt: number) => {
     camera.setPosition(cam.x, cam.y, cam.z);
     camera.setRotation(cam.rot);
     vm.visible = false;
+    me.zoom = 0; camera.camera!.fov = baseFov;
     vm.update(dt, 0, 0, 0);
   }
   world.update(time, dt, cam.x, cam.y, cam.z);

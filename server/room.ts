@@ -793,8 +793,10 @@ export class Room {
       const nb = Math.max(0, Math.min(budget, h[1] | 0)); budget -= nb;
       const nh = Math.max(0, Math.min(budget, h[2] | 0)); budget -= nh;
       if (nb + nh === 0) continue;
-      if (Math.hypot(z.x - p.x, z.z - p.z) > wp.range + 4) continue;
-      this.damageZombie(z, shotDamage(wp, z.type, nb, nh), p, nh > 0);
+      const d = Math.hypot(z.x - p.x, z.z - p.z);
+      if (d > wp.range + 4) continue;
+      // Falloff from the server's view of the distance; the slack above stays at the range floor.
+      this.damageZombie(z, shotDamage(wp, z.type, nb, nh, Math.min(d, wp.range)), p, nh > 0);
     }
   }
 
@@ -830,7 +832,7 @@ export class Room {
         if (side > 1.4 + ZTYPES[z.type].radius || ox * lx + oz * lz < -1) continue;
         if (!this.L.hasLOS(p.x, p.z, z.x, z.z, this.doors)) break;
       }
-      this.damageZombie(z, shotDamage(wp, z.type, head ? 0 : 1, head ? 1 : 0), p, head);
+      this.damageZombie(z, shotDamage(wp, z.type, head ? 0 : 1, head ? 1 : 0, Math.min(d, wp.range)), p, head);
       if (z.type === ZT.BRUTE) break;
     }
   }

@@ -2,7 +2,7 @@
 // It takes the client's own messages ('f' shots, 'g' grenade impacts, 'v' shoves, 'u' rack use) and
 // answers with ordinary 's' snapshots, so main.ts renders the dummies, deaths and pickups through
 // its usual paths. Damage uses the same shared formulas as server/room.ts (shotDamage, blastDamage).
-import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, shotDamage, blastPower, blastRadius, blastDamage } from '../../shared/constants';
+import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
 import { RANGE_DUMMIES, type RangeDummy } from '../../shared/range';
 import type { Level } from '../../shared/level';
 import type { ClientMsg, GameEvent, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -21,7 +21,11 @@ interface Dummy {
 
 /** What the range panel shows (see main.ts updateRangePanel). */
 export interface RangeStats {
-  /** Last shot: damage dealt, body and head hits, zombies hit. */ shot: { dmg: number; body: number; head: number; zeds: number } | null;
+  /**
+   * Last shot: damage dealt, body and head hits, zombies hit, distance to the first one hit (m; -1 =
+   * none) and the falloff multiplier there.
+   */
+  shot: { dmg: number; body: number; head: number; zeds: number; dist: number; falloff: number } | null;
   /** Damage per second over the last DPS_WINDOW s of shooting. */ dps: number;
   total: number; shotsFired: number; shotsHit: number; kills: number;
   /** Last kill: type, time from its first hit, shots that hit it. */ kill: { type: number; ttk: number; shots: number } | null;
@@ -71,12 +75,14 @@ export class ShootingRange {
     if (!w) return;
     if (w.blast) { this.nades.set(m.n ?? 0, { x: this.player.x, z: this.player.z, w: wi }); return; }
     this.stats.shotsFired++;
-    const shot = { dmg: 0, body: 0, head: 0, zeds: 0 };
+    const shot = { dmg: 0, body: 0, head: 0, zeds: 0, dist: -1, falloff: 1 };
     for (const [id, nb, nh] of m.h ?? []) {
       const d = this.dummies.get(id);
       if (!d || d.hp <= 0) continue;
+      const dist = Math.min(Math.hypot(d.x - this.player.x, d.z - this.player.z), w.range);
+      if (shot.dist < 0) { shot.dist = dist; shot.falloff = falloffAt(w, dist); }
       shot.body += nb; shot.head += nh; shot.zeds++;
-      shot.dmg += this.damage(d, shotDamage(w, d.def.type, nb, nh), nh > 0, true);
+      shot.dmg += this.damage(d, shotDamage(w, d.def.type, nb, nh, dist), nh > 0, true);
     }
     if (shot.zeds) this.stats.shotsHit++;
     this.stats.shot = shot;
@@ -89,7 +95,7 @@ export class ShootingRange {
     if (!n || !B) return;
     const power = blastPower(B, Math.hypot(m.x - n.x, m.z - n.z)), R = blastRadius(B, power);
     this.stats.shotsFired++;
-    const shot = { dmg: 0, body: 0, head: 0, zeds: 0 };
+    const shot = { dmg: 0, body: 0, head: 0, zeds: 0, dist: Math.hypot(m.x - this.player.x, m.z - this.player.z), falloff: 1 };
     for (const d of [...this.dummies.values()]) {
       if (d.hp <= 0) continue;
       const T = ZTYPES[d.def.type];

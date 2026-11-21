@@ -48,6 +48,22 @@ export interface WeaponDef {
   /** 1 = basic loot, 2 = later, rarer finds. */ tier: 0 | 1 | 2;
   /** Zombies one bullet can pass through (stops at a Brute). */ pierce: number;
   /** View kick (radians of pitch) and camera trauma per shot. */ recoil: number; shake: number;
+  /**
+   * Damage falloff [near, far, floor]: full damage out to `near` m, easing linearly to `floor` x
+   * damage at `far` m and staying there out to `range` (the hard limit: nothing past it hits).
+   */
+  falloff: readonly [number, number, number];
+  /** Movement speed multiplier while this weapon is out (heavy guns slow you down). */ move: number;
+  /**
+   * Spread build-up (radians) [perShot, max, recover]: each shot adds `perShot` up to `max`, and it
+   * recovers at `recover` per second. A gun only blooms if `perShot` beats `recover` x `rate`, so
+   * fast spray builds up while paced or burst fire stays tight.
+   */
+  bloom: readonly [number, number, number];
+  /** Extra spread (radians) at full running speed; jumping adds 1.5x this again. Scales with how fast you move. */
+  moving: number;
+  /** Hold right mouse to aim down a scope: zoomed vertical FOV, spread and move speed while scoped (`spread` is then the hip-fire spread). */
+  scope?: { fov: number; spread: number; move: number };
   blast?: BlastDef;
 }
 export interface ZombieDef {
@@ -59,22 +75,32 @@ export interface SurvivorLook { name: string; shirt: number; hair: number; style
 // Index 0 is the starting sidearm with infinite reserve ammo. Indices go over the wire
 // (shots, snapshots), so only ever append.
 export const WEAPONS: WeaponDef[] = [
-  { id: 'pistol', name: 'Pea Shooter', dmg: 26, rate: 0.17, mag: 15, reserve: Infinity, spread: 0.010, pellets: 1, range: 70, reload: 1.2, auto: false, slot: 'sidearm', tier: 0, pierce: 1, recoil: 0.025, shake: 0.07 },
-  { id: 'smg', name: 'Buzz Blaster', dmg: 20, rate: 0.068, mag: 50, reserve: 450, spread: 0.028, pellets: 1, range: 60, reload: 1.4, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.02, shake: 0.07 },
-  { id: 'shotgun', name: 'Boomstick', dmg: 15, rate: 0.72, mag: 8, reserve: 72, spread: 0.075, pellets: 9, range: 26, reload: 2.3, auto: false, slot: 'primary', tier: 1, pierce: 1, recoil: 0.07, shake: 0.3 },
-  { id: 'rifle', name: 'Long Bonker', dmg: 36, rate: 0.105, mag: 30, reserve: 270, spread: 0.014, pellets: 1, range: 90, reload: 2.1, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.03, shake: 0.07 },
+  { id: 'pistol', name: 'Pea Shooter', dmg: 26, rate: 0.17, mag: 15, reserve: Infinity, spread: 0.010, pellets: 1, range: 70, reload: 1.2, auto: false, slot: 'sidearm', tier: 0, pierce: 1, recoil: 0.025, shake: 0.07, falloff: [18, 45, 0.65], move: 1.05, bloom: [0.006, 0.02, 0.15], moving: 0.012 },
+  { id: 'smg', name: 'Buzz Blaster', dmg: 20, rate: 0.068, mag: 50, reserve: 450, spread: 0.028, pellets: 1, range: 60, reload: 1.4, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.02, shake: 0.07, falloff: [14, 35, 0.5], move: 1, bloom: [0.009, 0.02, 0.08], moving: 0.008 },
+  { id: 'shotgun', name: 'Boomstick', dmg: 15, rate: 0.72, mag: 8, reserve: 72, spread: 0.055, pellets: 9, range: 26, reload: 2.3, auto: false, slot: 'primary', tier: 1, pierce: 1, recoil: 0.07, shake: 0.3, falloff: [10, 22, 0.25], move: 0.97, bloom: [0.01, 0.02, 0.1], moving: 0.01 },
+  { id: 'rifle', name: 'Long Bonker', dmg: 36, rate: 0.105, mag: 30, reserve: 270, spread: 0.014, pellets: 1, range: 90, reload: 2.1, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.03, shake: 0.07, falloff: [35, 70, 0.75], move: 0.95, bloom: [0.006, 0.03, 0.04], moving: 0.014 },
   // Tier 2: rarer, later finds with a clear job each.
-  { id: 'autoshotgun', name: 'Rumble Drum', dmg: 14, rate: 0.26, mag: 10, reserve: 90, spread: 0.09, pellets: 9, range: 24, reload: 2.4, auto: true, slot: 'primary', tier: 2, pierce: 1, recoil: 0.05, shake: 0.22 },
-  { id: 'sniper', name: 'Kebabber', dmg: 90, rate: 0.42, mag: 8, reserve: 64, spread: 0.002, pellets: 1, range: 120, reload: 2.8, auto: false, slot: 'primary', tier: 2, pierce: 4, recoil: 0.09, shake: 0.2 },
-  { id: 'launcher', name: 'Bloop Tube', dmg: 0, rate: 0.75, mag: 3, reserve: 12, spread: 0.004, pellets: 1, range: 110, reload: 3.2, auto: false, slot: 'primary', tier: 2, pierce: 1, recoil: 0.1, shake: 0.35,
+  { id: 'autoshotgun', name: 'Rumble Drum', dmg: 14, rate: 0.26, mag: 10, reserve: 90, spread: 0.075, pellets: 9, range: 24, reload: 2.4, auto: true, slot: 'primary', tier: 2, pierce: 1, recoil: 0.05, shake: 0.22, falloff: [8, 19, 0.25], move: 0.93, bloom: [0.025, 0.03, 0.08], moving: 0.012 },
+  { id: 'sniper', name: 'Kebabber', dmg: 90, rate: 0.42, mag: 8, reserve: 64, spread: 0.045, pellets: 1, range: 120, reload: 2.8, auto: false, slot: 'primary', tier: 2, pierce: 4, recoil: 0.09, shake: 0.2, falloff: [120, 120, 1], move: 0.9, bloom: [0.02, 0.04, 0.1], moving: 0.05, scope: { fov: 18, spread: 0.0015, move: 0.45 } },
+  { id: 'launcher', name: 'Bloop Tube', dmg: 0, rate: 0.75, mag: 3, reserve: 12, spread: 0.004, pellets: 1, range: 110, reload: 3.2, auto: false, slot: 'primary', tier: 2, pierce: 1, recoil: 0.1, shake: 0.35, falloff: [110, 110, 1], move: 0.88, bloom: [0, 0, 0.1], moving: 0.01,
     blast: { dmg: 240, radius: 4.5, edge: 0.35, speed: 38, grav: 6, fuse: 3, arm: 3 } },
-  { id: 'magnum', name: 'Thunder Pea', dmg: 60, rate: 0.32, mag: 8, reserve: Infinity, spread: 0.006, pellets: 1, range: 80, reload: 1.6, auto: false, slot: 'sidearm', tier: 2, pierce: 2, recoil: 0.07, shake: 0.15 },
+  { id: 'magnum', name: 'Thunder Pea', dmg: 60, rate: 0.32, mag: 8, reserve: Infinity, spread: 0.006, pellets: 1, range: 80, reload: 1.6, auto: false, slot: 'sidearm', tier: 2, pierce: 2, recoil: 0.07, shake: 0.15, falloff: [30, 60, 0.7], move: 1.02, bloom: [0.012, 0.03, 0.12], moving: 0.015 },
 ];
 export const weaponIndex = (id: WeaponId): number => WEAPONS.findIndex((w) => w.id === id);
 /** Headshot multiplier by zombie type: commons die to one solid headshot, specials and the Brute reward it less. */
 export const headMult = (type: number): number => (type === ZT.WALKER ? 3 : type === ZT.BRUTE ? 1.25 : 1.5);
-/** Damage one shot deals a zombie of `type` it hit with `body` and `head` bullets/pellets (server and the offline range). */
-export const shotDamage = (w: WeaponDef, type: number, body: number, head: number): number => w.dmg * (body + head * headMult(type));
+/** Damage multiplier at `dist` m for weapon `w` (WeaponDef.falloff); 0 past its range. */
+export const falloffAt = (w: WeaponDef, dist: number): number => {
+  if (dist > w.range) return 0;
+  const [near, far, floor] = w.falloff;
+  return dist <= near ? 1 : dist >= far ? floor : 1 - (1 - floor) * ((dist - near) / (far - near));
+};
+/**
+ * Damage one shot deals a zombie of `type` at `dist` m that it hit with `body` and `head`
+ * bullets/pellets, after falloff (server and the offline range).
+ */
+export const shotDamage = (w: WeaponDef, type: number, body: number, head: number, dist: number): number =>
+  w.dmg * (body + head * headMult(type)) * falloffAt(w, dist);
 /** Launcher blast power: a shell that landed within `arm` m of where it was fired only half-arms. */
 export const blastPower = (B: BlastDef, flown: number): number => (flown < B.arm ? 0.4 : 1);
 export const blastRadius = (B: BlastDef, power: number): number => B.radius * (power < 1 ? 0.6 : 1);

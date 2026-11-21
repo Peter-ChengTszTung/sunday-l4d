@@ -16,7 +16,7 @@ export class Hud {
     spectate: $('spectate'), end: $('end'), endtitle: $('endtitle'), endstats: $('endstats'), endboard: $('endboard'), pause: $('pause'),
     endnext: $('endnext'), waypoint: $('waypoint'), wpdist: $('wpdist'), radio: $('radio'), radiowho: $('radiowho'), radioline: $('radioline'),
     intro: $('intro'), introch: $('introch'), introtitle: $('introtitle'), introsub: $('introsub'), introtext: $('introtext'),
-    notecard: $('notecard'), notetitle: $('notetitle'), notetext: $('notetext'),
+    scope: $('scope'), notecard: $('notecard'), notetitle: $('notetitle'), notetext: $('notetext'),
   };
   private radioQ: [string, string][] = [];
   private radioT = 0;
@@ -177,6 +177,8 @@ export class Hud {
   goo(): void { this.gooT = 4; this.el.goo.style.transition = 'opacity 0.1s'; this.el.goo.style.opacity = '1'; }
 
   spread(px: number): void { this.set('gap', px.toFixed(0), (v) => { this.el.crosshair.style.setProperty('--gap', `${v}px`); }); }
+  /** Sniper scope overlay (shown once the zoom is mostly in). */
+  scope(on: boolean): void { this.set('scope', String(on), () => { this.el.scope.hidden = !on; }); }
   crosshair(on: boolean): void { this.set('ch', String(on), () => { this.el.crosshair.style.display = on ? '' : 'none'; }); }
   spectate(text: string | null): void { this.set('spec', text ?? '', (v) => { this.el.spectate.hidden = !v; this.el.spectate.textContent = v; }); }
 
