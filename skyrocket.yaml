@@ -1,0 +1,11 @@
+name: sunday-l4d
+port: 3000
+resources:
+  postgresql:
+    enable: false
+  s3:
+    enable: false
+  redis:
+    enable: false
+preDeploy:
+  tasks: []
