@@ -142,7 +142,7 @@ function skyline(ctx: Ctx, near: V3, far: V3, lit: V3): Geo {
 function buildSky(ctx: Ctx, fog: V3): pc.Entity {
   const night = ctx.night;
   const cols = ctx.theme.sky, sky = new pc.Entity('sky');
-  const mat = new pc.ShaderMaterial({
+  const mat = ctx.mat(new pc.ShaderMaterial({
     uniqueName: 'Sky', attributes: { aPosition: pc.SEMANTIC_POSITION },
     vertexGLSL: /* glsl */ `attribute vec3 aPosition; uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; varying vec3 vDir;
       void main(void) { vDir = normalize(aPosition); gl_Position = matrix_viewProjection * matrix_model * vec4(aPosition, 1.0); }`,
@@ -156,17 +156,17 @@ function buildSky(ctx: Ctx, fog: V3): pc.Entity {
         float hz = floor(clamp(h / 0.2, 0.0, 1.0) * 4.0) / 4.0;
         gl_FragColor = vec4(mix(uHaze, c, hz), 1.0);
       }`,
-  });
+  }));
   mat.cull = pc.CULLFACE_NONE; mat.depthWrite = false;
   mat.setParameter('uHorizon', rgb(cols[0])); mat.setParameter('uMid', rgb(cols[1])); mat.setParameter('uTop', rgb(cols[2])); mat.setParameter('uHaze', fog);
   mat.update();
   const parts: pc.Entity[] = [];
   parts.push(meshEntity(ctx.mesh(make(sphere(24, 16), undefined, new pc.Mat4().setScale(300 * SKY_K, 300 * SKY_K, 300 * SKY_K))), mat));
   const h0 = rgb(cols[0]);
-  parts.push(meshEntity(ctx.mesh(skyline(ctx, mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(fog, h0, 0.22), mix3(mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(rgb(0xffd98a), h0, 0.2), night))), makeUnlit({ fog: false, cull: 'none' })));
+  parts.push(meshEntity(ctx.mesh(skyline(ctx, mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(fog, h0, 0.22), mix3(mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(rgb(0xffd98a), h0, 0.2), night))), ctx.mat(makeUnlit({ fog: false, cull: 'none' }))));
 
   const moonDir = new pc.Vec3(-90, 150, 230);
-  const flatSky = (g: Geo, color: number, alpha = 1) => parts.push(meshEntity(ctx.mesh(g), makeUnlit({ color, fog: false, cull: 'none', alpha, blend: 'normal' })));
+  const flatSky = (g: Geo, color: number, alpha = 1) => parts.push(meshEntity(ctx.mesh(g), ctx.mat(makeUnlit({ color, fog: false, cull: 'none', alpha, blend: 'normal' }))));
   flatSky(disc(moonDir, 288 * SKY_K, 31 * SKY_K), 0xffd9c2, 0.25 * night);
   flatSky(disc(moonDir, 285 * SKY_K, 22 * SKY_K), 0xfff6d6, 0.35 + 0.65 * night); // a pale day moon at dawn
   const stars: Geo[] = [];
@@ -220,7 +220,7 @@ function particles(ctx: Ctx, count: number, box: V3, vel: V3, size: V3, color: n
     for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { g.pos.push(x, y, z); g.nor.push(u, v, ph); }
     g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
-  const m = new pc.ShaderMaterial({ uniqueName: 'Weather', attributes: { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL }, vertexGLSL: weatherVS, fragmentGLSL: weatherFS });
+  const m = ctx.mat(new pc.ShaderMaterial({ uniqueName: 'Weather', attributes: { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL }, vertexGLSL: weatherVS, fragmentGLSL: weatherFS }));
   m.setParameter('uBox', box); m.setParameter('uVel', vel); m.setParameter('uSize', size); m.setParameter('uTint', rgb(color)); m.setParameter('uAlpha', 0);
   m.blendType = pc.BLEND_NORMAL; m.depthWrite = false; m.cull = pc.CULLFACE_NONE;
   m.update();
@@ -250,7 +250,7 @@ export function buildAtmosphere(ctx: Ctx, glows: GlowSpot[]): Atmo {
   const sky = buildSky(ctx, fog);
   ctx.root.addChild(sky);
   if (glows.length) {
-    const e = ctx.add(meshEntity(ctx.mesh(glowGeo(glows)), makeGlow(0.55 * (0.2 + 0.8 * ctx.night))));
+    const e = ctx.add(meshEntity(ctx.mesh(glowGeo(glows)), ctx.mat(makeGlow(0.55 * (0.2 + 0.8 * ctx.night)))));
     for (const mi of e.render!.meshInstances) mi.cull = false;
   }
   const rain = RAINY[ctx.def.id] ? ctx.add(particles(ctx, 700, [26, 16, 26], [1.2, -19, 0.6], [0.011, 0.3, 0], 0xcfc8ff)) : null;

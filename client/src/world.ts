@@ -3,9 +3,9 @@
 import * as pc from 'playcanvas';
 import { TILE, CEIL_H, WEAPONS } from '../../shared/constants';
 import { F, hash2, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
-import { type Geo, box, sphere, cylinder, ring, make, merge, inflateBox, trs, toMesh } from './geo';
-import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, setTint } from './gfx';
-import { buildGun } from './viewmodel';
+import { type Geo, box, sphere, cylinder, ring, make, merge, inflateBox, insideOut, trs, toMesh } from './geo';
+import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
+import { worldGun } from './viewmodel';
 import { type Ctx, CHUNK, lampIndoor, nightOf } from './worldkit';
 import { buildArchitecture } from './arch';
 import { buildGround } from './ground';
@@ -36,7 +36,9 @@ export function buildWorld(L: Level): World {
   const def = L.def, { W, H } = L, theme = def.theme;
   const root = new pc.Entity('world');
   app.root.addChild(root);
-  const textures: pc.Texture[] = [], meshes: pc.Mesh[] = [];
+  const textures: pc.Texture[] = [], meshes: pc.Mesh[] = [], materials: pc.Material[] = [];
+  /** Materials made for this chapter; destroyed in dispose(). */
+  const mat = <M extends pc.Material>(m: M): M => { materials.push(m); return m; };
   /** Upload world-owned geometry; freed in dispose(). */
   const mesh = (g: Geo) => { const m = toMesh(device, g); meshes.push(m); return m; };
   const add = (e: pc.Entity, parent: pc.Entity = root) => { parent.addChild(e); return e; };
@@ -45,7 +47,7 @@ export function buildWorld(L: Level): World {
   const chunks = (fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void) => {
     for (let cz = 0; cz < H; cz += CHUNK) for (let cx = 0; cx < W; cx += CHUNK) fn(cx, cz, Math.min(W, cx + CHUNK), Math.min(H, cz + CHUNK));
   };
-  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, add: (e) => add(e), floorOf, isWall, chunks };
+  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, mat, add: (e) => add(e), floorOf, isWall, chunks };
   /** Additive halos (lamps, neon, shop windows), drawn as one mesh by the atmosphere. */
   const glowSpots: GlowSpot[] = [];
 
@@ -59,7 +61,7 @@ export function buildWorld(L: Level): World {
   };
 
   buildArchitecture(ctx, glowSpots); // walls, door frames, ceilings
-  buildGround(ctx, batchFor); // ground textures, curbs, lane paint, water
+  const ground = buildGround(ctx, batchFor); // ground textures, curbs, lane paint, water
 
   // ------------------------------------------------------------------ props
   const cube = box(), cyl = cylinder(14), cone = cylinder(10, 0, 1), ball = sphere(10, 7), shade = cylinder(12, 0.4, 1);
@@ -93,7 +95,7 @@ export function buildWorld(L: Level): World {
   // Decorative clutter goes into the same per-chunk batches (no extra draw calls).
   const dressing = buildDressing(ctx, batchFor, glows, glowSpots);
   for (const b of batches.values()) add(b.build(undefined, false, meshes));
-  if (glows.length) add(meshEntity(mesh(merge(glows)), makeUnlit({ fog: false })));
+  if (glows.length) add(meshEntity(mesh(merge(glows)), mat(makeUnlit({ fog: false }))));
 
   function drawProp(b: Batch, p: Prop): void {
     const cx = (p.x + p.w / 2) * T, cz = (p.z + p.d / 2) * T, r = hash2(p.x * 5 + 3, p.z * 7 + 1);
@@ -321,15 +323,14 @@ export function buildWorld(L: Level): World {
   }
 
   // ------------------------------------------------------------------ doors
-  const doorViews = def.doors.map((d) => {
-    const w = (d.x1 - d.x0 + 1) * T, dd = (d.z1 - d.z0 + 1) * T;
-    const sx = w >= dd ? w : 0.4, sz = w >= dd ? 0.4 : dd;
+  /** One 128 px texture per door kind, shared by every door of that kind. */
+  const paintDoor = (kind: string): HTMLCanvasElement => {
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
     const g = cv.getContext('2d')!;
-    if (d.kind === 'shutter') {
+    if (kind === 'shutter') {
       g.fillStyle = '#ffd43b'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#1a1226';
       for (let i = -128; i < 256; i += 48) { g.beginPath(); g.moveTo(i, 128); g.lineTo(i + 24, 128); g.lineTo(i + 152, 0); g.lineTo(i + 128, 0); g.fill(); }
-    } else if (d.kind === 'barricade') {
+    } else if (kind === 'barricade') {
       g.fillStyle = '#7a5235'; g.fillRect(0, 0, 128, 128);
       for (let y = 0; y < 128; y += 32) { g.fillStyle = y % 64 ? '#b5894f' : '#a0743f'; g.fillRect(0, y + 3, 128, 26); }
       g.strokeStyle = '#1a1226'; g.lineWidth = 6; g.beginPath(); g.moveTo(8, 8); g.lineTo(120, 120); g.moveTo(120, 8); g.lineTo(8, 120); g.stroke();
@@ -337,8 +338,19 @@ export function buildWorld(L: Level): World {
       g.fillStyle = '#4a4e66'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#c9ccdc'; g.lineWidth = 3;
       for (let i = -128; i < 256; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 128, 128); g.moveTo(i + 128, 0); g.lineTo(i, 128); g.stroke(); }
     }
-    const tex = canvasTexture(cv); textures.push(tex);
-    const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setScale(sx, CEIL_H, sz))), makeToon({ tex })));
+    return cv;
+  };
+  const doorTex = new Map<string, pc.Texture>();
+  // One textured toon material for every door of the chapter; each door sets its own `uTex`. (It is made
+  // here rather than shared with the ground so doors keep their place in the draw order.)
+  const doorMat = mat(makeToon({ tex: whiteTex }));
+  const doorViews = def.doors.map((d) => {
+    const w = (d.x1 - d.x0 + 1) * T, dd = (d.z1 - d.z0 + 1) * T;
+    const sx = w >= dd ? w : 0.4, sz = w >= dd ? 0.4 : dd;
+    let tex = doorTex.get(d.kind);
+    if (!tex) { tex = canvasTexture(() => paintDoor(d.kind)); doorTex.set(d.kind, tex); textures.push(tex); }
+    const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setScale(sx, CEIL_H, sz))), doorMat));
+    e.render!.meshInstances[0].setParameter('uTex', tex);
     const x = ((d.x0 + d.x1 + 1) / 2) * T, z = ((d.z0 + d.z1 + 1) / 2) * T;
     const v = { d, e, x, z, y: CEIL_H / 2, open: false };
     e.setPosition(x, v.y, z);
@@ -351,15 +363,10 @@ export function buildWorld(L: Level): World {
   /** Ground ring colour: fixed for supplies, by tier for weapons (blue = basic, orange-gold = tier 2). */
   const ringColor = (kind: string): number => RING[kind] ?? ((WEAPONS.find((w) => w.id === kind)?.tier ?? 1) >= 2 ? 0xffa53a : 0x74c0fc);
   const arrowMesh = mesh(make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
-  const objMat = makeUnlit({ color: 0xffd43b, fog: false });
+  const objMat = mat(makeUnlit({ color: 0xffd43b, fog: false }));
   // Pickup models are one mesh each, shared by every pickup of that kind: the toon parts plus their
   // ink hull wound inside-out and coloured ink, so a single back-face-culled toon draw shows both.
   type BoxPart = [w: number, h: number, d: number, color: number, x?: number, y?: number, z?: number, ink?: number];
-  const insideOut = (g: Geo): Geo => {
-    for (let i = 0; i < g.idx.length; i += 3) { const t = g.idx[i]; g.idx[i] = g.idx[i + 1]; g.idx[i + 1] = t; }
-    for (let i = 0; i < g.nor.length; i++) g.nor[i] = -g.nor[i];
-    return g;
-  };
   const inkModel = (parts: BoxPart[], extra: Geo[] = []): pc.Mesh => mesh(inkGeo(parts, extra));
   function inkGeo(parts: BoxPart[], extra: Geo[] = []): Geo {
     const list: Geo[] = [...extra];
@@ -391,7 +398,7 @@ export function buildWorld(L: Level): World {
   // rebuilt whenever a pickup appears or is taken (see `rebuildBases`).
   const ringGeo = ring(0.42, 0.56, 24);
   const pedGeo = inkGeo([[0.5, 0.36, 0.5, 0x54506e, 0, 0.18, 0]]), notePedGeo = inkGeo([[0.5, 0.5, 0.5, 0x54506e, 0, 0.25, 0]]);
-  const ringsEnt = add(meshEntity(mesh(make(ringGeo)), makeUnlit({ alpha: 0.85, blend: 'normal' })));
+  const ringsEnt = add(meshEntity(mesh(make(ringGeo)), mat(makeUnlit({ alpha: 0.85, blend: 'normal' }))));
   const pedsEnt = add(meshEntity(mesh(pedGeo), toonMat));
   let basesDirty = true;
 
@@ -405,7 +412,7 @@ export function buildWorld(L: Level): World {
       case 'obj': float.addChild(meshEntity(arrowMesh, objMat)); break;
       case 'item': float.addChild(meshEntity(floatMesh(p.look ?? 'part'), toonMat)); break;
       default: {
-        const gun = buildGun(p.kind, false, meshes).ent;
+        const gun = worldGun(p.kind);
         gun.setLocalScale(1.9, 1.9, 1.9);
         gun.setLocalEulerAngles(0, 90, 0);
         float.addChild(gun);
@@ -419,7 +426,7 @@ export function buildWorld(L: Level): World {
   }
   const pickups = def.pickups.map(buildPickup);
 
-  const noteMat = makeUnlit({ color: 0xfff6e0 });
+  const noteMat = mat(makeUnlit({ color: 0xfff6e0 }));
   const paperMesh = mesh(make(box(), undefined, trs(0, 0, 0, 0, 0, 0, 0.42, 0.02, 0.55)));
   const notes: NoteView[] = def.notes.map((n) => {
     const group = new pc.Entity('note');
@@ -448,7 +455,7 @@ export function buildWorld(L: Level): World {
   }
 
   // Beacon light that blinks over the active objective machine.
-  const beacon = add(meshEntity(mesh(make(ball)), makeUnlit({ fog: false })));
+  const beacon = add(meshEntity(mesh(make(ball)), mat(makeUnlit({ fog: false }))));
   beacon.setLocalScale(0.16, 0.16, 0.16);
   beacon.enabled = false;
   let activeObj = -1;
@@ -498,13 +505,16 @@ export function buildWorld(L: Level): World {
         setTint(beacon, used ? (blink ? 0x7dff8a : 0x1f6a34) : blink ? 0xff4d5e : 0x6a1f2a);
       }
       for (const n of notes) n.group.enabled = Math.abs(n.def.x - camX) < far && Math.abs(n.def.z - camZ) < far;
+      ground.update(camX, camY, camZ);
       atmo.update(t, dt, camX, camY, camZ);
     },
     dispose() {
       atmo.dispose();
+      ground.dispose();
       root.destroy();
-      for (const t of textures) t.destroy();
+      for (const t of textures) freeTexture(t);
       for (const m of meshes) m.destroy();
+      for (const m of materials) m.destroy();
     },
   };
   return world;

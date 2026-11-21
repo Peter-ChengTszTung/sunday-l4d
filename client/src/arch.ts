@@ -73,7 +73,7 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
     return isIndoor(nf) ? CEIL_H : def.wallH[z * W + x];
   };
 
-  const ceilTex = canvasTexture(ceilingTexture(), true, true);
+  const ceilTex = canvasTexture(ceilingTexture, true, true);
   ctx.textures.push(ceilTex);
 
   ctx.chunks((cx0, cz0, cx1, cz1) => {

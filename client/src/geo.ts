@@ -181,6 +181,13 @@ export function inflateSmooth(g: Geo, t: number): Geo {
   return g;
 }
 
+/** Turn `g` inside-out (in place): reversed winding and normals, so back-face culling shows its far side. */
+export function insideOut(g: Geo): Geo {
+  for (let i = 0; i < g.idx.length; i += 3) { const t = g.idx[i]; g.idx[i] = g.idx[i + 1]; g.idx[i + 1] = t; }
+  for (let i = 0; i < g.nor.length; i++) g.nor[i] = -g.nor[i];
+  return g;
+}
+
 /** `alpha` (optional, one byte per vertex) fills the colour alpha channel, e.g. a part index. */
 export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true, alpha?: ArrayLike<number>): pc.Mesh {
   const mesh = new pc.Mesh(device);

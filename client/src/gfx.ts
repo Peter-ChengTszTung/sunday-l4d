@@ -11,6 +11,8 @@ app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(pc.RESOLUTION_AUTO);
 app.graphicsDevice.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
 window.addEventListener('resize', () => app.resizeCanvas());
+// Longest step any update sees (after a hitch or a background tab), so nothing tunnels or overshoots.
+app.maxDeltaTime = 0.05;
 export const device = app.graphicsDevice;
 
 export const WORLD = app.scene.layers.getLayerByName('World')!.id;
@@ -18,6 +20,13 @@ const vmLayer = new pc.Layer({ name: 'Viewmodel' });
 app.scene.layers.push(vmLayer);
 /** Layer for the first-person weapon, drawn by its own camera over the world. */
 export const VM = vmLayer.id;
+
+/** The largest angle one screen pixel subtends for any active camera (radians). */
+export function pixelAngle(): number {
+  let a = 0;
+  for (const c of app.systems.camera!.cameras) a = Math.max(a, (2 * Math.tan((c.fov * Math.PI) / 360)) / Math.max(1, device.height));
+  return a;
+}
 
 export const rgb = (c: number): [number, number, number] => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
 
@@ -41,19 +50,20 @@ const PARTS = /* glsl */ `
     vec3 a = vec3(uParts[i].x, uParts[i + 1].x, uParts[i + 2].x), b = vec3(uParts[i].y, uParts[i + 1].y, uParts[i + 2].y), c = vec3(uParts[i].z, uParts[i + 1].z, uParts[i + 2].z);
     return cross(b, c) * n.x + cross(c, a) * n.y + cross(a, b) * n.z;
   }`;
-const toonVS = (uv: boolean, parts = false) => /* glsl */ `
+// `ink`: vertices whose colour alpha is 0 are an ink hull baked into the same mesh (see toonInkMat).
+const toonVS = (uv: boolean, parts = false, ink = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform mat3 matrix_normal;
-  varying vec3 vN; varying vec3 vW; varying vec3 vC;
+  varying vec3 vN; varying vec3 vW; varying vec3 vC; ${ink ? 'varying float vInk;' : ''}
   ${parts ? PARTS : ''}
   void main(void) {
     ${parts ? 'int pi = partIndex(); vec3 p = partPos(pi, aPosition), nrm = partNormal(pi, aNormal);' : 'vec3 p = aPosition, nrm = aNormal;'}
     vec4 w = matrix_model * vec4(p, 1.0);
-    vW = w.xyz; vN = normalize(matrix_normal * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''}
+    vW = w.xyz; vN = normalize(matrix_normal * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} ${ink ? 'vInk = 1.0 - aColor.a;' : ''}
     gl_Position = matrix_viewProjection * w;
   }`;
-const toonFS = (uv: boolean) => /* glsl */ `
-  varying vec3 vN; varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''}
+const toonFS = (uv: boolean, ink = false) => /* glsl */ `
+  varying vec3 vN; varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''} ${ink ? 'varying float vInk; uniform vec3 uInk;' : ''}
   uniform vec3 uTint; uniform vec3 uSunDir; uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn; uniform float uTorchUse;
   uniform vec3 uAmbLo; uniform vec3 uAmbHi; uniform vec3 uSunCol; uniform vec3 uGrade; uniform vec3 uLampWarm; uniform vec3 uLampCool;
   // World light map (see atmo.ts): r = open sky, g = warm street lamps, b = cool ceiling fixtures.
@@ -66,6 +76,7 @@ const toonFS = (uv: boolean) => /* glsl */ `
   float edge(float e, float w, float x) { return smoothstep(e - w, e + w, x); }
   float lampBand(float x) { return 0.26 * edge(0.07, 0.015, x) + 0.32 * edge(0.33, 0.015, x) + 0.42 * edge(0.62, 0.015, x); }
   void main(void) {
+    ${ink ? 'if (vInk > 0.5) { gl_FragColor = vec4(fogged(vC * uInk, vW), 1.0); return; }' : ''}
     vec3 n = normalize(vN);
     vec3 base = vC * uTint${uv ? ' * texture2D(uTex, vUv).rgb' : ''};
     vec3 lm = mix(vec3(1.0, 0.0, 0.0), texture2D(uLightMap, (vW.xz + n.xz * 0.3) * uLightScale).rgb, uTorchUse);
@@ -194,6 +205,14 @@ export function makeOutline(thickness: number, fog = true, parts = false): pc.Sh
 }
 
 export const toonMat = makeToon();
+/**
+ * Toon material for small models that carry their ink hull in the same mesh, so each is one draw: hull
+ * vertices have colour alpha 0, are wound inside-out, and come out as flat fogged ink exactly like `inkBack`.
+ * (Opaque draws are ordered by material creation, newest first, and that order settles depth ties where a
+ * teammate's hand meets the gun: this is created straight after `toonMat` so guns still draw after characters.)
+ */
+export const toonInkMat = new pc.ShaderMaterial({ uniqueName: 'ToonInk', attributes: ATTR, vertexGLSL: toonVS(false, false, true), fragmentGLSL: toonFS(false, true) });
+toonInkMat.setParameter('uTint', [1, 1, 1]); toonInkMat.setParameter('uFogOn', 1); toonInkMat.setParameter('uTorchUse', 1); toonInkMat.setParameter('uCeil', 0); toonInkMat.setParameter('uInk', rgb(INK)); toonInkMat.update();
 export const toonVM = makeToon({ fog: false, torch: false });
 export const outlineMat = makeOutline(0.022);
 /** Character materials: one merged mesh per chibi, limbs posed per instance via `uParts` (see chibi.ts). */
@@ -219,16 +238,19 @@ const sun = new pc.Vec3(-0.4, 1, 0.9).normalize();
 scope.resolve('uSunDir').setValue([sun.x, sun.y, sun.z]);
 scope.resolve('uFogCol').setValue(rgb(0x7a4f8e));
 scope.resolve('uFogRange').setValue([24, 105]);
-scope.resolve('uTorchPos').setValue([0, -100, 0]);
-scope.resolve('uTorchDir').setValue([0, 0, -1]);
-scope.resolve('uTorchOn').setValue(0);
+// Set every frame: keep the scope ids and reuse the value arrays.
+const sTime = scope.resolve('uTime'), sTorchOn = scope.resolve('uTorchOn'), sTorchPos = scope.resolve('uTorchPos'), sTorchDir = scope.resolve('uTorchDir');
+const torchPos = new Float32Array([0, -100, 0]), torchDir = new Float32Array([0, 0, -1]);
+sTorchPos.setValue(torchPos);
+sTorchDir.setValue(torchDir);
+sTorchOn.setValue(0);
 scope.resolve('uAmbLo').setValue([0.4, 0.34, 0.5]);
 scope.resolve('uAmbHi').setValue([0.56, 0.58, 0.72]);
 scope.resolve('uSunCol').setValue([0.4, 0.34, 0.3]);
 scope.resolve('uGrade').setValue([1, 1, 1]);
 scope.resolve('uLampWarm').setValue([0.64, 0.45, 0.22]);
 scope.resolve('uLampCool').setValue([0.36, 0.44, 0.5]);
-scope.resolve('uTime').setValue(0);
+sTime.setValue(0);
 scope.resolve('uCeilLight').setValue([0.56, 0.56, 0.58]);
 // Until a world bakes its own, a 1x1 "open sky, no lamps" light map.
 const blankLight = new pc.Texture(device, { width: 1, height: 1, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_NEAREST, magFilter: pc.FILTER_NEAREST, levels: [new Uint8Array([255, 0, 0, 255])] });
@@ -255,11 +277,11 @@ export function setAtmosphere(ambLo: V3, ambHi: V3, sunCol: V3, grade: V3, lampK
   scope.resolve('uLampWarm').setValue([0.64 * lampK, 0.45 * lampK, 0.22 * lampK]);
   scope.resolve('uLampCool').setValue([0.36 * lampK, 0.44 * lampK, 0.5 * lampK]);
 }
-export function setTime(t: number): void { scope.resolve('uTime').setValue(t % 3600); }
+export function setTime(t: number): void { sTime.setValue(t % 3600); }
 export function setTorch(on: boolean, x: number, y: number, z: number, dx: number, dy: number, dz: number): void {
-  scope.resolve('uTorchOn').setValue(on ? 1 : 0);
-  scope.resolve('uTorchPos').setValue([x, y, z]);
-  scope.resolve('uTorchDir').setValue([dx, dy, dz]);
+  sTorchOn.setValue(on ? 1 : 0);
+  torchPos[0] = x; torchPos[1] = y; torchPos[2] = z; sTorchPos.setValue(torchPos);
+  torchDir[0] = dx; torchDir[1] = dy; torchDir[2] = dz; sTorchDir.setValue(torchDir);
 }
 
 // ----------------------------------------------------------------- entities
@@ -272,21 +294,50 @@ export function meshEntity(mesh: pc.Mesh | pc.Mesh[], mats: pc.Material | pc.Mat
   return e;
 }
 export const instances = (e: pc.Entity): readonly pc.MeshInstance[] => e.render?.meshInstances ?? [];
-export function setTint(e: pc.Entity, color: number): void { for (const mi of instances(e)) mi.setParameter('uTint', rgb(color)); }
+const tints = new Map<number, readonly number[]>();
+/** `rgb(color)` as a shared array for uniform values: one per colour in use, never to be modified. */
+export function tintOf(color: number): number[] {
+  let t = tints.get(color);
+  if (!t) { t = rgb(color); tints.set(color, t); }
+  return t as number[];
+}
+export function setTint(e: pc.Entity, color: number): void { const t = tintOf(color); for (const mi of instances(e)) mi.setParameter('uTint', t); }
 
 const _q = new pc.Quat();
 /** Local rotation from radians, applied as Rx·Ry·Rz. */
 export function setRot(e: pc.GraphNode, rx: number, ry: number, rz: number): void { e.setLocalRotation(quatXYZ(rx, ry, rz, _q)); }
 
-export function canvasTexture(cv: HTMLCanvasElement, mipmaps = true, repeat = false): pc.Texture {
+/** Paints a texture's pixels. Must be repeatable: it runs again if the WebGL context is restored. */
+export type Painter = () => HTMLCanvasElement;
+const painters = new Map<pc.Texture, Painter>();
+function paintInto(t: pc.Texture, paint: Painter): void {
+  const cv = paint();
+  t.setSource(cv); // uploads straight away (and builds the mip chain)
+  // The GPU copy is all we need. The engine only releases bitmaps/images, so drop the canvas's backing store by hand.
+  cv.width = cv.height = 0;
+}
+// A restored context has lost every texture, and the source canvases are gone: paint them again.
+device.on('devicerestored', () => { for (const [t, paint] of painters) paintInto(t, paint); });
+
+/**
+ * Texture from a 2D canvas. Pass a painter function rather than a canvas where possible: the canvas is then
+ * released as soon as it is uploaded, and repainted after a context loss. Free these with `freeTexture`.
+ */
+export function canvasTexture(src: HTMLCanvasElement | Painter, mipmaps = true, repeat = false): pc.Texture {
+  const cv = typeof src === 'function' ? src() : src;
   const t = new pc.Texture(device, {
     width: cv.width, height: cv.height, format: pc.PIXELFORMAT_RGBA8, mipmaps,
     minFilter: mipmaps ? pc.FILTER_LINEAR_MIPMAP_LINEAR : pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
     addressU: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE, addressV: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE, anisotropy: device.maxAnisotropy,
   });
   t.setSource(cv);
+  if (typeof src === 'function') { cv.width = cv.height = 0; painters.set(t, src); }
   return t;
 }
+/** Destroys a texture and forgets its painter. */
+export function freeTexture(t: pc.Texture): void { painters.delete(t); t.destroy(); }
+/** 1x1 white stand-in for textures that are not loaded (see ground.ts). */
+export const whiteTex = new pc.Texture(device, { width: 1, height: 1, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_NEAREST, magFilter: pc.FILTER_NEAREST, levels: [new Uint8Array([255, 255, 255, 255])] });
 
 // ------------------------------------------------------------------ batching
 /** Collects static coloured primitives and bakes them into one toon mesh + one ink hull. */
@@ -310,13 +361,21 @@ export class Batch {
     if (hull && hull.idx.length) this.hulls.push(hull);
   }
 
+  /** Hands over the collected geometry (toon solids, ink hulls) and empties the batch. */
+  take(): { solids: Geo[]; hulls: Geo[] } {
+    const out = { solids: this.solids, hulls: this.hulls };
+    this.solids = []; this.hulls = [];
+    return out;
+  }
+
   /** `vm` = first-person materials (no fog, no flashlight). Meshes are appended to `track` so the owner can free them. */
   build(layer = WORLD, vm = false, track?: pc.Mesh[]): pc.Entity {
     const e = new pc.Entity();
-    const mk = (list: Geo[]) => { const m = toMesh(device, merge(list)); track?.push(m); return m; };
-    if (this.solids.length) e.addChild(meshEntity(mk(this.solids), vm ? toonVM : toonMat, layer));
-    if (this.hulls.length) e.addChild(meshEntity(mk(this.hulls), vm ? inkBackVM : inkBack, layer));
-    this.solids = []; this.hulls = [];
+    const { solids, hulls } = this.take();
+    const mk = (g: Geo) => { const m = toMesh(device, g); track?.push(m); return m; };
+    if (solids.length) e.addChild(meshEntity(mk(merge(solids)), vm ? toonVM : toonMat, layer));
+    // The ink materials are unlit, so hull meshes are uploaded without normals (12 bytes a vertex saved).
+    if (hulls.length) e.addChild(meshEntity(mk({ ...merge(hulls), nor: [] }), vm ? inkBackVM : inkBack, layer));
     return e;
   }
 }
@@ -328,7 +387,7 @@ export function inkBox(w: number, h: number, d: number, color: number, t = 0.03,
   let pair = boxCache.get(key);
   if (!pair) {
     const g = make(box(), color, new pc.Mat4().setScale(w, h, d));
-    pair = [toMesh(device, g), toMesh(device, inflateBox(g, t, t, t))];
+    pair = [toMesh(device, g), toMesh(device, { ...inflateBox(g, t, t, t), nor: [] })];
     boxCache.set(key, pair);
   }
   return meshEntity(pair, vm ? [toonVM, inkBackVM] : [toonMat, inkBack], layer);

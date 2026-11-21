@@ -15,6 +15,8 @@ export interface Ctx {
   /** Textures to destroy with the world. */ textures: pc.Texture[];
   /** Uploads `g` and remembers the mesh so `dispose()` can free it. */
   mesh(g: Geo): pc.Mesh;
+  /** Registers a material made for this world so `dispose()` can destroy it. Returns it. */
+  mat<M extends pc.Material>(m: M): M;
   add(e: pc.Entity): pc.Entity;
   floorOf(x: number, z: number): number;
   isWall(x: number, z: number): boolean;

@@ -1,8 +1,8 @@
 // First-person weapon rig. Lives in its own layer and is drawn by a second
 // camera that clears depth, so the gun never clips into walls.
 import * as pc from 'playcanvas';
-import { box, cylinder, sphere, star, make, toMesh, trs } from './geo';
-import { app, device, VM, WORLD, Batch, inkBox, meshEntity, makeToon, makeUnlit, setRot, setTint } from './gfx';
+import { box, cylinder, sphere, star, make, merge, inflateBox, insideOut, toMesh, trs } from './geo';
+import { app, device, VM, Batch, inkBox, meshEntity, makeUnlit, toonVM, toonInkMat, setRot, setTint } from './gfx';
 import type { WeaponDef } from '../../shared/constants';
 
 type GunId = WeaponDef['id'];
@@ -10,17 +10,17 @@ export interface Gun { ent: pc.Entity; muzzle: [number, number, number]; pump: p
 
 const cube = box();
 const cyl = cylinder(14);
-/** Chunky toy-like guns. Barrel points down -Z, origin at the grip. */
-/** `track` collects the gun's meshes for an owner that will free them (world pickups). */
-export function buildGun(id: GunId, vm = false, track?: pc.Mesh[]): Gun {
-  const layer = vm ? VM : WORLD;
+/** Shotgun pump: a separate part so the first-person rig can rack it. */
+const PUMP = { w: 0.1, h: 0.075, d: 0.2, color: 0x8a5a3c, t: 0.012, x: 0, y: 0.01, z: -0.36 };
+/** Chunky toy-like guns. Barrel points down -Z, origin at the grip. Returns the parts as an unbuilt batch. */
+function gunParts(id: GunId): { b: Batch; muzzle: [number, number, number]; pump: boolean } {
   const b = new Batch();
   const part = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rx = 0) => b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'box', 0.012);
   /** Round part: radius r, length len, along Z (barrels, scopes) or X (drums). */
   const tube = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' = 'z') =>
     b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'smooth', 0.012);
   let muzzle: [number, number, number] = [0, 0, 0];
-  let pump: pc.Entity | null = null;
+  let pump = false;
   switch (id) {
     case 'pistol':
       part(0.07, 0.09, 0.3, 0xff8fab, 0, 0.06, -0.1);
@@ -40,8 +40,7 @@ export function buildGun(id: GunId, vm = false, track?: pc.Mesh[]): Gun {
       part(0.085, 0.1, 0.62, 0xffa94d, 0, 0.07, -0.22);
       part(0.06, 0.06, 0.5, 0x54506e, 0, 0.1, -0.42);
       part(0.07, 0.12, 0.26, 0x8a5a3c, 0, 0.01, 0.17, -0.2);
-      pump = inkBox(0.1, 0.075, 0.2, 0x8a5a3c, 0.012, layer, vm);
-      pump.setLocalPosition(0, 0.01, -0.36);
+      pump = true;
       muzzle = [0, 0.1, -0.7];
       break;
     case 'rifle':
@@ -100,10 +99,47 @@ export function buildGun(id: GunId, vm = false, track?: pc.Mesh[]): Gun {
       muzzle = [0, 0.08, -0.34];
       break;
   }
-  const ent = b.build(layer, vm, track);
-  if (pump) ent.addChild(pump);
+  return { b, muzzle, pump };
+}
+
+/** First-person gun for the viewmodel layer (separate toon and ink draws; the pump is its own entity). */
+export function buildGun(id: GunId): Gun {
+  const { b, muzzle, pump: hasPump } = gunParts(id);
+  const ent = b.build(VM, true);
+  let pump: pc.Entity | null = null;
+  if (hasPump) {
+    pump = inkBox(PUMP.w, PUMP.h, PUMP.d, PUMP.color, PUMP.t, VM, true);
+    pump.setLocalPosition(PUMP.x, PUMP.y, PUMP.z);
+    ent.addChild(pump);
+  }
   return { ent, muzzle, pump };
 }
+
+const worldGunMeshes = new Map<GunId, pc.Mesh>();
+/** Gun geometry for the world: toon parts plus their ink hull (inside-out, colour alpha 0) in one mesh for `toonInkMat`. */
+function worldGunMesh(id: GunId): pc.Mesh {
+  let m = worldGunMeshes.get(id);
+  if (!m) {
+    const { b, pump } = gunParts(id);
+    const { solids, hulls } = b.take();
+    if (pump) {
+      const g = make(cube, PUMP.color, new pc.Mat4().setScale(PUMP.w, PUMP.h, PUMP.d)), at = trs(PUMP.x, PUMP.y, PUMP.z);
+      solids.push(make(g, undefined, at));
+      hulls.push(make(inflateBox(g, PUMP.t, PUMP.t, PUMP.t), undefined, at));
+    }
+    const solid = merge(solids), hull = insideOut(merge(hulls));
+    // Hull first: the ink pass used to draw before the toon pass, and the order settles depth ties.
+    const nh = hull.pos.length / 3, alpha = new Uint8Array(nh + solid.pos.length / 3).fill(255, nh);
+    m = toMesh(device, merge([hull, solid]), true, alpha);
+    worldGunMeshes.set(id, m);
+  }
+  return m;
+}
+/**
+ * A gun for the world layer (teammates' hands, weapon pickups): one draw. The mesh is built once per
+ * weapon and shared for the life of the app, so the entity can be created and destroyed freely.
+ */
+export function worldGun(id: GunId): pc.Entity { return meshEntity(worldGunMesh(id), toonInkMat); }
 
 export const STAR_MESH = toMesh(device, make(star(6, 1, 0.42)));
 const ballMesh = toMesh(device, make(sphere(12, 10)));
@@ -134,17 +170,17 @@ export class ViewModel {
     this.root.addChild(this.rig);
     this.rig.setLocalScale(0.62, 0.62, 0.62);
     for (const id of ids) {
-      const g = buildGun(id, true);
+      const g = buildGun(id);
       g.ent.enabled = false;
       this.rig.addChild(g.ent);
       this.guns.push(g);
     }
-    const skin = makeToon({ fog: false, torch: false });
-    const hand = meshEntity(ballMesh, skin, VM);
+    // Hands use the shared first-person toon material, tinted per instance.
+    const hand = meshEntity(ballMesh, toonVM, VM);
     setTint(hand, 0xffdcc2);
     hand.setLocalPosition(0, -0.04, 0.03); hand.setLocalScale(0.06, 0.06, 0.06);
     this.rig.addChild(hand);
-    this.shoveHand = meshEntity(ballMesh, skin, VM);
+    this.shoveHand = meshEntity(ballMesh, toonVM, VM);
     setTint(this.shoveHand, 0xffdcc2);
     this.shoveHand.enabled = false;
     this.root.addChild(this.shoveHand);

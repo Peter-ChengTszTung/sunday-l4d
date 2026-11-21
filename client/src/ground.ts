@@ -5,7 +5,7 @@ import * as pc from 'playcanvas';
 import { TILE } from '../../shared/constants';
 import { F, isIndoor, hash2, type PropType } from '../../shared/level';
 import { type Geo } from './geo';
-import { Batch, meshEntity, toonTexMat, canvasTexture, rgb, type V3 } from './gfx';
+import { Batch, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
 import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css } from './worldkit';
 
 const T = TILE;
@@ -17,6 +17,18 @@ const FLOOR_BASE: Record<number, number> = {
 };
 const ROUND: Partial<Record<PropType, number>> = { tree: 0.3, pine: 0.3, bush: 0.5, rock: 0.55, barrel: 0.5, fountain: 1, tank: 0.5, valve: 0.3, beacon: 0.35 };
 const INKC = 'rgba(26,18,38,';
+// Chunk textures are streamed: painted when a chunk comes within the fog distance plus LOAD metres of the
+// camera, and freed once it is DROP metres beyond it (the gap is hysteresis, so pacing a boundary is free).
+const LOAD = 12, DROP = 30;
+// Slack on the camera-to-chunk distance: metres, and screen pixels (see `update`; half a pixel is the true bound).
+const SLACK_M = 1, SLACK_PX = 0.75;
+
+interface Chunk { mi: pc.MeshInstance; x0: number; z0: number; x1: number; z1: number; tex: pc.Texture | null; paint: () => HTMLCanvasElement }
+export interface Ground {
+  /** Loads / frees chunk textures around the camera. Call every frame before rendering. */
+  update(camX: number, camY: number, camZ: number): void;
+  dispose(): void;
+}
 
 const waterVS = /* glsl */ `
   attribute vec3 aPosition; attribute vec4 aColor;
@@ -46,7 +58,7 @@ const waterFS = /* glsl */ `
     gl_FragColor = vec4(mix(c, uFogCol, f), 1.0);
   }`;
 
-export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch): void {
+export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch): Ground {
   const { def, W, H, theme, floorOf } = ctx;
   const floorBase = (f: number): V3 => rgb(theme.floors?.[f] ?? FLOOR_BASE[f] ?? 0x9d8fa5);
   const rainy = (theme.floors?.[F.ASPHALT] ?? 0x5a5d84) < 0x404060; // dark wet asphalt: more puddles
@@ -54,14 +66,12 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
   for (let i = 0; i < def.floor.length && !hasWater; i++) hasWater = def.floor[i] === F.WATER;
   const skyTint = rgb(theme.sky[0]);
 
-  const waterMat = new pc.ShaderMaterial({ uniqueName: 'Water', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR }, vertexGLSL: waterVS, fragmentGLSL: waterFS });
+  const waterMat = ctx.mat(new pc.ShaderMaterial({ uniqueName: 'Water', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR }, vertexGLSL: waterVS, fragmentGLSL: waterFS }));
   waterMat.setParameter('uTint', floorBase(F.WATER)); waterMat.setParameter('uSkyTint', skyTint); waterMat.setParameter('uBandTint', mix3(floorBase(F.WATER), mix3(rgb(theme.sky[1]), rgb(theme.fog), 0.5), 0.5));
   waterMat.update();
 
-  ctx.chunks((cx0, cz0, cx1, cz1) => {
-    let any = false;
-    for (let z = cz0; z < cz1 && !any; z++) for (let x = cx0; x < cx1; x++) if (floorOf(x, z) !== F.NONE) { any = true; break; }
-    if (!any) return;
+  /** Paints the ground of one chunk (tile rect). Deterministic, so a chunk can be repainted at any time. */
+  const paintChunk = (cx0: number, cz0: number, cx1: number, cz1: number): HTMLCanvasElement => {
     const cw = cx1 - cx0, chh = cz1 - cz0;
     const cv = document.createElement('canvas');
     cv.width = cw * PX; cv.height = chh * PX;
@@ -218,8 +228,15 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       g.font = `900 ${l.size}px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 5; g.strokeStyle = '#1a1226'; g.lineJoin = 'round'; g.strokeText(l.text, 0, 0); g.fillStyle = l.color; g.fillText(l.text, 0, 0);
     });
-    const tex = canvasTexture(cv);
-    ctx.textures.push(tex);
+    return cv;
+  };
+
+  const chunks: Chunk[] = [];
+  ctx.chunks((cx0, cz0, cx1, cz1) => {
+    let any = false;
+    for (let z = cz0; z < cz1 && !any; z++) for (let x = cx0; x < cx1; x++) if (floorOf(x, z) !== F.NONE) { any = true; break; }
+    if (!any) return;
+    const cw = cx1 - cx0, chh = cz1 - cz0;
 
     // Ground mesh. Maps with water use one quad per dry cell so the water can sit below the banks.
     const geo: Geo = newGeo(), water = newGeo();
@@ -248,7 +265,11 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
         geo.uv.push(u0, v0, u0, v1, u1, v1, u1, v0); geo.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
       }
     }
-    if (geo.idx.length) { const e = ctx.add(meshEntity(ctx.mesh(geo), toonTexMat)); e.render!.meshInstances[0].setParameter('uTex', tex); }
+    if (geo.idx.length) {
+      const mi = ctx.add(meshEntity(ctx.mesh(geo), toonTexMat)).render!.meshInstances[0];
+      mi.setParameter('uTex', whiteTex);
+      chunks.push({ mi, x0, z0, x1, z1, tex: null, paint: () => paintChunk(cx0, cz0, cx1, cz1) });
+    }
     if (water.idx.length) ctx.add(meshEntity(ctx.mesh(water), waterMat));
   });
 
@@ -304,4 +325,33 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
     }
     if (g.idx.length) batchFor((x + 0.5) * T, (z + 0.5) * T).raw(g);
   }
+
+  // A fragment at or beyond the fog distance comes out as flat fog colour whatever its texture holds, so
+  // only the chunks around the camera need one. Anything that can show is painted at once (a chunk takes a
+  // few milliseconds); chunks in the approach band are painted one per frame.
+  const far = theme.fogFar;
+  return {
+    update(camX, camY, camZ) {
+      // With MSAA, a pixel the chunk only partly covers is shaded at the pixel centre, which can lie just
+      // off the chunk: on the ground up to half a pixel nearer the camera, and at a grazing angle a pixel
+      // spans metres. So measure to where a ray SLACK_PX pixels below the chunk's nearest point lands.
+      const h = Math.max(camY, 0.05), px = pixelAngle() * SLACK_PX;
+      let spare = 1;
+      for (const c of chunks) {
+        const rho = Math.hypot(Math.max(c.x0 - camX, camX - c.x1, 0), Math.max(c.z0 - camZ, camZ - c.z1, 0)) - SLACK_M;
+        const a = Math.atan2(h, Math.max(rho, 0)) + px;
+        const d = rho <= 0 || a >= 1.5 ? 0 : Math.hypot(h / Math.tan(a), h);
+        if (c.tex) {
+          if (d > far + DROP) { freeTexture(c.tex); c.tex = null; c.mi.setParameter('uTex', whiteTex); }
+        } else if (d < far || (d < far + LOAD && spare-- > 0)) {
+          c.tex = canvasTexture(c.paint);
+          c.mi.setParameter('uTex', c.tex);
+        }
+      }
+    },
+    dispose() {
+      for (const c of chunks) if (c.tex) freeTexture(c.tex);
+      chunks.length = 0;
+    },
+  };
 }

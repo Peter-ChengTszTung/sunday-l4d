@@ -6,7 +6,7 @@
 // vertex shader poses the parts from a small per-instance uniform array.
 import * as pc from 'playcanvas';
 import { type Geo, box, sphere, cylinder, capsule, ring, quad, make, merge, trs, toMesh } from './geo';
-import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
+import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, freeTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
 
 export type HairStyle = SurvivorLook['style'] | 'bald' | 'mess' | 'hood';
@@ -361,15 +361,20 @@ export function zombieLook(type: number, id: number): ChibiLook {
 }
 
 const tagMesh = toMesh(device, make(quad(), undefined, new pc.Mat4().setScale(1.5, 0.375, 1)));
-/** Floating name tag: a camera-facing quad with the name drawn on a canvas. */
+/** Floating name tag: a camera-facing quad with the name drawn on a canvas. Its texture and material are freed when the entity is destroyed. */
 export function nameTag(text: string, color: string): pc.Entity {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 64;
-  const g = c.getContext('2d')!;
-  g.font = '800 34px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineWidth = 8; g.strokeStyle = '#1a1226'; g.lineJoin = 'round';
-  g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);
-  const mat = makeUnlit({ tex: canvasTexture(c, false), blend: 'normal', depthTest: false, fog: false, cull: 'none' });
-  return meshEntity(tagMesh, mat);
+  const tex = canvasTexture(() => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const g = c.getContext('2d')!;
+    g.font = '800 34px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 8; g.strokeStyle = '#1a1226'; g.lineJoin = 'round';
+    g.strokeText(text, 128, 34); g.fillStyle = color; g.fillText(text, 128, 34);
+    return c;
+  }, false);
+  const mat = makeUnlit({ tex, blend: 'normal', depthTest: false, fog: false, cull: 'none' });
+  const e = meshEntity(tagMesh, mat);
+  e.once('destroy', () => { mat.destroy(); freeTexture(tex); });
+  return e;
 }

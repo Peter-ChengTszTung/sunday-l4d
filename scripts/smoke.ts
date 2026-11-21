@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { getLevel } from '../shared/chapters';
 import { F, cellOf } from '../shared/level';
-import { TILE, PSTATE, ZT, weaponIndex } from '../shared/constants';
+import { TILE, PSTATE, ZT, WEAPONS, weaponIndex } from '../shared/constants';
 import type { ClientMsg, GameEvent, ServerMsg } from '../shared/protocol';
 
 // Random port so parallel runs (e.g. several agents) do not collide.
@@ -124,8 +124,11 @@ for (let i = 0; i < 80 && !boomed; i++) {
   await sleep(150);
   if (a.events.some((e) => e[0] === 'blast')) fail('a grenade impact claim without a launch was accepted');
   await sleep(250);
-  a.send({ t: 'f', w: LAUNCHER, h: [], e: [t[2], 0.1, t[3]] });
-  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3] });
+  // Like the real client: number the shell, and claim the impact only after its time of flight.
+  const seq = i + 1, flight = Math.hypot(t[2] - pos.x, t[3] - pos.z) / WEAPONS[LAUNCHER].blast!.speed;
+  a.send({ t: 'f', w: LAUNCHER, h: [], e: [t[2], 0.1, t[3]], n: seq });
+  await sleep(flight * 1000 + 80);
+  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3], n: seq });
   await sleep(250);
   if (!a.events.some((e) => e[0] === 'blast' && e[1] === a.id)) fail('grenade blast not applied');
   boomed = a.events.some((e) => e[0] === 'zdie' && e[1] === t[0] && e[6] === a.id);

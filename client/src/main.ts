@@ -7,7 +7,7 @@ import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
-import { ViewModel, buildGun, type Gun } from './viewmodel';
+import { ViewModel, worldGun } from './viewmodel';
 import { app, setTorch } from './gfx';
 import { quatYXZ } from './geo';
 import { FX } from './fx';
@@ -60,7 +60,7 @@ const vm = new ViewModel(WEAPONS.map((w) => w.id));
 
 // --------------------------------------------------------------------- state
 interface Mate {
-  id: number; name: string; look: number; chibi: Chibi; tag: pc.Entity; gun: Gun | null; gunW: number;
+  id: number; name: string; look: number; /** Shirt colour as CSS, for the name tag and HUD. */ color: string; chibi: Chibi; tag: pc.Entity; gun: pc.Entity | null; gunW: number;
   x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number;
   hp: number; st: number; respawn: number; rev: number; speed: number;
 }
@@ -427,12 +427,13 @@ function onGot(pickupId: number): void {
 // ------------------------------------------------------------------ entities
 function addMate(r: RosterEntry): Mate {
   const chibi = new Chibi(survivorLook(r.look));
-  const tag = nameTag(r.name, hex(SURVIVORS[r.look % SURVIVORS.length].shirt));
+  const color = hex(SURVIVORS[r.look % SURVIVORS.length].shirt);
+  const tag = nameTag(r.name, color);
   tag.setLocalPosition(0, 1.72, 0);
   chibi.group.addChild(tag);
   chibi.group.enabled = false;
   app.root.addChild(chibi.group);
-  const m: Mate = { id: r.id, name: r.name, look: r.look, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0 };
+  const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0 };
   mates.set(r.id, m);
   return m;
 }
@@ -462,10 +463,11 @@ function applyPlayers(list: PlayerSnap[]): void {
     if (fresh || Math.hypot(x - m.x, z - m.z) > 8) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
     m.chibi.group.enabled = st !== PSTATE.DEAD;
     if (m.gunW !== w) {
-      m.gun?.ent.destroy();
-      m.gun = buildGun(WEAPONS[w]?.id ?? 'pistol');
-      m.gun.ent.setLocalPosition(0.1, 0.74, -0.36); m.gun.ent.setLocalScale(1.15, 1.15, 1.15);
-      m.chibi.root.addChild(m.gun.ent); m.gunW = w;
+      // The gun meshes are shared per weapon (see worldGun), so swapping only replaces a small entity.
+      m.gun?.destroy();
+      m.gun = worldGun(WEAPONS[w]?.id ?? 'pistol');
+      m.gun.setLocalPosition(0.1, 0.74, -0.36); m.gun.setLocalScale(1.15, 1.15, 1.15);
+      m.chibi.root.addChild(m.gun); m.gunW = w;
     }
   }
 }
@@ -919,7 +921,13 @@ function updateCamera(dt: number): void {
   me.trauma = Math.max(0, me.trauma - dt * 2.2);
   const shake = me.trauma * me.trauma * 0.05;
   if (me.st === PSTATE.DEAD) {
-    const m = [...mates.values()].find((q) => q.st === PSTATE.ALIVE) ?? [...mates.values()].find((q) => q.st !== PSTATE.DEAD);
+    // Watch the first teammate still standing, else the first one who is only down.
+    let m: Mate | undefined, alt: Mate | undefined;
+    for (const q of mates.values()) {
+      if (q.st === PSTATE.ALIVE) { m = q; break; }
+      if (!alt && q.st !== PSTATE.DEAD) alt = q;
+    }
+    m ??= alt;
     if (m) { cam.x = m.x + Math.sin(m.ry) * 3.2; cam.y = 2.6; cam.z = m.z + Math.cos(m.ry) * 3.2; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(m.x, 1.0, m.z); }
     else { cam.x = me.x; cam.y = 6; cam.z = me.z + 4; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(me.x, 0, me.z); }
     cam.rot.copy(camera.getRotation());
@@ -945,7 +953,7 @@ function updateEntities(dt: number): void {
     m.speed += (Math.hypot(m.x - px, m.z - pz) / Math.max(dt, 1e-4) - m.speed) * 0.2;
     m.chibi.group.setPosition(m.x, m.y, m.z);
     m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
-    if (m.gun) m.gun.ent.enabled = m.st === PSTATE.ALIVE;
+    if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE;
     m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : pinned.has(m.id) ? 'stagger' : m.speed > 1 ? 'run' : 'aim', time, dt);
     m.tag.setRotation(cam.rot);
   }
@@ -980,11 +988,19 @@ function updateEntities(dt: number): void {
   }
 }
 
+/** Reused every frame by `updateHud`. */
+const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
   hud.setHealth(me.hp, me.st, me.medkits);
   hud.setAmmo(w.name, me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, WEAPONS[me.primary]?.name ?? '', me.weapon === me.primary ? 1 : 2, WEAPONS[me.sidearm].name);
-  const team: MateView[] = [...mates.values()].map((m) => ({ id: m.id, name: m.name, color: hex(SURVIVORS[m.look % SURVIVORS.length].shirt), hp: m.hp, st: m.st, respawn: m.respawn }));
+  let n = 0;
+  for (const m of mates.values()) {
+    const v = team[n] ?? (team[n] = { id: 0, name: '', color: '', hp: 0, st: 0, respawn: 0 });
+    v.id = m.id; v.name = m.name; v.color = m.color; v.hp = m.hp; v.st = m.st; v.respawn = m.respawn;
+    n++;
+  }
+  team.length = n;
   hud.setTeam(team);
   hud.setHoldout(holdout);
   const s = L.def.steps[step];
@@ -1012,8 +1028,8 @@ function updateHud(dt: number): void {
 
 // ---------------------------------------------------------------------- loop
 let orbit = 0;
-app.on('update', (rawDt: number) => {
-  const dt = Math.min(0.05, rawDt);
+// `dt` is already capped by `app.maxDeltaTime` (gfx.ts).
+app.on('update', (dt: number) => {
   time += dt;
   if (inGame) {
     updateMe(dt);
@@ -1026,7 +1042,7 @@ app.on('update', (rawDt: number) => {
   } else {
     // Lobby backdrop: a slow drift down the main street.
     orbit += dt * 0.12;
-    const cpSel = Number($<HTMLSelectElement>('startat').value);
+    const cpSel = Number(startSelect.value);
     const look = (cpSel >= 0 ? L.def.steps[cpSel]?.at : L.def.steps[0]?.at) ?? L.def.spawns[0];
     cam.x = look.x + Math.sin(orbit) * 4; cam.y = 3.2; cam.z = look.z + Math.cos(orbit * 0.7) * 4;
     quatYXZ(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0, cam.rot);
