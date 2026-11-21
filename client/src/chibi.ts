@@ -1,18 +1,21 @@
 // Chibi characters: huge head, bean body, stubby limbs. Built from primitives,
 // vertex-coloured so every character shares one toon material, and animated
 // procedurally (no skeletons). Models face -Z so yaw matches the camera.
+// Each character is ONE merged mesh (toon pass + ink hull = 2 draws, plus its
+// shadow): every vertex carries its part index in the colour alpha, and the
+// vertex shader poses the parts from a small per-instance uniform array.
 import * as pc from 'playcanvas';
 import { type Geo, box, sphere, cylinder, capsule, ring, quad, make, merge, trs, toMesh } from './geo';
-import { device, meshEntity, toonMat, outlineMat, makeUnlit, canvasTexture, setRot } from './gfx';
+import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
 
 export type HairStyle = SurvivorLook['style'] | 'bald' | 'mess' | 'hood';
-export type ZombieKind = 'walker' | 'leaper' | 'puffer' | 'brute';
+export type ZombieKind = 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm';
 export interface ChibiLook {
   skin: number; shirt: number; pants: number; hair: number; style: HairStyle;
   zombie?: ZombieKind; eye?: number;
 }
-export type Pose = 'idle' | 'run' | 'aim' | 'attack' | 'stagger' | 'windup' | 'leap' | 'down';
+export type Pose = 'idle' | 'run' | 'aim' | 'attack' | 'stagger' | 'windup' | 'leap' | 'down' | 'charge' | 'pin' | 'ring';
 
 const HEAD_Y = 1.06;
 const ball = sphere(18, 12);
@@ -23,10 +26,23 @@ const cube = box();
 const shadowMesh = toMesh(device, make(ring(0, 0.36, 16)));
 const shadowMat = makeUnlit({ color: 0x0a0614, alpha: 0.38, blend: 'normal', fog: false });
 
+// Part indices (vertex colour alpha / uParts slot).
+const BODY = 0, HEAD = 1, ARM_L = 2, ARM_R = 3, LEG_L = 4, LEG_R = 5;
+// Root-space box that holds every pose (down, leap, raised arms) of every type.
+const POSE_AABB = new pc.BoundingBox(new pc.Vec3(0, 0.7, 0), new pc.Vec3(1.1, 1.05, 1.05));
+
 const cache = new Map<string, pc.Mesh>();
-function cached(key: string, build: () => Geo): pc.Mesh {
+/** One merged mesh for a look: [geometry, part index] pairs, each in its part's local space. */
+function cachedChibi(key: string, build: () => [Geo, number][]): pc.Mesh {
   let m = cache.get(key);
-  if (!m) { m = toMesh(device, build()); cache.set(key, m); }
+  if (!m) {
+    const parts = build();
+    const alpha: number[] = [];
+    for (const [g, i] of parts) for (let v = 0; v < g.pos.length / 3; v++) alpha.push(i);
+    m = toMesh(device, merge(parts.map(([g]) => g)), true, alpha);
+    m.aabb = POSE_AABB;
+    cache.set(key, m);
+  }
   return m;
 }
 
@@ -81,6 +97,44 @@ function headGeo(l: ChibiLook): Geo {
     case 'bald':
       break;
   }
+  switch (l.zombie) {
+    case 'charger':
+      // Sleep mask shoved up onto the forehead like a headband.
+      parts.push(make(cylinder(18), 0x2a1f4a, trs(0, 0.13, 0.0, -0.12, 0, 0, 0.375, 0.09, 0.365)));
+      for (const sx of [-1, 1]) parts.push(make(ball, 0xff9bd0, trs(sx * 0.12, 0.15, -0.355, -0.1, 0, 0, 0.085, 0.05, 0.03)));
+      break;
+    case 'drooler':
+      // Hair curlers, puffed cheeks and a glowing rope of goo.
+      for (const [x, z, c] of [[-0.18, -0.05, 0xff8fb8], [0.0, 0.02, 0x8fd8ff], [0.18, -0.03, 0xff8fb8], [-0.09, 0.2, 0x8fd8ff], [0.11, 0.2, 0xff8fb8]]) {
+        parts.push(make(cylinder(10), c, trs(x, 0.4 - Math.abs(x) * 0.45, z - 0.02, 0, 0, Math.PI / 2, 0.075, 0.17, 0.075)));
+      }
+      for (const sx of [-1, 1]) parts.push(make(ball, 0xb7e37a, trs(sx * 0.2, -0.12, -0.25, 0, 0, 0, 0.1, 0.085, 0.07)));
+      parts.push(make(cone, 0xb8ff6a, trs(0.02, -0.3, -0.31, Math.PI, 0, 0, 0.05, 0.2, 0.05)));
+      parts.push(make(ball, 0xb8ff6a, trs(0.02, -0.42, -0.31, 0, 0, 0, 0.055)));
+      break;
+    case 'alarm':
+      // Floppy nightcap with a pompom.
+      parts.push(make(cone, 0x5a7fe0, trs(0.08, 0.36, 0.08, -0.5, 0, -0.35, 0.3, 0.45, 0.3)));
+      parts.push(make(ball, 0xfff3d6, trs(0.22, 0.5, 0.3, 0, 0, 0, 0.085)));
+      break;
+  }
+  return merge(parts);
+}
+
+/** Twin-bell alarm clock held in the hand at the end of an arm of total length `len`. */
+function clockGeo(len: number): Geo {
+  const y = -len - 0.12, z = -0.04;
+  const parts = [
+    make(cylinder(18), 0xe8453c, trs(0, y, z, Math.PI / 2, 0, 0, 0.17, 0.12, 0.17)),
+    make(cylinder(18), 0xfff6dc, trs(0, y, z - 0.062, Math.PI / 2, 0, 0, 0.135, 0.01, 0.135)),
+    make(cube, 0x1a1226, trs(0, y + 0.04, z - 0.07, 0, 0, 0, 0.018, 0.09, 0.01)),
+    make(cube, 0x1a1226, trs(0.03, y, z - 0.07, 0, 0, 0, 0.065, 0.016, 0.01)),
+    make(cube, 0xffd43b, trs(0, y + 0.19, z, 0, 0, 0, 0.02, 0.06, 0.02)),
+  ];
+  for (const sx of [-1, 1]) {
+    parts.push(make(dome, 0xffd43b, trs(sx * 0.1, y + 0.15, z, 0, 0, sx * -0.5, 0.085, 0.08, 0.085)));
+    parts.push(make(cube, 0xb0303a, trs(sx * 0.1, y - 0.15, z, 0, 0, sx * 0.4, 0.025, 0.07, 0.025)));
+  }
   return merge(parts);
 }
 
@@ -101,7 +155,16 @@ function bodyGeo(l: ChibiLook): Geo {
     }
     return merge(parts);
   }
-  const wide = l.zombie === 'brute' ? 1.45 : l.zombie === 'leaper' ? 0.85 : 1;
+  if (l.zombie === 'charger') {
+    // Hulking dressing gown with a lopsided shoulder hump over the big arm.
+    return merge([
+      make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.3, 0.27, 0.25)),
+      make(ball, l.shirt, trs(0.16, 0.17, 0.04, 0, 0, -0.3, 0.2, 0.17, 0.2)),
+      make(cube, 0xf0d9e8, trs(0, -0.02, -0.2, 0, 0, 0, 0.36, 0.05, 0.04)),
+      make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.25, 0.14, 0.22)),
+    ]);
+  }
+  const wide = l.zombie === 'brute' ? 1.45 : l.zombie === 'leaper' || l.zombie === 'drooler' ? 0.85 : 1;
   return merge([
     make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.23 * wide, 0.25, 0.2 * (wide > 1 ? 1.25 : wide))),
     make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.2 * wide, 0.13, 0.18 * (wide > 1 ? 1.2 : wide))),
@@ -110,48 +173,53 @@ function bodyGeo(l: ChibiLook): Geo {
 
 export class Chibi {
   readonly group = new pc.Entity('chibi');
-  readonly root = new pc.Entity('root'); // tilts/squashes without touching the shadow
-  readonly head: pc.Entity;
-  readonly body: pc.Entity;
-  readonly armL = new pc.Entity();
-  readonly armR = new pc.Entity();
-  readonly legL = new pc.Entity();
-  readonly legR = new pc.Entity();
+  readonly root = new pc.Entity('root'); // tilts/squashes without touching the shadow; draws the merged mesh
+  // Transform-only part nodes (not in the scene graph): their local transforms,
+  // relative to root, are packed into `parts` for the vertex shader.
+  readonly head = new pc.GraphNode();
+  readonly body = new pc.GraphNode();
+  readonly armL = new pc.GraphNode();
+  readonly armR = new pc.GraphNode();
+  readonly legL = new pc.GraphNode();
+  readonly legR = new pc.GraphNode();
+  private readonly nodes = [this.body, this.head, this.armL, this.armR, this.legL, this.legR];
+  private readonly parts = new Float32Array(CHIBI_PARTS * 12);
   phase = Math.random() * 10;
   punch = 0; // hit squash, decays to 0
   private readonly headBaseY: number;
   private readonly bodyBaseY: number;
   // Smoothed pose values (kept here so we never read rotations back from the engine).
-  private p = { leg: 0, aL: 0, aR: 0, aLz: 0, aRz: 0, headZ: 0, lean: 0, rootX: 0, rootY: 0, squash: 1 };
+  private p = { leg: 0, aL: 0, aR: 0, aLz: 0, aRz: 0, headZ: 0, lean: 0, rootX: 0, rootY: 0, rootZ: 0, squash: 1 };
 
   constructor(readonly look: ChibiLook) {
     const k = [look.skin, look.shirt, look.pants, look.hair, look.style, look.zombie ?? 'p', look.eye ?? 0].join('|');
     const z = look.zombie;
-    const mk = (mesh: pc.Mesh) => meshEntity(mesh, [toonMat, outlineMat]);
-    this.body = mk(cached('b' + k, () => bodyGeo(look)));
+    const armR = z === 'brute' ? 0.11 : z === 'drooler' ? 0.055 : 0.065;
+    const armLen = z === 'leaper' || z === 'drooler' ? 0.24 : z === 'brute' ? 0.22 : 0.15;
+    const mesh = cachedChibi(k, () => {
+      const arm = limbGeo(z ? look.skin : look.shirt, look.skin, armR, armLen);
+      // Per-type right arm: the Charger's huge battering arm, the Alarm Clock's clock.
+      const right = z === 'charger' ? limbGeo(look.skin, look.skin, 0.14, 0.3)
+        : z === 'alarm' ? merge([arm, clockGeo(armLen + 2 * armR)]) : arm;
+      const leg = limbGeo(look.pants, z ? look.skin : 0x2b2540, 0.085, 0.13);
+      return [[bodyGeo(look), BODY], [headGeo(look), HEAD], [arm, ARM_L], [right, ARM_R], [leg, LEG_L], [leg, LEG_R]];
+    });
     this.bodyBaseY = z === 'puffer' ? 0.62 : 0.55;
-    this.head = mk(cached('h' + k, () => headGeo(look)));
     this.headBaseY = z === 'puffer' ? 1.16 : HEAD_Y;
     if (z === 'brute') this.head.setLocalScale(0.82, 0.82, 0.82);
-
-    const armR = z === 'brute' ? 0.11 : 0.065, armLen = z === 'leaper' ? 0.24 : z === 'brute' ? 0.22 : 0.15;
-    const armMesh = cached('a' + k, () => limbGeo(z ? look.skin : look.shirt, look.skin, armR, armLen));
-    const legMesh = cached('l' + k, () => limbGeo(look.pants, z ? look.skin : 0x2b2540, 0.085, 0.13));
-    const sx = z === 'brute' ? 0.4 : z === 'puffer' ? 0.37 : 0.25;
-    for (const [pivot, s] of [[this.armL, -1], [this.armR, 1]] as const) {
-      pivot.setLocalPosition(s * sx, 0.72, 0);
-      pivot.addChild(mk(armMesh));
-      this.root.addChild(pivot);
-    }
-    for (const [pivot, s] of [[this.legL, -1], [this.legR, 1]] as const) {
-      pivot.setLocalPosition(s * (z === 'brute' ? 0.17 : 0.11), 0.33, 0);
-      pivot.addChild(mk(legMesh));
-      this.root.addChild(pivot);
-    }
-    this.root.addChild(this.body);
-    this.root.addChild(this.head);
+    if (z === 'charger') this.head.setLocalScale(0.9, 0.9, 0.9);
+    const sx = z === 'brute' ? 0.4 : z === 'puffer' ? 0.37 : z === 'charger' ? 0.33 : 0.25;
+    this.armL.setLocalPosition(-sx, 0.72, 0); this.armR.setLocalPosition(sx, 0.72, 0);
+    const lx = z === 'brute' ? 0.17 : 0.11;
+    this.legL.setLocalPosition(-lx, 0.33, 0); this.legR.setLocalPosition(lx, 0.33, 0);
+    this.head.setLocalPosition(0, this.headBaseY, 0);
+    this.body.setLocalPosition(0, this.bodyBaseY, 0);
+    const meshInstances = [new pc.MeshInstance(mesh, toonPartsMat), new pc.MeshInstance(mesh, outlinePartsMat)];
+    for (const mi of meshInstances) mi.setParameter('uParts[0]', this.parts);
+    this.root.addComponent('render', { meshInstances, castShadows: false, receiveShadows: false, layers: [WORLD] });
+    this.packParts();
     const shadow = meshEntity(shadowMesh, shadowMat);
-    const ss = z === 'brute' || z === 'puffer' ? 1.5 : 1;
+    const ss = z === 'brute' || z === 'puffer' ? 1.5 : z === 'charger' ? 1.3 : 1;
     shadow.setLocalPosition(0, 0.03, 0);
     shadow.setLocalScale(ss, 1, ss);
     this.group.addChild(this.root);
@@ -162,7 +230,8 @@ export class Chibi {
   animate(pose: Pose, t: number, dt: number): void {
     const ph = t + this.phase;
     const z = !!this.look.zombie;
-    let leg = 0, bob = 0, lean = 0, aL = 0, aR = 0, aLz = 0, aRz = 0, headZ = 0, squash = 1, rootX = 0, rootY = 0;
+    const kind = this.look.zombie;
+    let leg = 0, bob = 0, lean = 0, aL = 0, aR = 0, aLz = 0, aRz = 0, headZ = 0, squash = 1, rootX = 0, rootY = 0, rootZ = 0;
     switch (pose) {
       case 'idle':
         bob = Math.sin(ph * 2.2) * 0.012;
@@ -194,7 +263,30 @@ export class Chibi {
         leg = Math.sin(ph * 18) * 0.4;
         break;
       case 'windup':
-        squash = 0.72; lean = 0.5; aL = aR = -0.9; aLz = -0.5; aRz = 0.5;
+        if (kind === 'charger') {
+          // Head down, big arm cocked back, one foot scraping the ground.
+          lean = 0.95; squash = 0.86; aL = -0.4; aR = -1.1; aRz = 0.35; leg = Math.sin(ph * 16) * 0.7; headZ = Math.sin(ph * 9) * 0.08;
+          rootX = 0.08; rootZ = Math.sin(ph * 30) * 0.03;
+        } else if (kind === 'drooler') {
+          // Rears back, cheeks swelling, arms flung out.
+          lean = -0.45; squash = 1.1; aL = aR = 0.6; aLz = -1.1; aRz = 1.1; headZ = Math.sin(ph * 12) * 0.06;
+        } else { squash = 0.72; lean = 0.5; aL = aR = -0.9; aLz = -0.5; aRz = 0.5; }
+        break;
+      case 'charge': {
+        const s = Math.sin(ph * 22);
+        lean = 1.05; leg = s * 1.1; bob = Math.abs(Math.cos(ph * 22)) * 0.07; aL = -0.6 + s * 0.3; aR = 1.5; aRz = -0.3; rootX = 0.15;
+        break;
+      }
+      case 'pin': {
+        // Pounding with the big arm.
+        const s = Math.sin(ph * 11);
+        lean = 0.55; aR = 1.7 + s * 1.0; aL = 0.5; headZ = s * 0.1; bob = Math.max(0, -s) * 0.05;
+        break;
+      }
+      case 'ring':
+        // Clock held high and rattling, the whole body wobbling with it.
+        aR = 2.85 + Math.sin(ph * 42) * 0.18; aRz = 0.15; aL = 1.3 + Math.sin(ph * 17) * 0.4; aLz = -0.4;
+        headZ = Math.sin(ph * 31) * 0.28; rootZ = Math.sin(ph * 24) * 0.13; bob = Math.abs(Math.sin(ph * 24)) * 0.05; squash = 1.04;
         break;
       case 'leap':
         lean = 1.15; aL = aR = 2.6; rootX = -0.9; rootY = 0.45; squash = 1.12;
@@ -206,18 +298,30 @@ export class Chibi {
     const k = Math.min(1, dt * 14), p = this.p;
     const to = (key: keyof typeof p, target: number) => { p[key] += (target - p[key]) * k; };
     to('leg', leg); to('aL', aL); to('aR', aR); to('aLz', aLz); to('aRz', aRz); to('headZ', headZ);
-    to('lean', lean); to('rootX', rootX); to('rootY', rootY); to('squash', squash);
+    to('lean', lean); to('rootX', rootX); to('rootY', rootY); to('rootZ', rootZ); to('squash', squash);
     setRot(this.legL, p.leg, 0, 0); setRot(this.legR, -p.leg, 0, 0);
     setRot(this.armL, p.aL, 0, p.aLz); setRot(this.armR, p.aR, 0, p.aRz);
     setRot(this.head, 0, 0, p.headZ);
     this.head.setLocalPosition(0, this.headBaseY + bob * 1.4, -p.lean * 0.16);
     setRot(this.body, -p.lean * 0.6, 0, 0);
     this.body.setLocalPosition(0, this.bodyBaseY + bob, 0);
-    setRot(this.root, p.rootX, 0, 0);
+    setRot(this.root, p.rootX, 0, p.rootZ);
     this.root.setLocalPosition(0, p.rootY, 0);
     this.punch = Math.max(0, this.punch - dt * 6);
     const pu = this.punch * 0.22;
     this.root.setLocalScale(1 + pu, p.squash - pu * 0.5, 1 + pu);
+    this.packParts();
+  }
+
+  /** Copy each part's local transform into the uniform array as three row vec4s. */
+  private packParts(): void {
+    const out = this.parts;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const d = this.nodes[i].getLocalTransform().data, o = i * 12;
+      out[o] = d[0]; out[o + 1] = d[4]; out[o + 2] = d[8]; out[o + 3] = d[12];
+      out[o + 4] = d[1]; out[o + 5] = d[5]; out[o + 6] = d[9]; out[o + 7] = d[13];
+      out[o + 8] = d[2]; out[o + 9] = d[6]; out[o + 10] = d[10]; out[o + 11] = d[14];
+    }
   }
 
   /** Death tumble, driven directly by the corpse animation. */
@@ -244,6 +348,12 @@ const SPECIAL_LOOKS: ChibiLook[] = [
   { skin: 0x9a8fd0, shirt: 0x3a2f5f, pants: 0x2a2440, hair: 0x3a2f5f, style: 'hood', zombie: 'leaper', eye: 0xffa13d },
   { skin: 0xc8d86a, shirt: 0xa9c75a, pants: 0x6a6a3a, hair: 0x5a5a2a, style: 'bald', zombie: 'puffer', eye: 0xffffff },
   { skin: 0xe07a6a, shirt: 0x7a3f4f, pants: 0x3a2a3a, hair: 0x2a1a22, style: 'mess', zombie: 'brute', eye: 0xfff06a },
+  // Sleep-Charger: maroon dressing gown, sleep mask up, one enormous arm.
+  { skin: 0xa9c486, shirt: 0x8a2f45, pants: 0x3a2433, hair: 0x2a1a22, style: 'bald', zombie: 'charger', eye: 0xff5a4a },
+  // Drooler: pale nightgown, curlers, goo-green glow.
+  { skin: 0xb7c9a0, shirt: 0xe8e2f8, pants: 0xe8e2f8, hair: 0x7a5a8a, style: 'bob', zombie: 'drooler', eye: 0xb8ff6a },
+  // Alarm Clock: striped-blue pyjamas, nightcap, bedside clock in hand.
+  { skin: 0xa8d8a0, shirt: 0x8fb4ff, pants: 0x5a7fe0, hair: 0x4a3b33, style: 'bald', zombie: 'alarm', eye: 0xffe14a },
 ];
 
 export function zombieLook(type: number, id: number): ChibiLook {

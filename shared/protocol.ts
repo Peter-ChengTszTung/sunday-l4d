@@ -30,7 +30,25 @@ export type GameEvent =
   | ['kb', pid: number, vx: number, vz: number]
   | ['horde']
   | ['brute']
-  | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number];
+  | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number]
+  // --- Charger / Drooler / Alarm Clock (zombie states CHARGE, PIN, RING travel in ZombieSnap).
+  // A charging Charger hit a wall and stunned itself.
+  | ['slam', zid: number, x: number, z: number]
+  // Survivor `pid` is pinned against a wall at (x, z) by Charger `zid` (the server ignores their movement until 'unpin').
+  | ['pin', pid: number, zid: number, x: number, z: number]
+  | ['unpin', pid: number]
+  // A goo glob in flight from (x0, z0) to (x1, z1), landing after `flight` seconds (the server simulates the same arc).
+  | ['spit', zid: number, x0: number, z0: number, x1: number, z1: number, flight: number]
+  // A goo puddle of radius r appeared; it lasts `life` seconds.
+  | ['puddle', id: number, x: number, z: number, r: number, life: number]
+  // Puddle damage (a quiet 'hurt': no knock/slow on the client).
+  | ['sizzle', pid: number, dmg: number]
+  // An Alarm Clock started ringing (kill it within ALARM.ringTime)…
+  | ['ring', zid: number]
+  // …and this one rang out: a mini-horde is coming.
+  | ['alarm', zid: number, x: number, z: number]
+  // --- Weapons. A launcher grenade from survivor `pid` went off at (x, y, z); power 1 = armed, < 1 = half-armed close-range pop.
+  | ['blast', pid: number, x: number, y: number, z: number, power: number];
 
 /** GET /api/rooms entry (listed rooms only). */
 export interface RoomInfo { code: string; ch: number; title: string; step: number; steps: number; objective: string; players: string[]; max: number; state: string }
@@ -48,10 +66,14 @@ export type ClientMsg =
   // room '' = quick play; create = open a new room on chapter `ch` starting at checkpoint step `cp` (-1 = chapter start).
   | { t: 'j'; name: string; room: string; ch?: number; create?: boolean; cp?: number; priv?: boolean }
   | { t: 'p'; x: number; y: number; z: number; ry: number; rx: number; w: number; a: number }
-  | { t: 'f'; w: number; h: [number, number, number][]; e: [number, number, number] }
+  // n: grenade sequence number (launcher only), echoed by the matching 'g' impact claim.
+  | { t: 'f'; w: number; h: [number, number, number][]; e: [number, number, number]; n?: number }
   | { t: 'v' }
   | { t: 'u'; id: number }
   | { t: 'h' }
   | { t: 'r'; id: number }
   // Dev-server only: jump to a quest step (teleports the team there).
-  | { t: 'dbg'; step: number };
+  | { t: 'dbg'; step: number }
+  // Launcher grenade impact claim for the oldest grenade this player fired ('f' with a blast weapon).
+  // The server checks range and line of sight from where it was fired, then applies the blast.
+  | { t: 'g'; x: number; y: number; z: number; n?: number };

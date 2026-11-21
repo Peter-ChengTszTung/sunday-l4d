@@ -3,7 +3,7 @@
 // map viewer tool. A chapter file describes its layout with `LevelBuilder` and
 // exports a `ChapterDef`; `Level` wraps a built chapter with the collision and
 // pathing helpers.
-import { TILE } from './constants';
+import { TILE, type WeaponId } from './constants';
 
 /** Floor types. NONE is solid building/rock; WATER is solid but see-through. */
 export const F = {
@@ -27,7 +27,10 @@ export type PropType =
 export type ObjLook = 'gen' | 'radio' | 'lever' | 'terminal' | 'valve' | 'battery' | 'beacon';
 /** Collectible quest items. */
 export type ItemLook = 'fuel' | 'fuse' | 'keycard' | 'medicine' | 'part' | 'tape';
-export type PickupKind = 'smg' | 'shotgun' | 'rifle' | 'ammo' | 'medkit' | 'obj' | 'item';
+/** Weapon pickups use the weapon id (every weapon except the starting pistol can be found). */
+export type GunKind = Exclude<WeaponId, 'pistol'>;
+export type LootKind = GunKind | 'ammo' | 'medkit';
+export type PickupKind = LootKind | 'obj' | 'item';
 
 export interface Vec2 { x: number; z: number }
 /** Inclusive tile rectangle. */
@@ -163,7 +166,7 @@ export class LevelBuilder {
   }
 
   /** Loot: weapons, ammo, medkits. Returns the pickup id. */
-  pick(kind: 'smg' | 'shotgun' | 'rifle' | 'ammo' | 'medkit', x: number, z: number): number {
+  pick(kind: LootKind, x: number, z: number): number {
     this.idx(x, z);
     this.pickups.push({ id: this.pickups.length, kind, x: (x + 0.5) * TILE, z: (z + 0.5) * TILE });
     return this.pickups.length - 1;

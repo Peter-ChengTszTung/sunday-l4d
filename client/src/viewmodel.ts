@@ -1,7 +1,7 @@
 // First-person weapon rig. Lives in its own layer and is drawn by a second
 // camera that clears depth, so the gun never clips into walls.
 import * as pc from 'playcanvas';
-import { box, sphere, star, make, toMesh, trs } from './geo';
+import { box, cylinder, sphere, star, make, toMesh, trs } from './geo';
 import { app, device, VM, WORLD, Batch, inkBox, meshEntity, makeToon, makeUnlit, setRot, setTint } from './gfx';
 import type { WeaponDef } from '../../shared/constants';
 
@@ -9,11 +9,16 @@ type GunId = WeaponDef['id'];
 export interface Gun { ent: pc.Entity; muzzle: [number, number, number]; pump: pc.Entity | null }
 
 const cube = box();
+const cyl = cylinder(14);
 /** Chunky toy-like guns. Barrel points down -Z, origin at the grip. */
-export function buildGun(id: GunId, vm = false): Gun {
+/** `track` collects the gun's meshes for an owner that will free them (world pickups). */
+export function buildGun(id: GunId, vm = false, track?: pc.Mesh[]): Gun {
   const layer = vm ? VM : WORLD;
   const b = new Batch();
   const part = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rx = 0) => b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'box', 0.012);
+  /** Round part: radius r, length len, along Z (barrels, scopes) or X (drums). */
+  const tube = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' = 'z') =>
+    b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'smooth', 0.012);
   let muzzle: [number, number, number] = [0, 0, 0];
   let pump: pc.Entity | null = null;
   switch (id) {
@@ -48,8 +53,54 @@ export function buildGun(id: GunId, vm = false): Gun {
       part(0.05, 0.05, 0.16, 0xffe066, 0, 0.15, -0.14);
       muzzle = [0, 0.065, -0.75];
       break;
+    case 'autoshotgun': // Rumble Drum: stubby coral auto shotgun with a big yellow drum.
+      part(0.1, 0.13, 0.48, 0xff6b6b, 0, 0.07, -0.15);
+      tube(0.036, 0.4, 0x54506e, 0, 0.105, -0.52);
+      part(0.085, 0.07, 0.07, 0x54506e, 0, 0.105, -0.73);
+      tube(0.11, 0.1, 0xffe066, 0, -0.02, -0.33, 'x');
+      tube(0.04, 0.12, 0x54506e, 0, -0.02, -0.33, 'x');
+      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
+      part(0.085, 0.12, 0.2, 0xc94f4f, 0, 0.045, 0.19);
+      part(0.04, 0.04, 0.08, 0xffe066, 0, 0.155, -0.1);
+      muzzle = [0, 0.105, -0.77];
+      break;
+    case 'sniper': // Kebabber: long mint bolt-action with a fat scope and a skewer-tip muzzle.
+      part(0.075, 0.1, 0.5, 0x63e6be, 0, 0.06, -0.12);
+      tube(0.022, 0.56, 0x54506e, 0, 0.075, -0.63);
+      part(0.05, 0.05, 0.07, 0xffe066, 0, 0.075, -0.93);
+      tube(0.036, 0.26, 0x54506e, 0, 0.165, -0.24);
+      tube(0.044, 0.035, 0xff8fab, 0, 0.165, -0.38);
+      tube(0.04, 0.03, 0xff8fab, 0, 0.165, -0.1);
+      part(0.03, 0.06, 0.03, 0x54506e, 0, 0.12, -0.31);
+      part(0.03, 0.06, 0.03, 0x54506e, 0, 0.12, -0.16);
+      part(0.09, 0.025, 0.025, 0xffe066, 0.065, 0.085, 0.0);
+      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
+      part(0.07, 0.13, 0.28, 0x8a5a3c, 0, 0.035, 0.24);
+      muzzle = [0, 0.075, -0.97];
+      break;
+    case 'launcher': // Bloop Tube: fat bubblegum tube with yellow bands, a pop-gun on steroids.
+      tube(0.08, 0.5, 0xda77f2, 0, 0.1, -0.24);
+      tube(0.092, 0.055, 0xffe066, 0, 0.1, -0.47);
+      tube(0.088, 0.045, 0xffe066, 0, 0.1, -0.03);
+      tube(0.058, 0.012, 0x2b2540, 0, 0.1, -0.5);
+      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
+      part(0.05, 0.13, 0.06, 0x54506e, 0, -0.01, -0.27, -0.2);
+      part(0.03, 0.07, 0.03, 0xffe066, 0, 0.215, -0.32);
+      part(0.07, 0.08, 0.08, 0xae3ec9, 0, 0.06, 0.08);
+      muzzle = [0, 0.1, -0.54];
+      break;
+    case 'magnum': // Thunder Pea: gold revolver, silver cylinder, red lightning stripe.
+      part(0.07, 0.08, 0.3, 0xffd43b, 0, 0.08, -0.17);
+      part(0.072, 0.022, 0.12, 0xff6b6b, 0, 0.08, -0.2);
+      tube(0.066, 0.11, 0xc3bdd8, 0, 0.05, -0.02);
+      part(0.06, 0.1, 0.14, 0xf0b429, 0, 0.04, 0.03);
+      part(0.065, 0.17, 0.08, 0x8a5a3c, 0, -0.07, 0.08, 0.3);
+      part(0.022, 0.045, 0.035, 0x54506e, 0, 0.135, 0.07);
+      part(0.022, 0.04, 0.022, 0xff6b6b, 0, 0.135, -0.3);
+      muzzle = [0, 0.08, -0.34];
+      break;
   }
-  const ent = b.build(layer, vm);
+  const ent = b.build(layer, vm, track);
   if (pump) ent.addChild(pump);
   return { ent, muzzle, pump };
 }

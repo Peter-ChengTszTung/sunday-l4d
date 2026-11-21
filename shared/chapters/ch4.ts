@@ -181,8 +181,8 @@ export function build() {
   b.prop('shelf', 7, 12, 1, 1);
   for (const [x, z] of [[14, 11], [19, 11], [14, 14], [19, 14]]) b.prop('bench', x, z, 4, 1);
   b.prop('shelf', 23, 9, 1, 3, { color: 0xff8fc8 });                         // Snoozle vending machine
-  b.pick('smg', 7, 17); b.pick('shotgun', 8, 17); b.pick('rifle', 9, 17); b.pick('rifle', 10, 17);
-  b.pick('ammo', 22, 16); b.pick('ammo', 22, 17);
+  b.pick('smg', 7, 17); b.pick('shotgun', 8, 17); b.pick('rifle', 9, 17); b.pick('rifle', 10, 17); b.pick('smg', 11, 17);
+  b.pick('ammo', 22, 16); b.pick('ammo', 22, 17); b.pick('ammo', 21, 16);
   for (const x of [19, 20, 21, 22]) b.pick('medkit', x, 18);
   b.label('SAFE ROOM', 16, 13, 22, RED); b.label('WAITING ROOM', 16, 15.6, 12, PEACH);
   b.label('TICKETS', 9, 12.6, 10, CREAM); b.label('CLOCK: 3:00', 20, 9.6, 9, LAV);
@@ -220,7 +220,7 @@ export function build() {
   b.carve(3, 35, 14, 35, F.SIDEWALK);
   for (const z of [41, 44, 47]) b.prop('shelf', 4, z, 6, 1);
   b.prop('counter', 10, 38, 1, 2, { color: 0xf2e6d0 }); b.prop('shelf', 12, 41, 1, 7, { color: 0x8fe3c0 });
-  b.pick('shotgun', 11, 49); b.pick('ammo', 3, 49); b.pick('medkit', 3, 39); b.pick('ammo', 11, 43);
+  b.pick('shotgun', 11, 49); b.pick('smg', 12, 49); b.pick('rifle', 10, 49); b.pick('ammo', 3, 49); b.pick('medkit', 3, 39); b.pick('ammo', 11, 43);
   b.label('HOLLOW MART 24h', 7.5, 34.6, 12, MINT, 0); b.label('OPEN', 7, 38.5, 10, RED);
   b.lamp(7.5, 45);
 
@@ -362,7 +362,7 @@ export function build() {
   b.note(105, 92, 'Journal on the basement shelf', 'Day 1. Told Barb the free fog was a government plot. It was a sleep company plot. Still counts. Day 2. Barb went upstairs for a nap.');
   for (const x of [109, 110, 111, 112]) b.pick('medkit', x, 99);
   b.pick('ammo', 113, 91); b.pick('ammo', 114, 91); b.pick('ammo', 112, 88);
-  b.pick('shotgun', 106, 99); b.pick('rifle', 107, 99); b.pick('smg', 108, 99);
+  b.pick('shotgun', 106, 99); b.pick('rifle', 107, 99); b.pick('smg', 108, 99); b.pick('autoshotgun', 106, 98); b.pick('launcher', 108, 98); // the schoolyard Brute is next
   const hatchLever = b.obj('lever', 104, 91, 'Open the basement hatch');
   b.label('SAFE ROOM', 110.5, 90, 22, RED); b.label('HENDERSON BASEMENT', 110.5, 92.4, 11, PEACH);
   b.label('PEACHES: 212 CANS', 107, 86.6, 8, CREAM); b.label('HATCH', 104.5, 94.8, 10, GOLD, E);
@@ -405,7 +405,7 @@ export function build() {
   for (const [x0, z0] of [[35, 65], [47, 65]]) for (let i = 0; i < 3; i++) b.prop('desk', x0 + i * 3, z0 + 2, 2, 1);
   b.prop('counter', 34, 64, 1, 2, { color: 0xc9a8ff }); b.prop('shelf', 55, 64, 1, 3, { color: 0x8fe3c0 });
   b.prop('bench', 36, 79, 6, 1); b.prop('bench', 48, 79, 6, 1); b.prop('pillar', 40, 76, 1, 1, { color: 0xffd43b });
-  b.pick('ammo', 42, 64); b.pick('medkit', 54, 68); b.pick('ammo', 35, 77); b.pick('smg', 53, 76);
+  b.pick('ammo', 42, 64); b.pick('medkit', 54, 68); b.pick('ammo', 35, 77); b.pick('smg', 53, 76); b.pick('autoshotgun', 52, 76); b.pick('sniper', 54, 76);
   b.label('CLASS 2B', 38.5, 66.6, 10, CREAM); b.label('CLASS 3A', 50.5, 66.6, 10, CREAM);
   b.label('GYM', 45, 77, 16, PEACH); b.label('SNOOZLE ASSEMBLY', 45, 78.4, 8, PINK);
   for (const [x, z] of [[40, 72], [50, 72], [45, 77]]) b.lamp(x, z);
@@ -439,7 +439,7 @@ export function build() {
   b.pick('ammo', 88, 105); b.pick('medkit', 91, 105); b.pick('ammo', 89, 101);
   b.label('EQUIPMENT', 89.5, 102.5, 9, CREAM);
   for (const [x, z] of [[31, 88], [31, 100], [74, 108], [82, 92], [48, 108], [66, 90]]) b.prop(x === 31 ? 'pine' : 'tree', x, z);
-  b.pick('ammo', 44, 104); b.pick('medkit', 33, 96); b.pick('ammo', 70, 100);
+  b.pick('ammo', 44, 104); b.pick('ammo', 45, 104); b.pick('medkit', 33, 96); b.pick('ammo', 70, 100);
   for (const [x, z] of [[46, 90], [70, 96], [36, 106], [84, 108]]) b.lamp(x, z);
   b.arrow(56, 100, WEST); b.arrow(44, 106, WEST);
   zz(50, 102, WEST);
@@ -510,8 +510,8 @@ export function build() {
   b.note(19, 166, 'Ranger cabin logbook', '3:10 a.m. Fog never reached the hill. 3:40 a lady in a lab coat ran up the trail with a hard drive and a sandwich. Said she\'s "fixing it". Gave her the transmitter key.');
   b.label('VALLEY MAP', 16.5, 165.6, 10, MINT);
   for (const x of [18, 19, 20, 21]) b.pick('medkit', x, 173);
-  b.pick('ammo', 10, 169); b.pick('ammo', 11, 169); b.pick('ammo', 12, 165);
-  b.pick('shotgun', 13, 171); b.pick('rifle', 14, 171); b.pick('smg', 12, 171);
+  b.pick('ammo', 10, 169); b.pick('ammo', 11, 169); b.pick('ammo', 12, 169); b.pick('ammo', 12, 165);
+  b.pick('smg', 12, 171); b.pick('shotgun', 13, 171); b.pick('rifle', 14, 171); b.pick('sniper', 15, 171); b.pick('autoshotgun', 13, 170); b.pick('launcher', 14, 170); b.pick('magnum', 12, 170);
   const cabinLatch = b.obj('lever', 22, 172, 'Unlatch the cabin back door');
   b.label('SAFE ROOM', 16.5, 169.4, 20, RED); b.label('RANGER CABIN', 16.5, 171.6, 10, MINT);
   b.lamp(16.5, 168);
@@ -535,7 +535,7 @@ export function build() {
   b.label('PINECONE HILL TRAIL', 30, 168.6, 12, MINT, E); b.label('TRANSMITTER 1.2 km', 40, 169.6, 9, CREAM, E);
   b.label('SWITCHBACK', 82.5, 160, 10, CREAM, N); b.label('STEEP', 70, 153.6, 10, PEACH, WEST);
   b.label('FIRE ROAD', 63.5, 126, 10, CREAM, N); b.label('LOOKOUT LOOP', 80, 119.6, 10, CREAM, E);
-  b.pick('ammo', 60, 169); b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('ammo', 82, 135); b.pick('medkit', 64, 119);
+  b.pick('ammo', 60, 169); b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('sniper', 60, 146); b.pick('ammo', 82, 135); b.pick('sniper', 83, 135); b.pick('medkit', 64, 119);
   for (const [x, z] of [[24.5, 168], [56, 169.6], [82.5, 168], [82.5, 154], [59.5, 154], [59.5, 136], [80, 134.6]]) b.lamp(x, z);
   b.arrow(30, 168.5, E); b.arrow(82.5, 165, N); b.arrow(76, 153.5, WEST); b.arrow(59.5, 148, N); b.arrow(66, 134.5, E); b.arrow(90, 134.5, E);
   zz(50, 168.5, E); zz(82.5, 158, N); zz(64, 153.5, WEST); zz(59.5, 140, N); zz(76, 134.5, E);
@@ -571,8 +571,8 @@ export function build() {
   b.prop('barrier', 120, 136, 1, 3); b.prop('barrier', 125, 131, 3, 1); b.prop('crate', 141, 132); b.prop('crate', 116, 125);
   b.prop('pallet', 127, 144, 2, 1);
   // Loot before the Bell.
-  b.pick('ammo', 120, 140); b.pick('ammo', 121, 140); b.pick('ammo', 133, 144); b.pick('ammo', 142, 125);
-  b.pick('medkit', 134, 136); b.pick('medkit', 135, 136); b.pick('medkit', 112, 145); b.pick('rifle', 118, 124); b.pick('shotgun', 131, 136);
+  b.pick('ammo', 120, 140); b.pick('ammo', 121, 140); b.pick('ammo', 133, 144); b.pick('ammo', 133, 145); b.pick('ammo', 142, 125); b.pick('ammo', 142, 126);
+  b.pick('medkit', 134, 136); b.pick('medkit', 135, 136); b.pick('medkit', 112, 145); b.pick('rifle', 118, 124); b.pick('shotgun', 131, 136); b.pick('launcher', 132, 136); b.pick('autoshotgun', 131, 135);
   for (const [x, z] of [[113, 126], [113, 143], [123, 125], [143, 126], [143, 143], [125, 137]]) b.lamp(x, z);
   b.arrow(106, 134.5, E); b.arrow(120, 134.5, E);
   // Outer ring: boulders and pines (spawn cover on three sides), the river lookout.
@@ -626,8 +626,8 @@ export function build() {
   b.prop('barrier', 145, 165, 1, 4); b.prop('barrier', 151, 168, 3, 1); b.prop('barrier', 154, 172, 1, 3); b.prop('crate', 143, 176);
   b.prop('barrel', 157, 176); b.prop('crate', 150, 164);
   const boomLever = b.obj('lever', 157, 166, 'Raise the army boom gate');
-  b.pick('ammo', 141, 165); b.pick('ammo', 142, 165); b.pick('ammo', 152, 176); b.pick('ammo', 136, 172);
-  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 168);
+  b.pick('ammo', 141, 165); b.pick('ammo', 142, 165); b.pick('ammo', 141, 164); b.pick('ammo', 152, 176); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173);
+  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 168); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 168); b.pick('sniper', 137, 169);
   b.label('ARMY CHECKPOINT', 146, 169.4, 14, OLIVE, 0); b.label('CONVOY ASSEMBLY', 146, 171, 9, CREAM, 0);
   b.label('BOOM GATE', 156, 168.6, 10, GOLD, N);
   for (const [x, z] of [[134, 166], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152]]) b.lamp(x, z);

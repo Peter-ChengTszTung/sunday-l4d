@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { getLevel } from '../shared/chapters';
 import { F, cellOf } from '../shared/level';
-import { TILE, PSTATE } from '../shared/constants';
+import { TILE, PSTATE, ZT, weaponIndex } from '../shared/constants';
 import type { ClientMsg, GameEvent, ServerMsg } from '../shared/protocol';
 
 // Random port so parallel runs (e.g. several agents) do not collide.
@@ -54,6 +54,12 @@ await sleep(100);
 a.send({ t: 'u', id: kit.id });
 await sleep(200);
 if (!a.events.some((e) => e[0] === 'got' && e[1] === a.id)) fail('pickup not granted');
+if (!b.events.some((e) => e[0] === 'pk' && e[1] === gun.id)) fail('weapon pickup did not disappear for teammates');
+b.send({ t: 'p', x: gun.x, y: 0, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
+await sleep(100);
+b.send({ t: 'u', id: gun.id });
+await sleep(200);
+if (b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === gun.id)) fail('a taken weapon was granted twice');
 if (a.snap!.p.find((p) => p[0] === a.id)![9] !== 1) fail('medkit not carried');
 console.log('ok: pickups work');
 
@@ -91,6 +97,42 @@ if (!hurt) fail('zombies never reached the player');
 if (kills < 3) fail(`expected kills, got ${kills}`);
 if (!b.events.some((e) => e[0] === 'shot' && e[1] === a.id)) fail('shots not relayed to teammate');
 console.log(`ok: zombies attacked, ${kills} killed, shots relayed`);
+
+// New weapons: a Kebabber round through two walkers in a line, then a Bloop Tube grenade.
+const SNIPER = weaponIndex('sniper'), LAUNCHER = weaponIndex('launcher');
+const hold = () => a.send({ t: 'p', x: pos.x, y: 0, z: pos.z, ry: Math.PI, rx: 0, w: SNIPER, a: 0 });
+const walkersInSight = () => a.snap!.z
+  .filter((z) => z[1] === ZT.WALKER && Math.hypot(z[2] - pos.x, z[3] - pos.z) < 30 && L.hasLOS(pos.x, pos.z, z[2], z[3], a.snap!.g))
+  .sort((p, q) => Math.hypot(p[2] - pos.x, p[3] - pos.z) - Math.hypot(q[2] - pos.x, q[3] - pos.z));
+let pierced = false;
+for (let i = 0; i < 80 && !pierced; i++) {
+  hold();
+  const w = walkersInSight();
+  if (w.length < 2) { await sleep(100); continue; }
+  const near = w[0], far = w[w.length - 1];
+  a.send({ t: 'f', w: SNIPER, h: [[near[0], 1, 0], [far[0], 1, 0]], e: [far[2], 1, far[3]] });
+  await sleep(500);
+  pierced = a.events.some((e) => e[0] === 'zdie' && e[1] === far[0] && e[6] === a.id);
+}
+if (!pierced) fail('a piercing Kebabber round did not kill the second walker in line');
+let boomed = false;
+for (let i = 0; i < 80 && !boomed; i++) {
+  hold();
+  const t = walkersInSight()[0];
+  if (!t) { await sleep(100); continue; }
+  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3] }); // no grenade in flight: ignored
+  await sleep(150);
+  if (a.events.some((e) => e[0] === 'blast')) fail('a grenade impact claim without a launch was accepted');
+  await sleep(250);
+  a.send({ t: 'f', w: LAUNCHER, h: [], e: [t[2], 0.1, t[3]] });
+  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3] });
+  await sleep(250);
+  if (!a.events.some((e) => e[0] === 'blast' && e[1] === a.id)) fail('grenade blast not applied');
+  boomed = a.events.some((e) => e[0] === 'zdie' && e[1] === t[0] && e[6] === a.id);
+  if (!boomed) fail('the grenade did not kill the walker at ground zero');
+}
+if (!boomed) fail('no walker in sight for the grenade test');
+console.log('ok: piercing sniper round and grenade blast validated');
 
 // Let Alpha go down, then have Beta revive.
 for (let i = 0; i < 600; i++) {

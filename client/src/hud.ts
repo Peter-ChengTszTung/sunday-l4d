@@ -58,13 +58,14 @@ export class Hud {
     this.set('vig', (Math.max(base, this.hurtT > 0 ? 0.9 : 0)).toFixed(2), (v) => { this.el.vignette.style.opacity = v; });
   }
 
-  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, hasPrimary: boolean, slot: number): void {
+  /** `primary` / `sidearm` name the slots ('' = empty primary). */
+  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = 'sidearm'): void {
     this.set('wn', name + reloading, () => { this.el.wname.textContent = reloading ? `${name} · reloading…` : name; });
     this.set('mag', String(mag), (v) => { this.el.mag.textContent = v; });
     this.set('res', String(reserve), () => { this.el.reserve.textContent = Number.isFinite(reserve) ? `/ ${reserve}` : '/ ∞'; });
     this.set('low', String(mag <= magSize * 0.25), (v) => { this.el.acount.classList.toggle('low', v === 'true'); });
-    this.set('slots', `${hasPrimary}|${slot}`, () => {
-      this.el.slots.innerHTML = `<span class="${slot === 1 ? 'on' : ''}">1 ${hasPrimary ? 'primary' : '—'}</span><span class="${slot === 2 ? 'on' : ''}">2 sidearm</span>`;
+    this.set('slots', `${primary}|${sidearm}|${slot}`, () => {
+      this.el.slots.innerHTML = `<span class="${slot === 1 ? 'on' : ''}">1 ${primary || '—'}</span><span class="${slot === 2 ? 'on' : ''}">2 ${sidearm}</span>`;
     });
   }
 

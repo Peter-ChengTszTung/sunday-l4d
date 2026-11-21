@@ -53,6 +53,9 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - *Leaper*: a restless sleeper, the "kicker" who thrashes and pounces.
 - *Puffer*: a sleeper swollen with mist. Its goo smells of lavender and carries the lullaby scent, which is why it calls the horde.
 - *Brute*: someone who got a heavy dose of concentrate (the tank crew at the plant, or anyone who napped right next to a fog unit).
+- *Sleep-Charger*: a sleeper stuck in the "running late" dream, sprinting for a bus that left hours ago. Sleep mask shoved up, dressing gown flapping, one arm swollen from clutching a pillow. It lowers its head and scrapes its slippers before it runs, and it runs in a straight line until something stops it, usually a wall, sometimes you.
+- *Drooler*: a mouth-breather who slept face-down on a pillow soaked in Hush. Its cheeks fill with lavender goo and it gargles before it spits. The goo pools and stings anything awake, so sleepers walk through it and survivors don't.
+- *Alarm Clock*: a light sleeper who never let go of the bedside clock. It shies away from people, but the moment it sees someone awake its dream says "time to get up" and it rings. The dream hates that sound, so every sleeper nearby shuffles over to hush it. Shoot it before it rings out.
 
 **What the survivors learn, chapter by chapter:**
 1. The fog came from City Hall's "Sweet Dreams Night" machines, which Dreamwell sponsored. Only people who were asleep turned. A Dr. W. Lowell asked for a delay and was refused. Dot has a daughter called Wren.

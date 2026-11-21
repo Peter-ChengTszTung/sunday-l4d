@@ -1,7 +1,7 @@
 // Static checks + stats for a chapter, shared by scripts/check-chapters.ts and
 // the map viewer. Walks the quest in order with each step's door state and
 // verifies every objective is reachable from where the team stands.
-import { TILE } from './constants';
+import { TILE, WEAPONS } from './constants';
 import { F, ALL_OPEN, cellOf, type Level, type Vec2 } from './level';
 
 export interface StepReport { index: number; kind: string; objective: string; pathTiles: number; reachable: boolean; note?: string }
@@ -11,6 +11,8 @@ export interface ChapterReport {
 }
 
 const INF = 32767;
+/** Minimum loot in each start/checkpoint safe room for a 4-player squad. */
+export const MIN_ROOM_GUNS = 4, MIN_ROOM_AMMO = 2;
 
 export function validateChapter(L: Level): ChapterReport {
   const def = L.def, { W, H } = L;
@@ -117,6 +119,26 @@ export function validateChapter(L: Level): ChapterReport {
   for (const n of def.notes) if (all[cell(n)] >= INF) errors.push(`note "${n.title}" at tile ${cellOf(n.x)},${cellOf(n.z)} is unreachable`);
   for (const sp of def.spawns) if (L.solidAt(cellOf(sp.x), cellOf(sp.z), 0)) errors.push(`spawn at ${sp.x},${sp.z} is solid`);
   for (const [k, pts] of Object.entries(def.checkpointSpawns)) for (const sp of pts) if (L.solidAt(cellOf(sp.x), cellOf(sp.z), ALL_OPEN)) errors.push(`checkpoint spawn for step ${+k + 1} is solid`);
+  // Single-use loot: every safe room must be able to arm a full squad.
+  const PRIMARY = new Set(WEAPONS.filter((w) => w.slot === 'primary').map((w) => w.id as string));
+  const stock = (inRoom: (c: number) => boolean, where: string) => {
+    let guns = 0, ammo = 0;
+    for (const p of def.pickups) {
+      if (!inRoom(cell(p))) continue;
+      if (PRIMARY.has(p.kind)) guns++; else if (p.kind === 'ammo') ammo++;
+    }
+    if (guns < MIN_ROOM_GUNS || ammo < MIN_ROOM_AMMO) errors.push(`${where} stocks ${guns} primary guns and ${ammo} ammo piles; pickups are single-use, so it needs at least ${MIN_ROOM_GUNS} guns and ${MIN_ROOM_AMMO} ammo`);
+  };
+  {
+    const room = L.distanceField([cell(def.spawns[0])], 0);
+    stock((c) => room[c] < INF, 'start safe room');
+  }
+  def.steps.forEach((s, i) => {
+    if (s.kind !== 'gather' || !s.checkpoint || !s.area) return;
+    const a = s.area;
+    stock((c) => { const x = c % W, z = (c / W) | 0; return x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1; }, `${name(i)} safe room`);
+  });
+
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));
   for (const d of def.doors) if (!usedDoors.has(d.id)) warnings.push(`door ${d.id} at ${d.x0},${d.z0} is never opened`);
 

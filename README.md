@@ -48,6 +48,15 @@ waypoint marker, and radio chatter. Steps are *reach* a place, *gather* everyone
 Mid-chapter safe rooms are checkpoints: wipe after one and the squad restarts there. Finish a
 chapter and the room moves on to the next. Pick the starting chapter in the lobby.
 
+**Weapons:** everyone starts with the *Pea Shooter* (endless ammo). Primaries are found at
+weapon stops: the *Buzz Blaster* (SMG), *Boomstick* (pump shotgun) and *Long Bonker* (rifle),
+then rarer finds later on: the *Rumble Drum* (auto shotgun), the *Kebabber* (sniper; each
+round skewers up to four sleepers in a line), the *Bloop Tube* (grenade launcher; lobbed
+shells, a big blast that never hurts the squad, only half-armed closer than 3 m) and the
+*Thunder Pea* (magnum; replaces the Pea Shooter, still endless). Guns and ammo piles are
+single-use: the first survivor to grab one takes it, so share them out. Loot comes back on a
+checkpoint restart.
+
 **The horde:** walkers, plus three specials — the *Leaper* (pounces from range), the
 *Puffer* (explodes into goo that calls more walkers) and the *Brute* (one per run, hits
 like a truck). At 0 HP you go down and bleed out unless a teammate helps you up; knocked-out
@@ -66,7 +75,9 @@ docs/     campaign.md — story bible and per-chapter quest briefs
 
 - **Authority:** the server owns zombies, health, pickups and win/lose. Clients own their
   movement and do their own hitscan, sending hit claims the server sanity-checks
-  (fire rate, range, pellet count). Fine for co-op with friends; not cheat-proof.
+  (a scheduled fire-rate clock, range, pellet count; piercing rounds must lie in a lane along
+  the shot and in sight; grenade impacts must pair with a shell actually fired and be in range
+  and sight of where it was fired). Fine for co-op with friends; not cheat-proof.
 - **AI:** zombies follow a breadth-first flow field towards the nearest survivor and
   beeline when close with line of sight. The director spawns out of sight, a walk away.
 - **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
