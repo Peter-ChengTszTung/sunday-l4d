@@ -89,6 +89,28 @@ const DIRECTOR = {
     chance: 0.8, scriptedChance: 0.4, band: [0.3, 0.7] as const, minAhead: 20,
     clearance: 25, scriptGap: 70, tries: 12, spawn: [12, 24] as const,
   },
+  /**
+   * Ambient trickle (BUILD_UP/SUSTAIN only, outside holdouts): one running walker every `every` s
+   * (minus `perPlayer` s per survivor) while fewer than `target[0] + target[1] * n` commons are up.
+   * Both the rate and the target are scaled by a factor: in BUILD_UP it ramps from `rampFrom` to 1
+   * over `rampTime` s (pressure grows the longer the build-up lasts), times (1 - `ease` * team
+   * intensity / peak) so the trickle backs off as the team nears its peak and lets the fight finish
+   * the job; SUSTAIN runs at `sustain`. FADE/RELAX: none. A spawn is a clump of `clump` walkers
+   * from one hidden spot with chance `clumpChance` (if the target has room).
+   */
+  ambient: {
+    every: [1.6, 3.2] as const, perPlayer: 0.25, minEvery: 0.5, target: [6, 3] as const,
+    rampFrom: 0.45, rampTime: 60, ease: 0.4, sustain: 1, clumpChance: 0.25, clump: [2, 3] as const,
+  },
+  /**
+   * Straggler cull (every `every` ticks): an active common or special (never the Brute or a sleeper)
+   * more than `tiles` path tiles from the nearest standing survivor is removed, unless a standing
+   * survivor could see it (line of sight within the chapter's fog distance, at most `seeR` m), so
+   * nobody watches one vanish. A culled horde member goes back in the queue (see cullStragglers).
+   * Specials just free their slot (no cooldown). Holders lurk holdNear..holdFar tiles from their
+   * target, well inside `tiles`, so only one that has truly been left behind is culled.
+   */
+  cull: { every: 60, tiles: 34, seeR: 110 },
 };
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
@@ -132,6 +154,8 @@ interface Zombie {
   /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
   /** Special holding for a coordinated attack: 0 = attacking, 1 = lurking unseen, 2 = lurking but in a survivor's sight (backs off). */
   hold: number;
+  /** Id of the queued horde (Wave.id) this walker was spawned for; 0 = not a horde member (ambient, belt, holdout). */
+  wave: number;
 }
 
 /**
@@ -140,7 +164,7 @@ interface Zombie {
  * source is re-picked by the same rule. `hunt`: room time until which members chase marked survivors.
  * `side`: for team-sourced waves, 1 = ahead-biased (default), -1 = from behind (anti-camping), 0 = any.
  */
-interface Wave { left: number; srcs: number[]; anchor: number; hunt: number; repicks: number; side: Side }
+interface Wave { id: number; left: number; srcs: number[]; anchor: number; hunt: number; repicks: number; side: Side; requeue?: boolean }
 /** `pickSpawnCell`'s `ahead` for a team-sourced wave's side. */
 const waveAhead = (w: Wave) => (w.side < 0 ? -1 : w.side > 0 ? 0.75 : 0);
 
@@ -725,7 +749,7 @@ export class Room {
       hp: type === ZT.BRUTE ? T.hp + 700 * (this.players.size - 1) : T.hp,
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0,
     };
     this.zombies.set(zb.id, zb);
     return zb;
@@ -1199,6 +1223,7 @@ export class Room {
 
   // ------------------------------------------------------------------ waves
   private waves: Wave[] = [];
+  private nextWave = 1;
   /** Goo-marked survivors (pid → room time the mark wears off) and the BFS field toward them. */
   private marks = new Map<number, number>();
   private markFlow = new Int16Array(1);
@@ -1220,7 +1245,7 @@ export class Room {
    * (members then pick cells one by one, as before).
    */
   private spawnWave(n: number, o: { noise?: number; hunt?: number; side?: Side } = {}): Vec2 | null {
-    const w: Wave = { left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0, side: o.side ?? 1 };
+    const w: Wave = { id: this.nextWave++, left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0, side: o.side ?? 1 };
     const s = this.waveSource(w);
     if (s >= 0) {
       w.srcs.push(s);
@@ -1314,7 +1339,7 @@ export class Room {
       const p = this.cellPos(c);
       zb = this.spawnZombie(ZT.WALKER, p.x + rand(-0.5, 0.5), p.z + rand(-0.5, 0.5));
     } else zb = this.spawnAt(ZT.WALKER, 7, 18, waveAhead(w));
-    if (zb) zb.hunt = w.hunt;
+    if (zb) { zb.hunt = w.hunt; zb.wave = w.id; }
     return !!zb;
   }
 
@@ -1545,10 +1570,14 @@ export class Room {
     const ph = this.phase;
     if (ph !== Phase.BUILD_UP && ph !== Phase.SUSTAIN) return;
 
+    // NOTE(#12): the dormant belt (fillBelt above) keeps restocking in every phase, and gunfire wakes
+    // its sleepers, so RELAX can stay busy even though the ambient trickle is off here.
     t.ambient -= dt;
     if (t.ambient <= 0) {
-      t.ambient = rand(1.6, 3.2) - 0.25 * n;
-      if (commons < 6 + 3 * n) this.spawnAt(ZT.WALKER, 10, 22);
+      const A = D.ambient, f = this.ambientScale();
+      t.ambient = Math.max(A.minEvery, (roll(A.every) - A.perPlayer * n) / f);
+      const room = Math.round((A.target[0] + A.target[1] * n) * f) - commons;
+      if (room > 0) this.spawnAmbient(room);
     }
     // Fill a free slot with a holding special (one at a time); re-check soon if every type is cooling down.
     t.special -= dt;
@@ -1577,6 +1606,31 @@ export class Room {
       t.horde = Math.max(t.horde, roll(D.mobEvery));
       if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} camping: horde from behind`);
       this.horde(-1);
+    }
+  }
+
+  /** Ambient trickle factor (rate and target) for the current phase and team intensity (DIRECTOR.ambient). */
+  private ambientScale(): number {
+    const A = DIRECTOR.ambient;
+    if (this.phase === Phase.SUSTAIN) return A.sustain;
+    if (this.phase !== Phase.BUILD_UP) return 0;
+    const ramp = A.rampFrom + (1 - A.rampFrom) * Math.min(1, this.phaseT / A.rampTime);
+    return ramp * (1 - A.ease * Math.min(1, this.teamIntensity() / DIRECTOR.peak));
+  }
+
+  /** One ambient walker, or (clumpChance) a small clump from one hidden spot; at most `room` of them. */
+  private spawnAmbient(room: number): void {
+    const A = DIRECTOR.ambient;
+    const k = room > 1 && Math.random() < A.clumpChance ? Math.min(room, Math.round(roll(A.clump))) : 1;
+    if (k === 1) { this.spawnAt(ZT.WALKER, 10, 22); return; }
+    const src = this.pickSpawnCell(10, 22, 0.85);
+    if (src < 0) return;
+    const players = this.standing();
+    for (let i = 0; i < k; i++) {
+      const c = i ? this.clusterCell(src, players) : src;
+      if (c < 0) continue;
+      const p = this.cellPos(c);
+      this.spawnZombie(ZT.WALKER, p.x + rand(-0.5, 0.5), p.z + rand(-0.5, 0.5));
     }
   }
 
@@ -1868,12 +1922,48 @@ export class Room {
     }
 
     // Cull stragglers that are hopelessly far behind so the director can reuse them.
-    if (this.tickN % 60 === 0) {
-      for (const z of zs) {
-        if (z.dormant || z.type === ZT.BRUTE || z.hp <= 0) continue;
-        if (this.flow[cellOf(z.z) * W + cellOf(z.x)] > 34) this.zombies.delete(z.id);
-      }
+    if (this.tickN % DIRECTOR.cull.every === 0) this.cullStragglers(zs);
+  }
+
+  /** True if a standing survivor has line of sight to (x, z) within fog range. */
+  private inSight(x: number, z: number, stand: Player[]): boolean {
+    const r = Math.min(DIRECTOR.cull.seeR, this.def.theme.fogFar);
+    for (const p of stand) {
+      const dx = p.x - x, dz = p.z - z;
+      if (dx * dx + dz * dz < r * r && this.L.hasLOS(p.x, p.z, x, z, this.doors)) return true;
     }
+    return false;
+  }
+
+  /**
+   * Remove active zombies left far behind (DIRECTOR.cull) that no survivor can see. Distance is on
+   * `flow` (to the nearest standing survivor) for every zombie: goo hunters and loner-stalking
+   * specials chase a standing survivor too, so `flow` is never more than their own field says.
+   * A culled horde walker is owed back: to its own wave if that is still draining (any phase: it
+   * was committed), else to a team-sourced requeue wave ahead of the team, but only in BUILD_UP/
+   * SUSTAIN or a holdout (in FADE/RELAX a finished mob that was outrun stays outrun). Ambient and
+   * belt walkers are not owed. A culled special frees its slot on the next count; no cooldown (it
+   * never got to attack), and specials spawn 9..28 tiles out, so a cull-respawn loop needs the
+   * team to outrun them again. Cost: at most one sight test per standing survivor per far zombie.
+   */
+  private cullStragglers(zs: Zombie[]): void {
+    const W = this.L.W, C = DIRECTOR.cull, stand = this.standing();
+    if (!stand.length) return;
+    let owed = 0, culled = 0;
+    for (const z of zs) {
+      if (z.dormant || z.type === ZT.BRUTE || z.hp <= 0) continue;
+      if (this.flow[cellOf(z.z) * W + cellOf(z.x)] <= C.tiles || this.inSight(z.x, z.z, stand)) continue;
+      this.zombies.delete(z.id);
+      culled++;
+      if (!z.wave) continue;
+      const own = this.waves.find((w) => w.id === z.wave);
+      if (own) { own.left++; owed++; continue; }
+      if (this.holdout < 0 && this.phase !== Phase.BUILD_UP && this.phase !== Phase.SUSTAIN) continue;
+      let rq = this.waves.find((w) => w.requeue);
+      if (!rq) { this.spawnWave(0, { side: 1 }); rq = this.waves[this.waves.length - 1]; rq.requeue = true; }
+      rq.left++; owed++;
+    }
+    if (DIRECTOR_DEBUG && culled) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} culled ${culled} stragglers, ${owed} requeued`);
   }
 
   private updatePlayers(dt: number): void {
