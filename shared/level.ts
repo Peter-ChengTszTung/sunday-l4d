@@ -80,8 +80,11 @@ export interface ChapterDef {
   labels: Label[]; doors: Door[]; notes: Note[]; steps: Step[];
   spawns: Vec2[]; startCell: { x: number; z: number };
   /** Per step index: where the team respawns if it wipes after that checkpoint. */ checkpointSpawns: Record<number, Vec2[]>;
+  /** Wanderer density multipliers over tile rects (later rects win; 0 = no dormant walkers). See `LevelBuilder.density`. */
+  density: DensityRect[];
   theme: Theme;
 }
+export interface DensityRect extends Rect { mult: number }
 
 export function hash2(x: number, z: number): number {
   let h = (x * 374761393 + z * 668265263) ^ 0x5bd1e995;
@@ -113,6 +116,7 @@ export class LevelBuilder {
   readonly arrows: { x: number; z: number; rot: number }[] = []; readonly labels: Label[] = [];
   readonly doors: Door[] = []; readonly notes: Note[] = []; readonly steps: Step[] = [];
   readonly checkpointSpawns: Record<number, Vec2[]> = {};
+  readonly densityRects: DensityRect[] = [];
   spawns: Vec2[] = []; startCell = { x: 0, z: 0 };
   theme: Theme = DEFAULT_THEME;
 
@@ -208,6 +212,18 @@ export class LevelBuilder {
     this.labels.push({ text, x, z, size, color, rot }); return this;
   }
 
+  /**
+   * Scale how many dormant wanderers the director places in a tile rect (default 1; 0 = none, e.g.
+   * inside a set-piece arena; 2 = a crowded street). Later calls override earlier ones where they
+   * overlap. Safe rooms never get any.
+   */
+  density(x0: number, z0: number, x1: number, z1: number, mult: number): this {
+    this.idx(x0, z0); this.idx(x1, z1);
+    if (!(mult >= 0) || mult > 8) throw new Error(`density multiplier ${mult} at ${x0},${z0} must be in 0..8`);
+    this.densityRects.push({ x0: Math.min(x0, x1), z0: Math.min(z0, z1), x1: Math.max(x0, x1), z1: Math.max(z0, z1), mult });
+    return this;
+  }
+
   /** Start safe room spawn points (tiles). */
   start(points: [number, number][]): this {
     this.spawns = points.map(([x, z]) => ({ x: x * TILE, z: z * TILE }));
@@ -262,6 +278,7 @@ export class LevelBuilder {
       floor: this.floor, solid: this.solid, opaque: this.opaque, propCell: this.propCell, wallH: this.wallH, wallKind: this.wallKind,
       doorCell: this.doorCell, props: this.props, pickups: this.pickups, lamps: this.lamps, arrows: this.arrows, labels: this.labels,
       doors: this.doors, notes: this.notes, steps: this.steps, spawns: this.spawns, startCell: this.startCell, checkpointSpawns: this.checkpointSpawns,
+      density: this.densityRects,
     };
   }
 }

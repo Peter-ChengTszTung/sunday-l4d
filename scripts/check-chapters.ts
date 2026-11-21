@@ -14,6 +14,7 @@ for (const c of CHAPTERS) {
   console.log(`\n== Chapter ${c.index + 1}: ${c.title} (${r.id}) ${s.size}, ${s.walkable} walkable tiles`);
   console.log(`   critical path ${s.pathMetres} m, holdouts ${s.holdSeconds} s, ${r.steps.length} steps, ${s.checkpoints} checkpoints, ${s.doors} doors, notes ${s.notes}`);
   console.log(`   pickups ${JSON.stringify(s.pickups)}`);
+  console.log(`   wanderers: ${s.wanderers.regions} regions, ~${s.wanderers.budget} sleepers if every region were populated`);
   console.log(`   estimated play time ${s.estMinutes[0]}–${s.estMinutes[1]} min`);
   for (const st of r.steps) console.log(`   ${String(st.index + 1).padStart(2)}. ${st.kind.padEnd(8)} ${String(st.pathTiles * 2).padStart(5)} m  ${st.objective}${st.note ? ` (${st.note})` : ''}`);
   for (const w of r.warnings) console.log(`   WARN  ${w}`);

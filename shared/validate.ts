@@ -3,11 +3,13 @@
 // verifies every objective is reachable from where the team stands.
 import { TILE, WEAPONS } from './constants';
 import { F, ALL_OPEN, cellOf, type Level, type Vec2 } from './level';
+import { wandererRegions } from './regions';
 
 export interface StepReport { index: number; kind: string; objective: string; pathTiles: number; reachable: boolean; note?: string }
 export interface ChapterReport {
   id: string; errors: string[]; warnings: string[]; steps: StepReport[];
-  stats: { size: string; walkable: number; pathMetres: number; holdSeconds: number; estMinutes: [number, number]; checkpoints: number; doors: number; pickups: Record<string, number>; notes: number };
+  stats: { size: string; walkable: number; pathMetres: number; holdSeconds: number; estMinutes: [number, number]; checkpoints: number; doors: number; pickups: Record<string, number>; notes: number;
+    /** Dormant-wanderer regions and their total expected sleepers (whole map, if every region were populated). */ wanderers: { regions: number; budget: number } };
 }
 
 const INF = 32767;
@@ -142,6 +144,15 @@ export function validateChapter(L: Level): ChapterReport {
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));
   for (const d of def.doors) if (!usedDoors.has(d.id)) warnings.push(`door ${d.id} at ${d.x0},${d.z0} is never opened`);
 
+  // Wanderer regions (server populates each once per attempt).
+  const reg = wandererRegions(L);
+  def.density.forEach((r, k) => {
+    let n = 0;
+    for (let z = r.z0; z <= r.z1; z++) for (let x = r.x0; x <= r.x1; x++) n += reg.spawnable[z * W + x];
+    if (!n) warnings.push(`density rect #${k + 1} (${r.x0},${r.z0})-(${r.x1},${r.z1}) covers no spawnable floor`);
+  });
+  const wanderers = { regions: reg.list.length, budget: Math.round(reg.list.reduce((a, r) => a + r.weight, 0)) };
+
   const pickups: Record<string, number> = {};
   for (const p of def.pickups) pickups[p.kind] = (pickups[p.kind] ?? 0) + 1;
   const pathMetres = pathTiles * TILE;
@@ -154,6 +165,6 @@ export function validateChapter(L: Level): ChapterReport {
   ];
   return {
     id: def.id, errors, warnings, steps,
-    stats: { size: `${W}x${H}`, walkable, pathMetres, holdSeconds, estMinutes, checkpoints: def.steps.filter((s) => s.checkpoint).length, doors: def.doors.length, pickups, notes: def.notes.length },
+    stats: { size: `${W}x${H}`, walkable, pathMetres, holdSeconds, estMinutes, checkpoints: def.steps.filter((s) => s.checkpoint).length, doors: def.doors.length, pickups, notes: def.notes.length, wanderers },
   };
 }

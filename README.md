@@ -87,8 +87,10 @@ docs/     campaign.md — story bible and per-chapter quest briefs
   survivor who strays far from the team draws them. Besides the scripted Brute, each attempt may
   roll a roaming one at a random point 30-70% along the chapter's route (clear of safe rooms,
   holdouts and the scripted one); it comes from ahead when the team passes that point, and timed
-  mobs pause while a Brute is up. Run the server with `DIRECTOR_DEBUG=1` to log phase changes,
-  ambush releases, lone-wolf picks and the rolled Brute point.
+  mobs pause while a Brute is up. Sleeping wanderers are placed once per area per attempt
+  (`shared/regions.ts`; `b.density(...)` in a chapter scales or zeroes an area), so a cleared
+  street stays cleared. Run the server with `DIRECTOR_DEBUG=1` to log phase changes, ambush
+  releases, lone-wolf picks, the rolled Brute point and wanderer placement.
 - **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
   custom GLSL shaders: 4-step banded lighting, a stepped flashlight cone, fog, and inverted-hull
   ink outlines. Architecture ink lines are thin beam geometry. Lamps light the scene through a

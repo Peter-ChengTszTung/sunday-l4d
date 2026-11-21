@@ -5,6 +5,7 @@ import type { WebSocket } from 'ws';
 import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, HEAD_MULT, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
+import { wandererRegions, type Regions } from '../shared/regions';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
 
 const INF = 32767;
@@ -13,8 +14,23 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 // Overridable so the smoke test doesn't have to sit through holdouts.
 const HOLD_SCALE = Number(process.env.HOLDOUT_SCALE) || 1;
 const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-/** Dormant walkers are kept in a band this many tiles ahead of the team's furthest progress. */
-const BELT_NEAR = 14, BELT_FAR = 46, BELT_MAX = 34;
+/**
+ * Dormant wanderers, placed once per region per attempt (regions and density: shared/regions.ts).
+ * Every `every` s the director measures each region's distance from the team on `reach` (path tiles
+ * from the standing survivors with the current step's doors already open, so the street beyond
+ * the next door is stocked before it opens). A region within `act` tiles that hasn't been placed
+ * yet gets its rolled budget (weight x `roll`): sleepers in clumps of 1-3 (`clump` weights), on cells
+ * `near`..`far` tiles out and hidden from every survivor (20 m). Each sleeper placed
+ * counts against the budget for good: killing or waking it never refunds. A region is spent once a
+ * survivor comes within `visit` tiles; until then a budget cut short by the `max` live-sleeper cap
+ * (perf/bandwidth) or by visible cells tops up on later passes. Sleepers more than `cull` tiles away
+ * (or cut off by a door) and out of sight are removed; one from an unspent region is refunded to it.
+ * At the cap, sleepers from spent regions more than `evict` tiles away make room for unspent ones.
+ */
+const WANDERERS = {
+  every: 1, act: 40, near: 10, far: 56, cull: 64, evict: 28, visit: 4, max: 40,
+  roll: [0.75, 1.25] as const, clump: [0.55, 0.3, 0.15] as const, triesPer: 6, triesMax: 160,
+};
 /** Director spawns never appear closer than this (metres) to any survivor. */
 const MIN_SPAWN_DIST = 16;
 /** Horde waves: members spawn within CLUSTER tiles of their source; FLANK_CHANCE that a big team-sourced
@@ -154,8 +170,10 @@ interface Zombie {
   /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
   /** Special holding for a coordinated attack: 0 = attacking, 1 = lurking unseen, 2 = lurking but in a survivor's sight (backs off). */
   hold: number;
-  /** Id of the queued horde (Wave.id) this walker was spawned for; 0 = not a horde member (ambient, belt, holdout). */
+  /** Id of the queued horde (Wave.id) this walker was spawned for; 0 = not a horde member (ambient, wanderer, holdout). */
   wave: number;
+  /** Wanderer region it was placed in (-1 = not a placed wanderer). */
+  region: number;
 }
 
 /**
@@ -177,10 +195,10 @@ interface Puddle { id: number; x: number; z: number; r: number; life: number; ag
 interface ChapterData {
   L: Level;
   progress: Int16Array; // BFS distance from the start with every door open
-  /** Spawnable cells (not safe rooms/doors) bucketed by progress. */
-  byProgress: number[][];
+  /** Spawnable cells (not safe rooms/doors). */
   open: number[];
   /** 1 where `open` has the cell. */ spawnable: Uint8Array;
+  /** Wanderer regions over `open` (populated once per attempt, see WANDERERS). */ regions: Regions;
   /**
    * The quest route as one distance (path tiles), monotone along the steps, unlike `progress` (some
    * chapters loop back toward the start). Leg `i` runs from step i-1's objective to step i's, walked
@@ -192,15 +210,9 @@ const chapterData = new Map<number, ChapterData>();
 function dataFor(ch: number): ChapterData {
   let d = chapterData.get(ch);
   if (d) return d;
-  const L = getLevel(ch), { W, H } = L, def = L.def;
-  const progress = L.distanceField([def.startCell.z * W + def.startCell.x], ALL_OPEN);
-  const byProgress: number[][] = [], open: number[] = [], spawnable = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    if (def.solid[i] || def.floor[i] === F.SAFE || def.doorCell[i] >= 0 || progress[i] >= INF) continue;
-    open.push(i); spawnable[i] = 1;
-    (byProgress[progress[i]] ??= []).push(i);
-  }
-  d = { L, progress, byProgress, open, spawnable, route: routeOf(L) };
+  const L = getLevel(ch), regions = wandererRegions(L);
+  const { progress, open, spawnable } = regions;
+  d = { L, progress, open, spawnable, regions, route: routeOf(L) };
   chapterData.set(ch, d);
   return d;
 }
@@ -269,7 +281,14 @@ export class Room {
   private nextPuddle = 1;
   /** Earliest `time` the director may send another Alarm Clock. */
   private alarmAt = 0;
-  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, holdSpecial: 8, belt: 0 };
+  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, holdSpecial: 8, wander: 0 };
+  /**
+   * Wanderer regions this attempt (index = region id): rolled budget, sleepers placed so far, and
+   * spent (a survivor came within WANDERERS.visit tiles: never placed into again). `reach`: scratch
+   * field for the region pass.
+   */
+  private wander = { budget: new Int16Array(0), placed: new Int16Array(0), spent: new Uint8Array(0), minD: new Int16Array(0) };
+  private reach = new Int16Array(1);
   /** Director pacing phase, seconds in it, `best` when it began, and how long it lasts (SUSTAIN/RELAX). */
   private phase = Phase.BUILD_UP;
   private phaseT = 0;
@@ -365,7 +384,7 @@ export class Room {
     this.clearHazards();
     this.alarmAt = 0;
     this.waves = []; this.marks.clear();
-    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, holdSpecial: 8, belt: 0 };
+    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, holdSpecial: 8, wander: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -380,7 +399,8 @@ export class Room {
     this.resetPacing();
     this.beginStep(true);
     this.rollBoss();
-    this.fillBelt(BELT_MAX);
+    this.resetWanderers();
+    this.placeWanderers();
   }
 
   private spawnPlayer(p: Player, s: Vec2, fresh: boolean): void {
@@ -516,7 +536,8 @@ export class Room {
     this.resetPacing();
     this.beginStep();
     this.rollBoss();
-    this.fillBelt(BELT_MAX);
+    this.resetWanderers();
+    this.placeWanderers();
   }
 
   /** A door just shut: zombies caught in the doorway are removed, players in it are moved into the room. */
@@ -749,31 +770,107 @@ export class Room {
       hp: type === ZT.BRUTE ? T.hp + 700 * (this.players.size - 1) : T.hp,
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1,
     };
     this.zombies.set(zb.id, zb);
     return zb;
   }
 
-  /** Keep up to `max` dormant walkers spread through the band ahead of the team, and drop ones left far behind. */
-  private fillBelt(max: number): void {
-    const { W } = this.L, prog = this.cd.progress;
-    let dormant = 0;
+  /** A fresh attempt: roll every region's budget; nothing placed or spent yet. */
+  private resetWanderers(): void {
+    const list = this.cd.regions.list, n = list.length;
+    const budget = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      const v = list[i].weight * roll(WANDERERS.roll);
+      budget[i] = Math.floor(v) + (Math.random() < v % 1 ? 1 : 0);
+    }
+    this.wander = { budget, placed: new Int16Array(n), spent: new Uint8Array(n), minD: new Int16Array(n) };
+    if (this.reach.length !== this.L.W * this.L.H) this.reach = new Int16Array(this.L.W * this.L.H);
+  }
+
+  /**
+   * One wanderer pass (see WANDERERS): mark regions the team reached as spent, drop sleepers far
+   * away, then place unplaced budget in unspent regions within reach, nearest region first. Cost:
+   * one BFS plus a scan of the spawnable cells, and at most `triesMax` sight tests.
+   */
+  private placeWanderers(): void {
+    const Wd = WANDERERS, { W } = this.L, R = this.cd.regions, st = this.wander;
+    const stand = this.standing();
+    let doors = this.doors;
+    for (const d of this.cur?.opens ?? []) doors |= 1 << d;
+    const src: number[] = [];
+    for (const p of stand.length ? stand : this.spawnPoints()) {
+      const tx = cellOf(p.x), tz = cellOf(p.z);
+      if (!this.L.solidAt(tx, tz, doors)) src.push(tz * W + tx);
+    }
+    if (!src.length) return;
+    const reach = this.L.distanceField(src, doors, this.reach);
+    const minD = st.minD.fill(INF);
+    for (const c of this.cd.open) { const r = R.regionOf[c]; if (reach[c] < minD[r]) minD[r] = reach[c]; }
+    for (let r = 0; r < minD.length; r++) if (minD[r] <= Wd.visit) st.spent[r] = 1;
+
+    let live = 0;
+    const evictable: { z: Zombie; d: number }[] = [];
     for (const z of [...this.zombies.values()]) {
       if (!z.dormant) continue;
-      const c = cellOf(z.z) * W + cellOf(z.x);
-      if (prog[c] < this.best - 24) { this.zombies.delete(z.id); continue; }
-      dormant++;
+      const d = reach[cellOf(z.z) * W + cellOf(z.x)];
+      if (d > Wd.cull && !this.inSight(z.x, z.z, stand)) {
+        this.zombies.delete(z.id);
+        if (z.region >= 0 && !st.spent[z.region]) st.placed[z.region]--;
+        continue;
+      }
+      live++;
+      if (d > Wd.evict && (z.region < 0 || st.spent[z.region])) evictable.push({ z, d });
     }
-    const players = this.standing();
-    for (let tries = 0; dormant < max && tries < max * 4; tries++) {
-      const bucket = this.cd.byProgress[this.best + BELT_NEAR + ((Math.random() * (BELT_FAR - BELT_NEAR)) | 0)];
-      if (!bucket?.length) continue;
-      const c = bucket[(Math.random() * bucket.length) | 0];
+
+    const want: number[] = [];
+    let need = 0;
+    for (let r = 0; r < minD.length; r++) {
+      if (st.spent[r] || minD[r] > Wd.act || st.placed[r] >= st.budget[r]) continue;
+      want.push(r); need += st.budget[r] - st.placed[r];
+    }
+    if (!want.length) return;
+    want.sort((a, b) => minD[a] - minD[b]);
+    // At the cap, sleepers left in spent regions well away from the team make room for fresh ground.
+    if (live + need > Wd.max && evictable.length) {
+      evictable.sort((a, b) => b.d - a.d);
+      for (const e of evictable) {
+        if (live + need <= Wd.max) break;
+        if (this.inSight(e.z.x, e.z.z, stand)) continue;
+        this.zombies.delete(e.z.id); live--;
+      }
+    }
+
+    let tries = Wd.triesMax;
+    const ok = (c: number, r: number) => R.regionOf[c] === r && reach[c] >= Wd.near && reach[c] <= Wd.far && Math.random() < R.mult[c];
+    const put = (c: number, r: number): boolean => {
       const x = (c % W + 0.5) * TILE + rand(-0.4, 0.4), z = (((c / W) | 0) + 0.5) * TILE + rand(-0.4, 0.4);
-      if (!this.hidden(x, z, players, 20)) continue;
-      this.spawnZombie(ZT.WALKER, x, z, true);
-      dormant++;
+      if (!this.hidden(x, z, stand, 20)) return false;
+      this.spawnZombie(ZT.WALKER, x, z, true).region = r;
+      st.placed[r]++; live++;
+      return true;
+    };
+    for (const r of want) {
+      if (tries <= 0 || live >= Wd.max) break;
+      const cells = R.list[r].cells, before = st.placed[r];
+      let t = Math.min(tries, (st.budget[r] - st.placed[r]) * Wd.triesPer);
+      tries -= t;
+      while (t-- > 0 && st.placed[r] < st.budget[r] && live < Wd.max) {
+        const c = cells[(Math.random() * cells.length) | 0];
+        if (!ok(c, r) || !put(c, r)) continue;
+        // A clump: up to two more on neighbouring cells of the same region.
+        let k = 0, u = Math.random();
+        while (k < Wd.clump.length - 1 && u >= Wd.clump[k]) u -= Wd.clump[k++];
+        const cx = c % W;
+        for (let i = 0, o = (Math.random() * 8) | 0; i < 8 && k > 0; i++) {
+          const [dx, dz] = DIRS8[(o + i) % 8];
+          if (st.placed[r] >= st.budget[r] || live >= Wd.max) break;
+          if (cx + dx < 0 || cx + dx >= W) continue;
+          const n = c + dz * W + dx;
+          if (n >= 0 && n < R.regionOf.length && ok(n, r) && put(n, r)) k--;
+        }
+      }
+      if (DIRECTOR_DEBUG && st.placed[r] > before) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} region ${r} at ${minD[r]} tiles: ${st.placed[r]}/${st.budget[r]} sleepers (${live} live)`);
     }
   }
 
@@ -1482,7 +1579,7 @@ export class Room {
       if (allSafe) return;
       this.started = true;
     }
-    // Furthest progress drives the wanderer belt; it and closing on the objective (collect steps
+    // Furthest progress and closing on the objective (collect steps
     // may lead back the way they came) count as advancing for the mob timer and anti-camping.
     let advanced = false;
     for (const p of stand) {
@@ -1501,8 +1598,8 @@ export class Room {
     }
     if (advanced) { this.advancedAt = this.time; this.campT = 0; }
     const t = this.t, D = DIRECTOR;
-    t.belt -= dt;
-    if (t.belt <= 0) { t.belt = 2; this.fillBelt(BELT_MAX); }
+    t.wander -= dt;
+    if (t.wander <= 0) { t.wander = WANDERERS.every; this.placeWanderers(); }
 
     let commons = 0, specials = 0, holders = 0, nearCommons = 0;
     const byType = ZTYPES.map(() => 0);
@@ -1570,8 +1667,8 @@ export class Room {
     const ph = this.phase;
     if (ph !== Phase.BUILD_UP && ph !== Phase.SUSTAIN) return;
 
-    // NOTE(#12): the dormant belt (fillBelt above) keeps restocking in every phase, and gunfire wakes
-    // its sleepers, so RELAX can stay busy even though the ambient trickle is off here.
+    // Wanderers (placeWanderers above) are placed in every phase: each region is stocked once per
+    // attempt, so a RELAX spent shooting only wakes what is already there and then goes quiet.
     t.ambient -= dt;
     if (t.ambient <= 0) {
       const A = D.ambient, f = this.ambientScale();
@@ -1942,7 +2039,7 @@ export class Room {
    * A culled horde walker is owed back: to its own wave if that is still draining (any phase: it
    * was committed), else to a team-sourced requeue wave ahead of the team, but only in BUILD_UP/
    * SUSTAIN or a holdout (in FADE/RELAX a finished mob that was outrun stays outrun). Ambient and
-   * belt walkers are not owed. A culled special frees its slot on the next count; no cooldown (it
+   * wanderers are not owed. A culled special frees its slot on the next count; no cooldown (it
    * never got to attack), and specials spawn 9..28 tiles out, so a cull-respawn loop needs the
    * team to outrun them again. Cost: at most one sight test per standing survivor per far zombie.
    */

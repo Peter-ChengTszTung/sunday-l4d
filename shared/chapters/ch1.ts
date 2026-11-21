@@ -372,6 +372,8 @@ export function build() {
   b.label('MAINTENANCE BAY', 80, 80.3, 24, CREAM);
   for (const [x, z] of [[68, 82], [86, 82], [68, 90], [92, 88], [80, 76]]) b.lamp(x, z);
   b.arrow(80, 75.5, S); b.arrow(88, 79.5, S);
+  // Finale arena: the ignition holdout brings its own crowd, so no sleepers wait in the bay.
+  b.density(62, 74, 98, 92, 0);
 
   // ------------------------------------------------------------------
   // Quest
