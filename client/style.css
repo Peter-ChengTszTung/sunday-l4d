@@ -169,3 +169,10 @@ label.check { display: flex; align-items: center; gap: 8px; text-transform: none
 label.check input { width: 18px; height: 18px; }
 #invite { margin: 0 auto 14px; padding: 8px 14px; background: var(--yellow); border: 3px solid var(--ink); border-radius: 12px; display: inline-flex; gap: 10px; align-items: center; }
 #invite[hidden] { display: none; }
+
+/* Shooting range: the stats panel (top left, under the objective) and its lobby / pause buttons. */
+.btn.ghost { background: var(--teal); }
+#rangepanel { position: absolute; left: 14px; top: 64px; max-width: min(440px, calc(100vw - 28px)); background: rgba(21, 18, 46, 0.72);
+  color: var(--cream); border: 3px solid var(--ink); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.45; }
+#rangepanel b { color: var(--yellow); margin-right: 6px; }
+#leaverange { margin-top: 12px; }

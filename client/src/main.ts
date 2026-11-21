@@ -14,6 +14,8 @@ import { FX } from './fx';
 import { Sfx } from './audio';
 import { Hud, type MateView } from './hud';
 import { Net, type JoinOpts } from './net';
+import { ShootingRange } from './range';
+import { rangeLevel } from '../../shared/range';
 import { t, tMsg, lang, LANGS, setLang, translatePage, type Lang } from './i18n';
 
 translatePage();
@@ -49,9 +51,13 @@ let L: Level = getLevel(chapter);
 let world: World = buildWorld(L);
 /** Swap the rendered world when the room moves to another chapter. */
 function loadChapter(ch: number): void {
-  if (ch === chapter && world) return;
+  if (ch === chapter && L === getLevel(ch)) return;
+  useLevel(getLevel(ch));
+  chapter = ch;
+}
+function useLevel(next: Level): void {
   world.dispose();
-  chapter = ch; L = getLevel(ch); world = buildWorld(L);
+  L = next; world = buildWorld(L);
   step = 0; qc = 0; doors = 0;
 }
 const fx = new FX();
@@ -88,6 +94,8 @@ const zeds = new Map<number, Zed>();
 const corpses: Corpse[] = [];
 let inGame = false, locked = false, ended = false;
 let doors = 0, step = 0, qc = 0, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play', debugServer = false;
+/** The offline shooting range, while you are in it (it stands in for the server). */
+let range: ShootingRange | null = null;
 let torchOn = true, groanT = 2, sendT = 0, lookDX = 0, lookDY = 0, time = 0;
 const keys = new Set<string>();
 const mouse = { left: false };
@@ -99,6 +107,9 @@ document.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!active()) return;
   if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  // Range: 1-8 hand you any weapon, X clears the numbers.
+  if (range && /^Digit[1-8]$/.test(e.code)) { debugGive(Number(e.code.slice(5)) - 1); return; }
+  if (range && e.code === 'KeyX') { range.resetStats(); hud.feed(t('Stats cleared')); return; }
   switch (e.code) {
     case 'KeyR': startReload(); break;
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
@@ -137,6 +148,7 @@ function switchWeapon(i: number): void {
   if (i === me.weapon || me.st !== PSTATE.ALIVE) return;
   me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3);
   vm.setWeapon(i);
+  range?.resetStats(); // each weapon's numbers start clean
 }
 
 function startReload(): void {
@@ -808,6 +820,89 @@ function enterGame(): void {
   hud.pause(!locked && !DEBUG);
   if (!DEBUG) void canvas.requestPointerLock();
 }
+// ------------------------------------------------------------- shooting range
+/** Drop every zombie and corpse on screen (leaving or entering the range). */
+function clearZeds(): void {
+  for (const z of zeds.values()) z.chibi.dispose();
+  zeds.clear();
+  for (const c of corpses) c.chibi.dispose();
+  corpses.length = 0;
+  clearNades(); fx.clearGoo(); pinned.clear();
+}
+
+/** Offline practice: no room or server; ShootingRange answers our messages locally. */
+function enterRange(): void {
+  sfx.unlock();
+  const RANGE_PID = 1;
+  clearZeds();
+  syncRoster([]);
+  useLevel(rangeLevel());
+  const s = L.def.spawns[0];
+  Object.assign(me, {
+    id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, medkits: 0,
+    weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
+  });
+  vm.setWeapon(0);
+  range = new ShootingRange(L, RANGE_PID, (m) => net.onMessage(m));
+  net.local = (m) => range?.handle(m);
+  serverState = 'play'; holdout = -1;
+  world.setDoors(0, true);
+  enterStep(0, false);
+  hud.radio([], true);
+  const room = $<HTMLButtonElement>('room');
+  room.textContent = t('Shooting range'); room.onclick = null;
+  $('rangepanel').hidden = false;
+  $('leaverange').hidden = false;
+  hud.banner(t('Shooting range'));
+  hud.feed(t('1-8: any weapon · R: reload · X: clear stats · Esc: leave'));
+  enterGame();
+}
+
+function leaveRange(): void {
+  if (!range) return;
+  range = null; net.local = null;
+  inGame = false;
+  document.exitPointerLock();
+  clearZeds();
+  me.id = 0;
+  loadChapter(Number(chapterSelect.value));
+  hud.show(false); hud.pause(false);
+  $('rangepanel').hidden = true;
+  $('leaverange').hidden = true;
+  $('lobby').hidden = false;
+  for (const b of lobbyButtons()) b.disabled = false;
+  void refreshRooms();
+}
+$('range').addEventListener('click', enterRange);
+// Inside the pause card: don't let the card's own mousedown re-grab the pointer.
+$('leaverange').addEventListener('mousedown', (e) => e.stopPropagation());
+$('leaverange').addEventListener('click', leaveRange);
+
+const ZNAMES: Record<string, string> = { walker: 'Walker', leaper: 'Leaper', puffer: 'Puffer', brute: 'Brute', charger: 'Charger', drooler: 'Drooler', alarm: 'Alarm Clock' };
+const zname = (type: number) => t(ZNAMES[ZTYPES[type]?.id] ?? 'Zombie');
+const fmt = (v: number) => (v >= 100 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString());
+
+/** The range's numbers: this weapon's stats, the last shot, DPS, the last kill and the target's health. */
+function updateRangePanel(): void {
+  if (!range) return;
+  const w = WEAPONS[me.weapon], s = range.stats;
+  const spec = w.blast
+    ? t('{dmg} blast dmg · {r} m radius', { dmg: w.blast.dmg, r: w.blast.radius })
+    : t('{dmg} dmg', { dmg: w.pellets > 1 ? `${w.dmg}×${w.pellets}` : w.dmg }) + (w.pierce > 1 ? ` · ${t('pierces {n}', { n: w.pierce })}` : '');
+  const lines = [
+    `<b>${t(w.name)}</b> ${spec} · ${t('{rpm} RPM', { rpm: Math.round(60 / w.rate) })} · ${t('mag {n}', { n: w.mag })} · ${t('reload {s} s', { s: w.reload })}`,
+    s.shot ? t('Last shot: {dmg} dmg ({body} body, {head} head, {n} hit)', { dmg: fmt(s.shot.dmg), body: s.shot.body, head: s.shot.head, n: s.shot.zeds }) : t('Last shot: —'),
+    t('DPS: {dps} · Total: {total} · Hits: {hit}/{shots}', { dps: fmt(s.dps), total: fmt(s.total), hit: s.shotsHit, shots: s.shotsFired }),
+    !s.kill ? t('Last kill: —')
+      : s.kill.shots <= 1 ? t('Last kill: {who} in one shot', { who: zname(s.kill.type) })
+        : t('Last kill: {who} in {s} s ({n} shots)', { who: zname(s.kill.type), s: s.kill.ttk.toFixed(2), n: s.kill.shots }),
+    s.target ? t('Target: {who} {hp}/{max}', { who: zname(s.target.type), hp: s.target.hp, max: s.target.max }) : '',
+  ];
+  const html = lines.filter(Boolean).map((l) => `<div>${l}</div>`).join('');
+  if (html !== rangeHtml) { rangeHtml = html; $('rangepanel').innerHTML = html; }
+}
+let rangeHtml = '';
+
 // `?room=X&step=N` (from the map viewer) joins straight away and jumps to that quest step on a dev server.
 if ((DEBUG || params.has('step')) && params.has('room')) void join({ room: inviteCode, ch: chapter });
 
@@ -918,7 +1013,8 @@ function updateMe(dt: number): void {
     }
   } else { me.vx = me.vz = 0; me.y = 0; }
 
-  // Weapons.
+  // Weapons. The range never runs dry: reserves stay full.
+  if (range) for (let i = 0; i < WEAPONS.length; i++) me.reserve[i] = WEAPONS[i].reserve;
   if (me.reloadT > 0) {
     const w = WEAPONS[me.weapon];
     me.reloadT -= dt;
@@ -1068,6 +1164,8 @@ let orbit = 0;
 app.on('update', (dt: number) => {
   time += dt;
   if (inGame) {
+    range?.tick(dt);
+    if (range) updateRangePanel();
     updateMe(dt);
     updateCamera(dt);
     updateEntities(dt);

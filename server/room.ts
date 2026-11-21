@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, headMult, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type DifficultyId } from '../shared/constants';
+import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type DifficultyId } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -794,7 +794,7 @@ export class Room {
       const nh = Math.max(0, Math.min(budget, h[2] | 0)); budget -= nh;
       if (nb + nh === 0) continue;
       if (Math.hypot(z.x - p.x, z.z - p.z) > wp.range + 4) continue;
-      this.damageZombie(z, wp.dmg * (nb + nh * headMult(z.type)), p, nh > 0);
+      this.damageZombie(z, shotDamage(wp, z.type, nb, nh), p, nh > 0);
     }
   }
 
@@ -830,7 +830,7 @@ export class Room {
         if (side > 1.4 + ZTYPES[z.type].radius || ox * lx + oz * lz < -1) continue;
         if (!this.L.hasLOS(p.x, p.z, z.x, z.z, this.doors)) break;
       }
-      this.damageZombie(z, wp.dmg * (head ? headMult(z.type) : 1), p, head);
+      this.damageZombie(z, shotDamage(wp, z.type, head ? 0 : 1, head ? 1 : 0), p, head);
       if (z.type === ZT.BRUTE) break;
     }
   }
@@ -861,7 +861,7 @@ export class Room {
     const k = d > 0.01 ? Math.max(0, d - 0.6) / d : 0;
     const bx = n.x + dx * k, bz = n.z + dz * k;
     if (!this.L.hasLOS(n.x, n.z, bx, bz, this.doors)) return;
-    const power = d < B.arm ? 0.4 : 1, R = B.radius * (power < 1 ? 0.6 : 1);
+    const power = blastPower(B, d), R = blastRadius(B, power);
     this.events.push(['blast', p.id, r2(m.x), r2(m.y), r2(m.z), power]);
     for (const z of [...this.zombies.values()]) {
       const T = ZTYPES[z.type];
@@ -871,7 +871,7 @@ export class Room {
         const a = Math.hypot(z.x - bx, z.z - bz) || 1;
         z.stun = 0.9; z.vx = ((z.x - bx) / a) * 8; z.vz = ((z.z - bz) / a) * 8; z.st = ZSTATE.STAGGER;
       }
-      this.damageZombie(z, B.dmg * power * (1 - (1 - B.edge) * (zd / R)), p, false);
+      this.damageZombie(z, blastDamage(B, power, zd), p, false);
     }
     for (const q of this.players.values()) {
       if (q.st !== PSTATE.ALIVE || q.pinned) continue;

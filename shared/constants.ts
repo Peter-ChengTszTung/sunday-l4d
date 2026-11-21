@@ -73,6 +73,16 @@ export const WEAPONS: WeaponDef[] = [
 export const weaponIndex = (id: WeaponId): number => WEAPONS.findIndex((w) => w.id === id);
 /** Headshot multiplier by zombie type: commons die to one solid headshot, specials and the Brute reward it less. */
 export const headMult = (type: number): number => (type === ZT.WALKER ? 3 : type === ZT.BRUTE ? 1.25 : 1.5);
+/** Damage one shot deals a zombie of `type` it hit with `body` and `head` bullets/pellets (server and the offline range). */
+export const shotDamage = (w: WeaponDef, type: number, body: number, head: number): number => w.dmg * (body + head * headMult(type));
+/** Launcher blast power: a shell that landed within `arm` m of where it was fired only half-arms. */
+export const blastPower = (B: BlastDef, flown: number): number => (flown < B.arm ? 0.4 : 1);
+export const blastRadius = (B: BlastDef, power: number): number => B.radius * (power < 1 ? 0.6 : 1);
+/** Blast damage to a zombie whose body edge is `d` m from the centre (0 outside the radius). */
+export const blastDamage = (B: BlastDef, power: number, d: number): number => {
+  const R = blastRadius(B, power);
+  return d > R ? 0 : B.dmg * power * (1 - (1 - B.edge) * (d / R));
+};
 
 // Zombie archetypes. `scale` multiplies the base chibi model (≈1.45 m tall).
 export const ZTYPES: ZombieDef[] = [

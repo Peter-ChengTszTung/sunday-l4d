@@ -24,6 +24,7 @@
     <button id="room" title="Copy invite link"></button>
     <div id="team"></div>
     <div id="feed"></div>
+    <div id="rangepanel" hidden></div>
     <div id="banner"></div>
 
     <div id="prompt" hidden></div>
@@ -55,6 +56,7 @@
           <h3>Open rooms <small id="roomcount"></small></h3>
           <ul id="rooms"><li class="empty">Looking for rooms…</li></ul>
           <button type="button" id="quick" class="btn">QUICK PLAY</button>
+          <button type="button" id="range" class="btn ghost" title="Offline practice: every weapon, every zombie type">SHOOTING RANGE</button>
         </section>
         <section>
           <h3>New room</h3>
@@ -80,6 +82,7 @@
     <div class="card small">
       <h2>Paused</h2>
       <p>Click to jump back in. The horde does not wait.</p>
+      <button type="button" id="leaverange" class="btn pink" hidden>LEAVE RANGE</button>
     </div>
   </div>
 

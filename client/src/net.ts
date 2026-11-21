@@ -6,6 +6,8 @@ export class Net {
   private ws: WebSocket | null = null;
   onMessage: (m: ServerMsg) => void = () => {};
   onClose: () => void = () => {};
+  /** Offline play (the shooting range): messages go here instead of the socket. */
+  local: ((m: ClientMsg) => void) | null = null;
 
   connect(opts: JoinOpts): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -23,6 +25,7 @@ export class Net {
   }
 
   send(m: ClientMsg): void {
+    if (this.local) { this.local(m); return; }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(m));
   }
 }
