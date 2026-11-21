@@ -28,33 +28,68 @@ const FOG = /* glsl */ `
   uniform vec3 uFogCol; uniform vec2 uFogRange; uniform float uFogOn; uniform vec3 view_position;
   vec3 fogged(vec3 c, vec3 w) { float f = clamp((distance(w, view_position) - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0); return mix(c, uFogCol, f * uFogOn); }`;
 
-const toonVS = (uv: boolean) => /* glsl */ `
+// Rigid "part skinning" for characters merged into one mesh (see chibi.ts): the
+// vertex colour alpha holds a part index, and uParts holds each part's affine
+// transform as three row vec4s. Normals use the cofactor matrix (the inverse
+// transpose up to scale), so squashed parts light exactly as separate entities did.
+export const CHIBI_PARTS = 6;
+const PARTS = /* glsl */ `
+  uniform vec4 uParts[${CHIBI_PARTS * 3}];
+  int partIndex() { return int(aColor.a * 255.0 + 0.5) * 3; }
+  vec3 partPos(int i, vec3 p) { vec4 q = vec4(p, 1.0); return vec3(dot(uParts[i], q), dot(uParts[i + 1], q), dot(uParts[i + 2], q)); }
+  vec3 partNormal(int i, vec3 n) {
+    vec3 a = vec3(uParts[i].x, uParts[i + 1].x, uParts[i + 2].x), b = vec3(uParts[i].y, uParts[i + 1].y, uParts[i + 2].y), c = vec3(uParts[i].z, uParts[i + 1].z, uParts[i + 2].z);
+    return cross(b, c) * n.x + cross(c, a) * n.y + cross(a, b) * n.z;
+  }`;
+const toonVS = (uv: boolean, parts = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform mat3 matrix_normal;
   varying vec3 vN; varying vec3 vW; varying vec3 vC;
+  ${parts ? PARTS : ''}
   void main(void) {
-    vec4 w = matrix_model * vec4(aPosition, 1.0);
-    vW = w.xyz; vN = normalize(matrix_normal * aNormal); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''}
+    ${parts ? 'int pi = partIndex(); vec3 p = partPos(pi, aPosition), nrm = partNormal(pi, aNormal);' : 'vec3 p = aPosition, nrm = aNormal;'}
+    vec4 w = matrix_model * vec4(p, 1.0);
+    vW = w.xyz; vN = normalize(matrix_normal * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''}
     gl_Position = matrix_viewProjection * w;
   }`;
 const toonFS = (uv: boolean) => /* glsl */ `
   varying vec3 vN; varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''}
   uniform vec3 uTint; uniform vec3 uSunDir; uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn; uniform float uTorchUse;
+  uniform vec3 uAmbLo; uniform vec3 uAmbHi; uniform vec3 uSunCol; uniform vec3 uGrade; uniform vec3 uLampWarm; uniform vec3 uLampCool;
+  // World light map (see atmo.ts): r = open sky, g = warm street lamps, b = cool ceiling fixtures.
+  uniform sampler2D uLightMap; uniform vec2 uLightScale;
+  uniform float uCeil; uniform vec3 uCeilLight;
   ${FOG}
   // Four hard steps: the whole "cel" look lives in this function.
   float band(float x) { return x < 0.25 ? 0.37 : x < 0.5 ? 0.65 : x < 0.75 ? 0.9 : 1.0; }
+  // A step with a sliver of anti-aliasing, for light edges that cross big flat surfaces.
+  float edge(float e, float w, float x) { return smoothstep(e - w, e + w, x); }
+  float lampBand(float x) { return 0.26 * edge(0.07, 0.015, x) + 0.32 * edge(0.33, 0.015, x) + 0.42 * edge(0.62, 0.015, x); }
   void main(void) {
     vec3 n = normalize(vN);
     vec3 base = vC * uTint${uv ? ' * texture2D(uTex, vUv).rgb' : ''};
-    vec3 light = mix(vec3(0.42, 0.36, 0.50), vec3(0.62, 0.64, 0.78), n.y * 0.5 + 0.5);
-    light += vec3(0.42, 0.35, 0.30) * band(dot(n, uSunDir) * 0.5 + 0.5);
-    // Flashlight: two flat rings instead of a smooth cone.
+    vec3 lm = mix(vec3(1.0, 0.0, 0.0), texture2D(uLightMap, (vW.xz + n.xz * 0.3) * uLightScale).rgb, uTorchUse);
+    vec3 light = mix(uAmbLo, uAmbHi, n.y * 0.5 + 0.5);
+    // Moonlight only reaches where the sky does; indoors it is a weak fill so shapes still read.
+    light += uSunCol * band(dot(n, uSunDir) * 0.5 + 0.5) * mix(0.42, 1.0, lm.r);
+    float facing = 0.8 + 0.2 * n.y;
+    vec3 lamps = uLampWarm * lampBand(lm.g * (1.0 - smoothstep(3.4, 6.5, vW.y))) + uLampCool * lampBand(lm.b);
+    lamps *= 1.0 - uCeil;
+    light += lamps * facing;
+    // Ceilings take one flat neutral light (no floor-style pools), plus a tight halo right at each fixture.
+    light = mix(light, uCeilLight + uLampCool * 0.5 * edge(0.86, 0.025, lm.b), uCeil);
+    // Flashlight: a tight cone of three flat rings with slightly softened edges.
     vec3 toFrag = vW - uTorchPos; float d = length(toFrag); toFrag /= max(d, 0.001);
     float cone = dot(toFrag, uTorchDir);
-    float ringv = cone > 0.93 ? 1.0 : cone > 0.87 ? 0.45 : 0.0;
-    float reach = d < 9.0 ? 1.0 : d < 18.0 ? 0.6 : d < 28.0 ? 0.3 : 0.0;
-    light += vec3(0.22, 0.20, 0.12) * ringv * reach * step(0.05, dot(n, -toFrag)) * uTorchOn * uTorchUse;
-    gl_FragColor = vec4(fogged(base * min(light, vec3(1.45)), vW), 1.0);
+    float ringv = 0.2 * edge(0.930, 0.004, cone) + 0.32 * edge(0.957, 0.003, cone) + 0.48 * edge(0.978, 0.002, cone);
+    float reach = 1.0 - 0.3 * smoothstep(8.0, 10.0, d) - 0.35 * smoothstep(16.0, 19.0, d) - 0.35 * smoothstep(25.0, 30.0, d);
+    light += vec3(0.36, 0.33, 0.22) * ringv * reach * step(0.05, dot(n, -toFrag)) * uTorchOn * uTorchUse;
+    // A little of the lamp colour is added outright so warm pools still show on dark, cool asphalt.
+    vec3 c = (base * light + lamps * 0.09) * uGrade;
+    // Soft shoulder instead of a hard clip, so pastel floors keep their hue under several lights.
+    float m = max(c.r, max(c.g, c.b));
+    c *= m > 0.92 ? (0.92 + (m - 0.92) * 0.3) / m : 1.0;
+    gl_FragColor = vec4(fogged(c, vW), 1.0);
   }`;
 
 const unlitVS = (uv: boolean) => /* glsl */ `
@@ -71,15 +106,48 @@ const unlitFS = (uv: boolean) => /* glsl */ `
     gl_FragColor = vec4(fogged(vC * uTint * t.rgb, vW), uAlpha * t.a);
   }`;
 
-const outlineVS = /* glsl */ `
-  attribute vec3 aPosition; attribute vec3 aNormal;
+const outlineVS = (parts = false) => /* glsl */ `
+  attribute vec3 aPosition; attribute vec3 aNormal; ${parts ? 'attribute vec4 aColor;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform float uThickness;
   varying vec3 vW;
-  void main(void) { vec4 w = matrix_model * vec4(aPosition + normalize(aNormal) * uThickness, 1.0); vW = w.xyz; gl_Position = matrix_viewProjection * w; }`;
+  ${parts ? PARTS : ''}
+  void main(void) {
+    vec3 p = aPosition + normalize(aNormal) * uThickness;
+    ${parts ? 'p = partPos(partIndex(), p);' : ''}
+    vec4 w = matrix_model * vec4(p, 1.0); vW = w.xyz; gl_Position = matrix_viewProjection * w;
+  }`;
 const outlineFS = /* glsl */ `
   varying vec3 vW; uniform vec3 uTint;
   ${FOG}
   void main(void) { gl_FragColor = vec4(fogged(uTint, vW), 1.0); }`;
+
+// Camera-facing additive halo. aNormal = (corner.x, corner.y, radius in metres).
+const glowVS = /* glsl */ `
+  attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor;
+  uniform mat4 matrix_model; uniform mat4 matrix_view; uniform mat4 matrix_projection;
+  varying vec2 vQ; varying vec3 vC; varying vec3 vW;
+  void main(void) {
+    vec4 w = matrix_model * vec4(aPosition, 1.0); vW = w.xyz;
+    vec4 v = matrix_view * w; v.xy += aNormal.xy * aNormal.z;
+    vQ = aNormal.xy; vC = aColor.rgb; gl_Position = matrix_projection * v;
+  }`;
+const glowFS = /* glsl */ `
+  varying vec2 vQ; varying vec3 vC; varying vec3 vW; uniform float uAlpha;
+  uniform vec2 uFogRange; uniform vec3 view_position;
+  void main(void) {
+    float r = clamp(length(vQ), 0.0, 1.0), k = 1.0 - r;
+    float f = clamp((distance(vW, view_position) - uFogRange.x) / (uFogRange.y - uFogRange.x), 0.0, 1.0);
+    // Soft falloff plus one faint flat ring, so it still reads as drawn rather than blurred.
+    float a = k * k * 0.6 + 0.1 * step(r, 0.45);
+    gl_FragColor = vec4(vC * a * uAlpha * (1.0 - 0.8 * f), 1.0);
+  }`;
+export function makeGlow(alpha = 1): pc.ShaderMaterial {
+  const m = new pc.ShaderMaterial({ uniqueName: 'Glow', attributes: ATTR, vertexGLSL: glowVS, fragmentGLSL: glowFS });
+  m.setParameter('uAlpha', alpha);
+  m.blendType = pc.BLEND_ADDITIVE; m.depthWrite = false; m.cull = pc.CULLFACE_NONE;
+  m.update();
+  return m;
+}
 
 export interface ToonOpts { fog?: boolean; torch?: boolean; tex?: pc.Texture }
 export function makeToon(o: ToonOpts = {}): pc.ShaderMaterial {
@@ -88,6 +156,7 @@ export function makeToon(o: ToonOpts = {}): pc.ShaderMaterial {
   m.setParameter('uTint', [1, 1, 1]);
   m.setParameter('uFogOn', o.fog === false ? 0 : 1);
   m.setParameter('uTorchUse', o.torch === false ? 0 : 1);
+  m.setParameter('uCeil', 0);
   if (o.tex) m.setParameter('uTex', o.tex);
   m.update();
   return m;
@@ -112,8 +181,10 @@ export function makeUnlit(o: UnlitOpts = {}): pc.ShaderMaterial {
 }
 
 /** Inverted hull pushed out along normals: the classic cartoon ink line. */
-export function makeOutline(thickness: number, fog = true): pc.ShaderMaterial {
-  const m = new pc.ShaderMaterial({ uniqueName: 'Outline', attributes: { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL }, vertexGLSL: outlineVS, fragmentGLSL: outlineFS });
+export function makeOutline(thickness: number, fog = true, parts = false): pc.ShaderMaterial {
+  const attributes: Record<string, string> = { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL };
+  if (parts) attributes.aColor = pc.SEMANTIC_COLOR;
+  const m = new pc.ShaderMaterial({ uniqueName: parts ? 'OutlineParts' : 'Outline', attributes, vertexGLSL: outlineVS(parts), fragmentGLSL: outlineFS });
   m.setParameter('uTint', rgb(INK));
   m.setParameter('uThickness', thickness);
   m.setParameter('uFogOn', fog ? 1 : 0);
@@ -125,6 +196,19 @@ export function makeOutline(thickness: number, fog = true): pc.ShaderMaterial {
 export const toonMat = makeToon();
 export const toonVM = makeToon({ fog: false, torch: false });
 export const outlineMat = makeOutline(0.022);
+/** Character materials: one merged mesh per chibi, limbs posed per instance via `uParts` (see chibi.ts). */
+export const toonPartsMat = new pc.ShaderMaterial({ uniqueName: 'ToonParts', attributes: ATTR, vertexGLSL: toonVS(false, true), fragmentGLSL: toonFS(false) });
+toonPartsMat.setParameter('uTint', [1, 1, 1]); toonPartsMat.setParameter('uFogOn', 1); toonPartsMat.setParameter('uTorchUse', 1); toonPartsMat.setParameter('uCeil', 0); toonPartsMat.update();
+export const outlinePartsMat = makeOutline(0.022, true, true);
+/** Shared textured toon material: set `uTex` per mesh instance. */
+export const toonTexMat = new pc.ShaderMaterial({ uniqueName: 'ToonTex', attributes: ATTR_UV, vertexGLSL: toonVS(true), fragmentGLSL: toonFS(true) });
+toonTexMat.setParameter('uTint', [1, 1, 1]); toonTexMat.setParameter('uFogOn', 1); toonTexMat.setParameter('uTorchUse', 1); toonTexMat.setParameter('uCeil', 0); toonTexMat.update();
+/** Textured toon material for ceilings: flat lit, ignores the lamp pools of the light map. Set `uTex` per mesh instance. */
+export const ceilMat = new pc.ShaderMaterial({ uniqueName: 'ToonTex', attributes: ATTR_UV, vertexGLSL: toonVS(true), fragmentGLSL: toonFS(true) });
+ceilMat.setParameter('uTint', [1, 1, 1]); ceilMat.setParameter('uFogOn', 1); ceilMat.setParameter('uTorchUse', 1); ceilMat.setParameter('uCeil', 1); ceilMat.update();
+/** Shared flat (unlit, fogged) vertex-colour material and the double-sided ink used for beam strokes. */
+export const flatMat = makeUnlit({});
+export const inkLineMat = makeUnlit({ color: INK, cull: 'none' });
 /** Back-face ink for hulls whose geometry is already inflated. */
 export const inkBack = makeUnlit({ color: INK, cull: 'front' });
 export const inkBackVM = makeUnlit({ color: INK, cull: 'front', fog: false });
@@ -138,6 +222,40 @@ scope.resolve('uFogRange').setValue([24, 105]);
 scope.resolve('uTorchPos').setValue([0, -100, 0]);
 scope.resolve('uTorchDir').setValue([0, 0, -1]);
 scope.resolve('uTorchOn').setValue(0);
+scope.resolve('uAmbLo').setValue([0.4, 0.34, 0.5]);
+scope.resolve('uAmbHi').setValue([0.56, 0.58, 0.72]);
+scope.resolve('uSunCol').setValue([0.4, 0.34, 0.3]);
+scope.resolve('uGrade').setValue([1, 1, 1]);
+scope.resolve('uLampWarm').setValue([0.64, 0.45, 0.22]);
+scope.resolve('uLampCool').setValue([0.36, 0.44, 0.5]);
+scope.resolve('uTime').setValue(0);
+scope.resolve('uCeilLight').setValue([0.56, 0.56, 0.58]);
+// Until a world bakes its own, a 1x1 "open sky, no lamps" light map.
+const blankLight = new pc.Texture(device, { width: 1, height: 1, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_NEAREST, magFilter: pc.FILTER_NEAREST, levels: [new Uint8Array([255, 0, 0, 255])] });
+/** World light map covering `w` x `h` metres from the origin; null restores the blank one. */
+export function setLightMap(tex: pc.Texture | null, w = 1, h = 1): void {
+  scope.resolve('uLightMap').setValue(tex ?? blankLight);
+  scope.resolve('uLightScale').setValue([1 / w, 1 / h]);
+}
+setLightMap(null);
+/** Per-chapter fog. */
+export function setFog(color: number, near: number, far: number): void {
+  scope.resolve('uFogCol').setValue(rgb(color));
+  scope.resolve('uFogRange').setValue([near, far]);
+}
+export type V3 = [number, number, number];
+/** Per-chapter light colours: hemisphere ambient (ground, sky), moonlight and a final colour grade. */
+export function setAtmosphere(ambLo: V3, ambHi: V3, sunCol: V3, grade: V3, lampK = 1): void {
+  scope.resolve('uAmbLo').setValue(ambLo); scope.resolve('uAmbHi').setValue(ambHi);
+  scope.resolve('uSunCol').setValue(sunCol); scope.resolve('uGrade').setValue(grade);
+  // Ceilings: near-neutral, with only a hint of the sky tint, so mint wards do not go lilac.
+  const l = (ambLo[0] + ambLo[1] + ambLo[2] + ambHi[0] + ambHi[1] + ambHi[2]) / 6 + 0.1;
+  scope.resolve('uCeilLight').setValue([l + (ambHi[0] - l) * 0.15, l + (ambHi[1] - l) * 0.15, l + (ambHi[2] - l) * 0.15]);
+  // Lamps fade as the sky brightens (dawn chapters).
+  scope.resolve('uLampWarm').setValue([0.64 * lampK, 0.45 * lampK, 0.22 * lampK]);
+  scope.resolve('uLampCool').setValue([0.36 * lampK, 0.44 * lampK, 0.5 * lampK]);
+}
+export function setTime(t: number): void { scope.resolve('uTime').setValue(t % 3600); }
 export function setTorch(on: boolean, x: number, y: number, z: number, dx: number, dy: number, dz: number): void {
   scope.resolve('uTorchOn').setValue(on ? 1 : 0);
   scope.resolve('uTorchPos').setValue([x, y, z]);
@@ -158,13 +276,13 @@ export function setTint(e: pc.Entity, color: number): void { for (const mi of in
 
 const _q = new pc.Quat();
 /** Local rotation from radians, applied as Rx·Ry·Rz. */
-export function setRot(e: pc.Entity, rx: number, ry: number, rz: number): void { e.setLocalRotation(quatXYZ(rx, ry, rz, _q)); }
+export function setRot(e: pc.GraphNode, rx: number, ry: number, rz: number): void { e.setLocalRotation(quatXYZ(rx, ry, rz, _q)); }
 
-export function canvasTexture(cv: HTMLCanvasElement, mipmaps = true): pc.Texture {
+export function canvasTexture(cv: HTMLCanvasElement, mipmaps = true, repeat = false): pc.Texture {
   const t = new pc.Texture(device, {
     width: cv.width, height: cv.height, format: pc.PIXELFORMAT_RGBA8, mipmaps,
     minFilter: mipmaps ? pc.FILTER_LINEAR_MIPMAP_LINEAR : pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
-    addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE, anisotropy: device.maxAnisotropy,
+    addressU: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE, addressV: repeat ? pc.ADDRESS_REPEAT : pc.ADDRESS_CLAMP_TO_EDGE, anisotropy: device.maxAnisotropy,
   });
   t.setSource(cv);
   return t;
@@ -176,7 +294,7 @@ export class Batch {
   private solids: Geo[] = [];
   private hulls: Geo[] = [];
 
-  add(g: Geo, color: number, m: pc.Mat4, outline: 'box' | 'smooth' | 'none' = 'box', thickness = 0.045): void {
+  add(g: Geo, color: number, m: pc.Mat4, outline: 'box' | 'smooth' | 'none' = 'box', thickness = 0.03): void {
     this.solids.push(make(g, color, m));
     if (outline === 'box') {
       const s = m.getScale();
@@ -186,11 +304,18 @@ export class Batch {
     }
   }
 
-  /** `vm` = first-person materials (no fog, no flashlight). */
-  build(layer = WORLD, vm = false): pc.Entity {
+  /** Pre-built world-space geometry: `solid` is toon shaded, `hull` (already inflated, outward winding) is drawn as ink. */
+  raw(solid: Geo | null, hull?: Geo): void {
+    if (solid && solid.idx.length) this.solids.push(solid);
+    if (hull && hull.idx.length) this.hulls.push(hull);
+  }
+
+  /** `vm` = first-person materials (no fog, no flashlight). Meshes are appended to `track` so the owner can free them. */
+  build(layer = WORLD, vm = false, track?: pc.Mesh[]): pc.Entity {
     const e = new pc.Entity();
-    if (this.solids.length) e.addChild(meshEntity(toMesh(device, merge(this.solids)), vm ? toonVM : toonMat, layer));
-    if (this.hulls.length) e.addChild(meshEntity(toMesh(device, merge(this.hulls)), vm ? inkBackVM : inkBack, layer));
+    const mk = (list: Geo[]) => { const m = toMesh(device, merge(list)); track?.push(m); return m; };
+    if (this.solids.length) e.addChild(meshEntity(mk(this.solids), vm ? toonVM : toonMat, layer));
+    if (this.hulls.length) e.addChild(meshEntity(mk(this.hulls), vm ? inkBackVM : inkBack, layer));
     this.solids = []; this.hulls = [];
     return e;
   }

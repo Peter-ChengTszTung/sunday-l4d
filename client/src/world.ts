@@ -1,378 +1,511 @@
-// Turns the shared grid map into cel-shaded scenery.
+// Turns a chapter's grid into cel-shaded scenery. Everything hangs off one
+// root entity so a chapter change can tear the whole world down.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H } from '../../shared/constants';
-import { MAP, F, hash2, type Pickup } from '../../shared/map';
-import { type Geo, box, sphere, cylinder, ring, make, merge, trs, toMesh } from './geo';
-import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, inkBox, canvasTexture, setTint, rgb, INK } from './gfx';
+import { TILE, CEIL_H, WEAPONS } from '../../shared/constants';
+import { F, hash2, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
+import { type Geo, box, sphere, cylinder, ring, make, merge, inflateBox, trs, toMesh } from './geo';
+import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, setTint } from './gfx';
 import { buildGun } from './viewmodel';
+import { type Ctx, CHUNK, lampIndoor, nightOf } from './worldkit';
+import { buildArchitecture } from './arch';
+import { buildGround } from './ground';
+import { buildAtmosphere, type GlowSpot } from './atmo';
+import { buildDressing, type DressStats } from './dressing';
 
-const { W, H } = MAP;
 const T = TILE;
-const BUILDING_COLORS = [0x8e6fa8, 0x5f8fa8, 0xc77b6b, 0x6f7fb8, 0xb58a5f, 0x7f6f9a, 0x5fa39a, 0xa86f8e];
-const INTERIOR_WALL = 0x6f8fa3, SAFE_WALL = 0xe0884f;
-const isInterior = (f: number) => f === F.INTERIOR || f === F.SAFE_A || f === F.SAFE_B || f === F.GATE;
-const floorOf = (x: number, z: number) => (x < 0 || z < 0 || x >= W || z >= H ? F.NONE : MAP.floor[z * W + x]);
-const isWall = (x: number, z: number) => floorOf(x, z) === F.NONE;
-const newGeo = (): Geo => ({ pos: [], nor: [], col: [], uv: [], idx: [] });
-const add = (e: pc.Entity) => { app.root.addChild(e); return e; };
+/** Ink for hull geometry drawn by the lit toon material (a touch darker than INK, since lights add to it). */
+const INK_LIT = 0x150f1f;
 
-export interface PickupView { def: Pickup; group: pc.Entity; float: pc.Entity; taken: boolean }
+export interface PickupView { def: Pickup; group: pc.Entity; float: pc.Entity; taken: boolean; shown: boolean }
+export interface NoteView { def: Note; group: pc.Entity; read: boolean }
 export interface World {
+  L: Level;
+  /** Set-dressing counts for the debug overlay and tuning. */ dressing: DressStats;
   pickups: PickupView[];
-  setGate(open: boolean, instant?: boolean): void;
+  notes: NoteView[];
+  setDoors(mask: number, instant?: boolean): void;
   setTaken(id: number, taken: boolean): void;
-  setGenerator(active: boolean): void;
+  /** Shows the active step's items / objective marker. */
+  setStep(step: number): void;
+  setNoteRead(id: number): void;
   update(t: number, dt: number, camX: number, camY: number, camZ: number): void;
+  dispose(): void;
 }
 
-function faceHeight(x: number, z: number, dx: number, dz: number): number {
-  // 0 when (x,z) has no visible face towards (dx,dz).
-  if (x < 0 || z < 0 || x >= W || z >= H || !isWall(x, z)) return 0;
-  const nf = floorOf(x + dx, z + dz);
-  if (nf === F.NONE) return 0;
-  return isInterior(nf) ? CEIL_H : MAP.wallH[z * W + x];
-}
+export function buildWorld(L: Level): World {
+  const def = L.def, { W, H } = L, theme = def.theme;
+  const root = new pc.Entity('world');
+  app.root.addChild(root);
+  const textures: pc.Texture[] = [], meshes: pc.Mesh[] = [];
+  /** Upload world-owned geometry; freed in dispose(). */
+  const mesh = (g: Geo) => { const m = toMesh(device, g); meshes.push(m); return m; };
+  const add = (e: pc.Entity, parent: pc.Entity = root) => { parent.addChild(e); return e; };
+  const floorOf = (x: number, z: number) => (x < 0 || z < 0 || x >= W || z >= H ? F.NONE : def.floor[z * W + x]);
+  const isWall = (x: number, z: number) => floorOf(x, z) === F.NONE;
+  const chunks = (fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void) => {
+    for (let cz = 0; cz < H; cz += CHUNK) for (let cx = 0; cx < W; cx += CHUNK) fn(cx, cz, Math.min(W, cx + CHUNK), Math.min(H, cz + CHUNK));
+  };
+  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, add: (e) => add(e), floorOf, isWall, chunks };
+  /** Additive halos (lamps, neon, shop windows), drawn as one mesh by the atmosphere. */
+  const glowSpots: GlowSpot[] = [];
 
-/** Ink strokes are real geometry: a thin axis-aligned beam per line segment. */
-function beam(g: Geo, ax: number, ay: number, az: number, bx: number, by: number, bz: number, t = 0.035): void {
-  const x0 = Math.min(ax, bx) - t, x1 = Math.max(ax, bx) + t, y0 = Math.min(ay, by) - t, y1 = Math.max(ay, by) + t, z0 = Math.min(az, bz) - t, z1 = Math.max(az, bz) + t;
-  const b = g.pos.length / 3;
-  g.pos.push(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1);
-  g.idx.push(...[0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 3, 6, 2, 3, 7, 6, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5].map((i) => b + i));
-}
-
-function buildWalls(): void {
-  const walls = newGeo(), flat = newGeo(), ink = newGeo();
-  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const quadFlat = (c: [number, number, number], p: number[]) => {
-    const b = flat.pos.length / 3;
-    flat.pos.push(...p);
-    for (let i = 0; i < 4; i++) flat.col.push(c[0], c[1], c[2]);
-    flat.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  // Static props, curbs and lane paint are merged per chunk.
+  const batches = new Map<number, Batch>();
+  const batchFor = (x: number, z: number) => {
+    const k = Math.floor(z / (CHUNK * T)) * 1000 + Math.floor(x / (CHUNK * T));
+    let b = batches.get(k);
+    if (!b) { b = new Batch(); batches.set(k, b); }
+    return b;
   };
 
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    if (!isWall(x, z)) continue;
-    for (let di = 0; di < 4; di++) {
-      const [dx, dz] = DIRS[di];
-      const h = faceHeight(x, z, dx, dz);
-      if (!h) continue;
-      const nf = floorOf(x + dx, z + dz);
-      const tx = -dz, tz = dx;
-      const mx = (x + 0.5 + dx * 0.5) * T, mz = (z + 0.5 + dz * 0.5) * T;
-      const p0x = mx - tx * T / 2, p0z = mz - tz * T / 2, p1x = mx + tx * T / 2, p1z = mz + tz * T / 2;
-      const interior = isInterior(nf);
-      const chunk = hash2(Math.floor(x / 3) + 91, Math.floor(z / 3) + 17);
-      const c = rgb(interior ? (nf === F.INTERIOR || nf === F.GATE ? INTERIOR_WALL : SAFE_WALL) : BUILDING_COLORS[Math.floor(chunk * BUILDING_COLORS.length)]);
-      const k = interior ? 0.8 : 0.72; // darker towards the ground
-      const base = walls.pos.length / 3;
-      walls.pos.push(p1x, 0, p1z, p0x, 0, p0z, p0x, h, p0z, p1x, h, p1z);
-      for (let i = 0; i < 4; i++) walls.nor.push(dx, 0, dz);
-      walls.col.push(c[0] * k, c[1] * k, c[2] * k, c[0] * k, c[1] * k, c[2] * k, c[0], c[1], c[2], c[0], c[1], c[2]);
-      walls.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  buildArchitecture(ctx, glowSpots); // walls, door frames, ceilings
+  buildGround(ctx, batchFor); // ground textures, curbs, lane paint, water
 
-      // Ink: top + bottom edges, and verticals wherever the wall run ends or steps.
-      beam(ink, p0x, h, p0z, p1x, h, p1z); beam(ink, p0x, 0.02, p0z, p1x, 0.02, p1z);
-      if (faceHeight(x - tx, z - tz, dx, dz) !== h) beam(ink, p0x, 0, p0z, p0x, h, p0z);
-      if (faceHeight(x + tx, z + tz, dx, dz) !== h) beam(ink, p1x, 0, p1z, p1x, h, p1z);
-
-      if (interior) {
-        // Painted dado stripe so interiors don't read as flat slabs.
-        const o = 0.02;
-        quadFlat(rgb(nf === F.INTERIOR || nf === F.GATE ? 0x4f6a7c : 0xfff1c9),
-          [p1x + dx * o, 1.0, p1z + dz * o, p0x + dx * o, 1.0, p0z + dz * o, p0x + dx * o, 1.25, p0z + dz * o, p1x + dx * o, 1.25, p1z + dz * o]);
-        continue;
+  // ------------------------------------------------------------------ props
+  const cube = box(), cyl = cylinder(14), cone = cylinder(10, 0, 1), ball = sphere(10, 7), shade = cylinder(12, 0.4, 1);
+  const glows: Geo[] = [];
+  for (const p of def.props) drawProp(batchFor((p.x + p.w / 2) * T, (p.z + p.d / 2) * T), p);
+  for (const l of def.lamps) {
+    const b = batchFor(l.x, l.z), at = (m: pc.Mat4) => trs(l.x, 0, l.z).mul(m);
+    if (lampIndoor(ctx, l)) {
+      // Ceiling fixtures indoors: a pendant in wooden rooms, a fluorescent panel elsewhere.
+      if (floorOf(Math.floor(l.x / T), Math.floor(l.z / T)) === F.WOOD) {
+        b.add(cyl, 0x2b2840, at(trs(0, CEIL_H - 0.4, 0, 0, 0, 0, 0.02, 0.8, 0.02)), 'none');
+        b.add(shade, 0xe8a44f, at(trs(0, CEIL_H - 0.95, 0, 0, 0, 0, 0.42, 0.32, 0.42)), 'smooth', 0.02);
+        glows.push(make(ball, 0xffe9b0, trs(l.x, CEIL_H - 1.12, l.z, 0, 0, 0, 0.15)));
+        glowSpots.push({ x: l.x, y: CEIL_H - 1.15, z: l.z, size: 1.3, color: 0xffd9a0, k: 0.55 });
+      } else {
+        const ry = hash2(Math.round(l.x * 3) + 7, Math.round(l.z * 3) + 13) < 0.5 ? 0 : Math.PI / 2;
+        b.add(cube, 0x3a3654, at(trs(0, CEIL_H - 0.045, 0, 0, ry, 0, 1.56, 0.09, 0.56)), 'box', 0.018);
+        glows.push(make(cube, 0xf2fbff, trs(l.x, CEIL_H - 0.1, l.z, 0, ry, 0, 1.4, 0.04, 0.4)));
+        glowSpots.push({ x: l.x, y: CEIL_H - 0.3, z: l.z, size: 1.5, color: 0xcfeaff, k: 0.4 });
       }
-      // Windows on street-facing walls.
-      for (let y = 2.7, row = 0; y + 1.3 < h - 0.5; y += 2.3, row++) {
-        const lit = hash2(x * 7 + di * 3 + row * 11, z * 13 + row) < 0.3;
-        const o = 0.03, hw = 0.5;
-        const ax = mx - tx * hw + dx * o, az = mz - tz * hw + dz * o, bx = mx + tx * hw + dx * o, bz = mz + tz * hw + dz * o;
-        quadFlat(rgb(lit ? (hash2(x + row, z) < 0.5 ? 0xffd98a : 0xff9e6d) : 0x2a2452), [bx, y, bz, ax, y, az, ax, y + 1.2, az, bx, y + 1.2, bz]);
-        const t = 0.025;
-        beam(ink, ax, y, az, bx, y, bz, t); beam(ink, bx, y, bz, bx, y + 1.2, bz, t); beam(ink, bx, y + 1.2, bz, ax, y + 1.2, az, t); beam(ink, ax, y + 1.2, az, ax, y, az, t);
-      }
+    } else {
+      // Street lamp: footing, post, a lantern under a flat cap.
+      b.add(cyl, 0x2b2840, at(trs(0, 0.22, 0, 0, 0, 0, 0.15, 0.44, 0.15)), 'smooth', 0.018);
+      b.add(cyl, 0x2b2840, at(trs(0, 1.75, 0, 0, 0, 0, 0.055, 3.1, 0.055)), 'smooth', 0.014);
+      b.add(cube, 0x2b2840, at(trs(0, 3.24, 0, 0, 0, 0, 0.34, 0.07, 0.34)), 'none');
+      b.add(cube, 0x2b2840, at(trs(0, 3.66, 0, 0, 0, 0, 0.62, 0.09, 0.62)), 'box', 0.018);
+      glows.push(make(cube, 0xffe9b0, trs(l.x, 3.44, l.z, 0, 0, 0, 0.42, 0.34, 0.42)));
+      glowSpots.push({ x: l.x, y: 3.44, z: l.z, size: 1.9, color: 0xffc46b, k: 0.6 });
     }
   }
-  add(meshEntity(toMesh(device, walls), toonMat));
-  add(meshEntity(toMesh(device, flat), makeUnlit({})));
-  add(meshEntity(toMesh(device, ink), makeUnlit({ color: INK, cull: 'none' })));
-}
+  // Decorative clutter goes into the same per-chunk batches (no extra draw calls).
+  const dressing = buildDressing(ctx, batchFor, glows, glowSpots);
+  for (const b of batches.values()) add(b.build(undefined, false, meshes));
+  if (glows.length) add(meshEntity(mesh(merge(glows)), makeUnlit({ fog: false })));
 
-function buildCeilings(): void {
-  const g = newGeo();
-  const c = rgb(0x54506e);
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    if (!isInterior(floorOf(x, z))) continue;
-    const b = g.pos.length / 3, x0 = x * T, x1 = x0 + T, z0 = z * T, z1 = z0 + T;
-    g.pos.push(x0, CEIL_H, z0, x1, CEIL_H, z0, x1, CEIL_H, z1, x0, CEIL_H, z1);
-    for (let i = 0; i < 4; i++) { g.nor.push(0, -1, 0); g.col.push(c[0], c[1], c[2]); }
-    g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
-  }
-  add(meshEntity(toMesh(device, g), toonMat));
-}
-
-function buildGround(): void {
-  const PX = 40;
-  const cv = document.createElement('canvas');
-  cv.width = W * PX; cv.height = H * PX;
-  const g = cv.getContext('2d')!;
-  g.fillStyle = '#1a1730'; g.fillRect(0, 0, cv.width, cv.height);
-  const shade = (hex: number, k: number) => { const [r, gr, b] = rgb(hex); return `rgb(${Math.min(255, r * k * 255) | 0},${Math.min(255, gr * k * 255) | 0},${Math.min(255, b * k * 255) | 0})`; };
-  const BASE: Record<number, number> = { [F.ASPHALT]: 0x5a5d84, [F.SIDEWALK]: 0x9a97bd, [F.GRASS]: 0x5aae7a, [F.INTERIOR]: 0x9d8fa5, [F.SAFE_A]: 0xe6b67a, [F.SAFE_B]: 0xe6b67a, [F.GATE]: 0x9d8fa5 };
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    const f = floorOf(x, z);
-    if (f === F.NONE) continue;
-    const r = hash2(x, z), px = x * PX, pz = z * PX;
-    g.fillStyle = shade(BASE[f], 0.94 + r * 0.12);
-    g.fillRect(px, pz, PX, PX);
-    g.strokeStyle = 'rgba(26,18,38,0.22)'; g.lineWidth = 1;
-    if (f === F.SIDEWALK) { g.strokeRect(px + 0.5, pz + 0.5, PX - 1, PX - 1); }
-    else if (f === F.GRASS) {
-      g.fillStyle = shade(0x7cd68a, 1);
-      for (let i = 0; i < 3; i++) { const a = hash2(x * 3 + i, z * 5 + i), b = hash2(x + i * 7, z * 2 + i); g.fillRect(px + a * 34, pz + b * 32, 2, 6); }
-    } else if (f === F.INTERIOR || f === F.GATE) {
-      g.strokeRect(px + 0.5, pz + 0.5, PX - 1, PX - 1);
-      if (r < 0.12) { g.fillStyle = 'rgba(26,18,38,0.12)'; g.beginPath(); g.ellipse(px + 20, pz + 20, 12, 8, r * 9, 0, 7); g.fill(); }
-    } else if (f === F.SAFE_A || f === F.SAFE_B) {
-      g.beginPath(); g.moveTo(px, pz + PX / 2); g.lineTo(px + PX, pz + PX / 2); g.stroke();
-    } else if (f === F.ASPHALT && r < 0.1) {
-      g.strokeStyle = 'rgba(26,18,38,0.35)'; g.lineWidth = 2; g.beginPath();
-      g.moveTo(px + 5, pz + 7); g.lineTo(px + 19, pz + 20); g.lineTo(px + 14, pz + 34); g.stroke();
-    }
-  }
-  // Road centre dashes on the main street.
-  g.fillStyle = '#ffe7a3';
-  for (let z = 10; z < 29; z += 2) g.fillRect(22 * PX - 3, z * PX + 6, 6, PX);
-  // Hazard stripes on the gate threshold.
-  for (let x = MAP.gate.x0; x <= MAP.gate.x1; x++) for (let i = 0; i < 4; i++) {
-    g.fillStyle = i % 2 ? '#1a1226' : '#ffd43b';
-    g.fillRect(x * PX + i * PX / 4, MAP.gate.z * PX, PX / 4, PX);
-  }
-  // Painted route arrows + lettering (rotated to read while walking +Z).
-  const glyph = (x: number, z: number, rot: number, draw: () => void) => { g.save(); g.translate(x * PX, z * PX); g.rotate(rot); draw(); g.restore(); };
-  for (const a of MAP.arrows) glyph(a.x, a.z, a.rot, () => {
-    g.fillStyle = 'rgba(255,231,163,0.9)'; g.strokeStyle = '#1a1226'; g.lineWidth = 3; g.lineJoin = 'round';
-    g.beginPath(); g.moveTo(0, 32); g.lineTo(-22, 2); g.lineTo(-9, 2); g.lineTo(-9, -30); g.lineTo(9, -30); g.lineTo(9, 2); g.lineTo(22, 2); g.closePath();
-    g.stroke(); g.fill();
-  });
-  const label = (text: string, x: number, z: number, size: number, color: string) => glyph(x, z, Math.PI, () => {
-    g.font = `900 ${size}px ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.lineWidth = 6; g.strokeStyle = '#1a1226'; g.lineJoin = 'round'; g.strokeText(text, 0, 0); g.fillStyle = color; g.fillText(text, 0, 0);
-  });
-  label('SAFE ROOM', 22, 4.5, 30, '#fff1c9');
-  label('GOOD LUCK!', 22, 9.6, 30, '#ffe7a3');
-  label('SAFE HOUSE', 35, 77.5, 30, '#fff1c9');
-  label('START GENERATOR', 34, 63.6, 26, '#ffd43b');
-
-  // Canvas row 0 (v = 0) maps to z = 0.
-  const geo: Geo = {
-    pos: [0, 0, 0, 0, 0, H * T, W * T, 0, H * T, W * T, 0, 0], nor: [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], col: [],
-    uv: [0, 0, 0, 1, 1, 1, 1, 0], idx: [0, 1, 2, 0, 2, 3],
-  };
-  add(meshEntity(toMesh(device, geo), makeToon({ tex: canvasTexture(cv) })));
-}
-
-function buildProps(): pc.Entity {
-  const b = new Batch();
-  const cube = box(), cyl = cylinder(14), ball = sphere(10, 7);
-  const glows: Geo[] = [], pools: Geo[] = [];
-  const at = (m: pc.Mat4, x: number, z: number, ry = 0) => trs(x, 0, z, 0, ry, 0).mul(m);
-
-  for (const p of MAP.props) {
+  function drawProp(b: Batch, p: Prop): void {
     const cx = (p.x + p.w / 2) * T, cz = (p.z + p.d / 2) * T, r = hash2(p.x * 5 + 3, p.z * 7 + 1);
+    const ry = p.rot ?? (p.w > p.d ? Math.PI / 2 : 0);
+    const len = Math.max(p.w, p.d) * T, wid = Math.min(p.w, p.d) * T;
+    const at = (m: pc.Mat4, rot = ry) => trs(cx, 0, cz, 0, rot, 0).mul(m);
+    const col = p.color;
     switch (p.type) {
-      case 'car': {
-        const ry = p.w > p.d ? Math.PI / 2 : 0, col = p.color ?? 0xff6b6b;
-        b.add(cube, col, at(trs(0, 0.62, 0, 0, 0, 0, 1.7, 0.7, 3.6), cx, cz, ry));
-        b.add(cube, 0xbfe6ff, at(trs(0, 1.25, 0.15, 0, 0, 0, 1.45, 0.6, 1.9), cx, cz, ry));
-        b.add(cube, col, at(trs(0, 1.58, 0.15, 0, 0, 0, 1.5, 0.08, 1.95), cx, cz, ry), 'none');
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cyl, 0x2b2540, at(trs(sx * 0.85, 0.34, sz * 1.15, 0, 0, Math.PI / 2, 0.34, 0.26, 0.34), cx, cz, ry), 'smooth');
-        for (const sx of [-1, 1]) b.add(cube, 0xfff3a8, at(trs(sx * 0.55, 0.7, -1.81, 0, 0, 0, 0.3, 0.18, 0.06), cx, cz, ry), 'none');
+      case 'car': case 'van': {
+        const c = col ?? 0xff6b6b, van = p.type === 'van', l = Math.min(len - 0.3, 3.8);
+        b.add(cube, c, at(trs(0, van ? 1.0 : 0.62, 0, 0, 0, 0, 1.7, van ? 1.5 : 0.7, l)));
+        b.add(cube, 0xbfe6ff, at(trs(0, van ? 1.45 : 1.25, van ? -l * 0.36 : 0.15, 0, 0, 0, 1.45, 0.6, van ? 0.5 : 1.9)));
+        if (!van) b.add(cube, c, at(trs(0, 1.58, 0.15, 0, 0, 0, 1.5, 0.08, 1.95)), 'none');
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cyl, 0x2b2540, at(trs(sx * 0.85, 0.34, sz * l * 0.32, 0, 0, Math.PI / 2, 0.34, 0.26, 0.34)), 'smooth');
+        for (const sx of [-1, 1]) b.add(cube, 0xfff3a8, at(trs(sx * 0.55, 0.7, -l / 2 - 0.01, 0, 0, 0, 0.3, 0.18, 0.06)), 'none');
+        // Bumpers, tail lights, hubcaps, a belt line and (on cars) window pillars.
+        for (const sz of [-1, 1]) b.add(cube, 0x3a3554, at(trs(0, 0.38, sz * (l / 2 + 0.03), 0, 0, 0, 1.76, 0.2, 0.14)), 'box', 0.02);
+        for (const sx of [-1, 1]) b.add(cube, 0xff4d5e, at(trs(sx * 0.6, 0.72, l / 2 + 0.01, 0, 0, 0, 0.26, 0.14, 0.05)), 'none');
+        b.add(cube, 0x2b2540, at(trs(0, 0.62, -l / 2 - 0.012, 0, 0, 0, 0.62, 0.16, 0.04)), 'none');
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cyl, 0xc9c6d6, at(trs(sx * 0.99, 0.34, sz * l * 0.32, 0, 0, Math.PI / 2, 0.16, 0.02, 0.16)), 'none');
+        for (const sx of [-1, 1]) b.add(cube, 0x2b2540, at(trs(sx * 0.856, van ? 0.9 : 0.66, 0, 0, 0, 0, 0.012, 0.03, l * 0.9)), 'none');
+        if (!van) {
+          for (const sx of [-1, 1]) for (const sz of [-0.8, 0.15, 1.1]) b.add(cube, c, at(trs(sx * 0.7, 1.26, sz, 0, 0, 0, 0.1, 0.62, 0.1)), 'none');
+          b.add(cube, 0x2b2540, at(trs(0, 0.98, 0.15, 0, 0, 0, 1.72, 0.03, 1.96)), 'none');
+        } else {
+          b.add(cube, 0x2b2540, at(trs(0, 1.0, l * 0.5 + 0.012, 0, 0, 0, 0.03, 1.3, 0.02)), 'none');
+          for (const sx of [-1, 1]) b.add(cube, 0xbfe6ff, at(trs(sx * 0.856, 1.42, -l * 0.3, 0, 0, 0, 0.02, 0.46, 0.6)), 'none');
+          b.add(cube, 0xfff1e0, at(trs(0, 1.1, l * 0.12, 0, 0, 0, 1.72, 0.22, l * 0.5)), 'none');
+        }
         break;
       }
-      case 'crate': {
-        b.add(cube, 0xc8924e, at(trs(0, 0.95, 0, 0, 0, 0, 1.9), cx, cz, (r - 0.5) * 0.12));
-        b.add(cube, 0xa9763a, at(trs(0, 0.95, 0, 0, 0, 0, 1.94, 0.22, 1.94), cx, cz, (r - 0.5) * 0.12), 'none');
-        b.add(cube, r < 0.5 ? 0xd9a55e : 0x7fa8c9, at(trs((r - 0.5) * 0.3, 2.55, (r - 0.5) * 0.2, 0, r * 2, 0, 1.3), cx, cz));
+      case 'bus': case 'truck': {
+        const c = col ?? (p.type === 'bus' ? 0xffc94a : 0xe8e3f0), w = Math.min(wid - 0.2, 2.5), l = len - 0.3;
+        if (p.type === 'bus') {
+          b.add(cube, c, at(trs(0, 1.55, 0, 0, 0, 0, w, 2.5, l)));
+          b.add(cube, 0x3b3a66, at(trs(0, 2.0, 0, 0, 0, 0, w + 0.04, 0.8, l * 0.92)), 'none');
+          b.add(cube, 0xbfe6ff, at(trs(0, 2.0, -l / 2 - 0.01, 0, 0, 0, w * 0.85, 0.9, 0.06)), 'none');
+        } else {
+          b.add(cube, c, at(trs(0, 1.75, l * 0.12, 0, 0, 0, w, 2.7, l * 0.74)));
+          b.add(cube, 0xff6b6b, at(trs(0, 1.2, -l * 0.38, 0, 0, 0, w * 0.95, 1.8, l * 0.22)));
+          b.add(cube, 0xbfe6ff, at(trs(0, 1.6, -l * 0.49, 0, 0, 0, w * 0.8, 0.6, 0.05)), 'none');
+        }
+        for (const sx of [-1, 1]) for (const sz of [-0.36, 0.36]) b.add(cyl, 0x2b2540, at(trs(sx * w * 0.45, 0.45, sz * l, 0, 0, Math.PI / 2, 0.45, 0.3, 0.45)), 'smooth');
         break;
       }
+      case 'container': {
+        const c = col ?? [0xd9534f, 0x3f7cc4, 0x4fa36a, 0xe39b3a][Math.floor(r * 4)];
+        b.add(cube, c, at(trs(0, 1.3, 0, 0, 0, 0, wid - 0.15, 2.6, len - 0.1)));
+        for (let i = -3; i <= 3; i++) b.add(cube, c, at(trs(0, 1.3, (i / 7) * len, 0, 0, 0, wid - 0.05, 2.45, 0.08)), 'none');
+        // Dark base rail, corner posts and locking bars on the door end.
+        b.add(cube, 0x2b2540, at(trs(0, 0.09, 0, 0, 0, 0, wid - 0.11, 0.18, len - 0.06)), 'none');
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cube, 0x3a3554, at(trs(sx * (wid / 2 - 0.1), 1.3, sz * (len / 2 - 0.07), 0, 0, 0, 0.14, 2.64, 0.14)), 'none');
+        for (const sx of [-0.45, -0.15, 0.15, 0.45]) b.add(cube, 0xe8e3f0, at(trs(sx * (wid - 0.4), 1.3, -len / 2 + 0.03, 0, 0, 0, 0.05, 2.2, 0.05)), 'none');
+        b.add(cube, 0xfff1e0, at(trs(0, 1.9, len / 2 - 0.04, 0, 0, 0, (wid - 0.4) * 0.5, 0.4, 0.02)), 'none');
+        break;
+      }
+      case 'barrier':
+        b.add(cube, 0xc9c6d6, at(trs(0, 0.45, 0, 0, 0, 0, wid * 0.4, 0.9, len - 0.1)));
+        b.add(cube, 0xff6b6b, at(trs(0, 0.75, 0, 0, 0, 0, wid * 0.42, 0.12, len - 0.08)), 'none');
+        // Splayed concrete foot, white reflector blocks along the stripe.
+        b.add(cube, 0xa9a6ba, at(trs(0, 0.12, 0, 0, 0, 0, wid * 0.62, 0.24, len - 0.06)), 'box', 0.02);
+        for (let i = 0, n = Math.max(2, Math.round(len / 1.0)); i < n; i++) b.add(cube, 0xfff6e0, at(trs(0, 0.75, -len / 2 + (i + 0.5) * (len / n), 0, 0, 0, wid * 0.44, 0.13, len / n * 0.34)), 'none');
+        break;
+      case 'pallet':
+        b.add(cube, 0xb5894f, at(trs(0, 0.15, 0, 0, 0, 0, wid * 0.85, 0.3, len * 0.85)));
+        b.add(cube, 0xd9c08a, at(trs(0, 0.65, 0, 0, r, 0, wid * 0.6, 0.7, len * 0.55)));
+        break;
+      case 'barrel':
+        b.add(cyl, col ?? (r < 0.5 ? 0x3f7cc4 : 0xd9534f), at(trs(-0.35, 0.6, -0.3, 0, 0, 0, 0.45, 1.2, 0.45)), 'smooth');
+        b.add(cyl, col ?? (r < 0.5 ? 0xd9534f : 0x3f7cc4), at(trs(0.4, 0.6, 0.35, 0, 0, 0, 0.45, 1.2, 0.45)), 'smooth');
+        break;
+      case 'crate':
+        b.add(cube, 0xc8924e, at(trs(0, 0.95, 0, 0, 0, 0, 1.9), (r - 0.5) * 0.12));
+        b.add(cube, 0xa9763a, at(trs(0, 0.95, 0, 0, 0, 0, 1.94, 0.22, 1.94), (r - 0.5) * 0.12), 'none');
+        // Slatted sides: top/bottom rails and corner posts standing a little proud.
+        for (const y of [0.12, 1.78]) b.add(cube, 0xa9763a, at(trs(0, y, 0, 0, 0, 0, 1.96, 0.2, 1.96), (r - 0.5) * 0.12), 'none');
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cube, 0x96652f, at(trs(sx * 0.9, 0.95, sz * 0.9, 0, 0, 0, 0.2, 1.92, 0.2), (r - 0.5) * 0.12), 'none');
+        for (const y of [0.5, 1.4]) b.add(cube, 0xb9843f, at(trs(0, y, 0, 0, 0, 0, 1.915, 0.03, 1.915), (r - 0.5) * 0.12), 'none');
+        b.add(cube, 0xfff1c9, at(trs(0.3, 1.25, -0.96, 0, 0, 0, 0.5, 0.3, 0.02), (r - 0.5) * 0.12), 'none');
+        b.add(cube, r < 0.5 ? 0xd9a55e : 0x7fa8c9, at(trs((r - 0.5) * 0.3, 2.55, (r - 0.5) * 0.2, 0, r * 2, 0, 1.3), 0));
+        break;
       case 'dumpster':
-        b.add(cube, 0x3f9f7b, at(trs(0, 0.85, 0, 0, 0, 0, 1.8, 1.7, 1.7), cx, cz));
-        b.add(cube, 0x2f7a5e, at(trs(0, 1.78, 0.1, 0.12, 0, 0, 1.9, 0.14, 1.85), cx, cz));
-        b.add(cube, 0xffe7a3, at(trs(0, 1.0, -0.86, 0, 0, 0, 0.9, 0.3, 0.03), cx, cz), 'none');
+        b.add(cube, 0x3f9f7b, at(trs(0, 0.85, 0, 0, 0, 0, 1.8, 1.7, 1.7)));
+        b.add(cube, 0x2f7a5e, at(trs(0, 1.78, 0.1, 0.12, 0, 0, 1.9, 0.14, 1.85)));
+        b.add(cube, 0xffe7a3, at(trs(0, 1.0, -0.86, 0, 0, 0, 0.9, 0.3, 0.03)), 'none');
         break;
       case 'tree':
-        b.add(cyl, 0x8a5a3c, at(trs(0, 1.0, 0, 0, 0, 0, 0.3, 2.0, 0.3), cx, cz), 'smooth');
-        b.add(ball, 0x4fae6a, at(trs(0, 3.0, 0, 0, r * 6, 0, 1.45, 1.3, 1.45), cx, cz), 'smooth', 0.06);
-        b.add(ball, 0x6cc67a, at(trs(0.55, 3.95, 0.25, 0, r * 3, 0, 0.95), cx, cz, r * 6), 'smooth', 0.06);
-        b.add(ball, 0x5fbb72, at(trs(-0.7, 3.5, -0.35, 0, 0, 0, 0.8), cx, cz, r * 6), 'smooth', 0.06);
+        b.add(cyl, 0x8a5a3c, at(trs(0, 1.0, 0, 0, 0, 0, 0.3, 2.0, 0.3)), 'smooth');
+        b.add(ball, 0x4fae6a, at(trs(0, 3.0, 0, 0, r * 6, 0, 1.45, 1.3, 1.45)), 'smooth', 0.06);
+        b.add(ball, 0x6cc67a, at(trs(0.55, 3.95, 0.25, 0, r * 3, 0, 0.95), r * 6), 'smooth', 0.06);
+        b.add(ball, 0x5fbb72, at(trs(-0.7, 3.5, -0.35, 0, 0, 0, 0.8), r * 6), 'smooth', 0.06);
+        // Root flare, a low branch stub and a pale highlight clump on the moonlit side.
+        b.add(cone, 0x7a4f35, at(trs(0, 0.25, 0, 0, 0, 0, 0.26, 0.5, 0.26)), 'smooth', 0.02);
+        b.add(ball, 0x449a5e, at(trs(0.2, 2.45, -0.75, 0, 0, 0, 0.75, 0.6, 0.75), r * 6), 'smooth', 0.05);
+        b.add(ball, 0x8fdc92, at(trs(-0.35, 4.05, 0.55, 0, 0, 0, 0.5, 0.36, 0.5), r * 6), 'none');
+        break;
+      case 'pine':
+        b.add(cyl, 0x7a4f35, at(trs(0, 0.8, 0, 0, 0, 0, 0.25, 1.6, 0.25)), 'smooth');
+        for (let i = 0; i < 3; i++) b.add(cone, i === 1 ? 0x3f8f5f : 0x357f55, at(trs(0, 1.6 + i * 1.15, 0, 0, r * 4 + i, 0, 1.5 - i * 0.35, 1.9, 1.5 - i * 0.35)), 'smooth', 0.05);
+        break;
+      case 'bush':
+        b.add(ball, 0x4f9f62, at(trs(0, 0.5, 0, 0, r * 6, 0, 0.95, 0.65, 0.95)), 'smooth', 0.05);
+        break;
+      case 'rock':
+        b.add(ball, 0x8a8197, at(trs(0, 0.55, 0, 0.2, r * 6, 0.1, wid * 0.55, 1.0, len * 0.55)), 'smooth', 0.05);
         break;
       case 'fountain':
-        b.add(cyl, 0xa8a4c4, at(trs(0, 0.3, 0, 0, 0, 0, 1.9, 0.6, 1.9), cx, cz), 'smooth');
-        b.add(cyl, 0x6ad1e3, at(trs(0, 0.33, 0, 0, 0, 0, 1.6, 0.6, 1.6), cx, cz), 'none');
-        b.add(cyl, 0xa8a4c4, at(trs(0, 1.1, 0, 0, 0, 0, 0.28, 1.6, 0.28), cx, cz), 'smooth');
-        b.add(ball, 0x8fe3f0, at(trs(0, 2.1, 0, 0, 0, 0, 0.5), cx, cz), 'smooth');
+        b.add(cyl, 0xa8a4c4, at(trs(0, 0.3, 0, 0, 0, 0, 1.9, 0.6, 1.9)), 'smooth');
+        b.add(cyl, 0x6ad1e3, at(trs(0, 0.33, 0, 0, 0, 0, 1.6, 0.6, 1.6)), 'none');
+        b.add(cyl, 0xa8a4c4, at(trs(0, 1.1, 0, 0, 0, 0, 0.28, 1.6, 0.28)), 'smooth');
+        b.add(ball, 0x8fe3f0, at(trs(0, 2.1, 0, 0, 0, 0, 0.5)), 'smooth');
+        break;
+      case 'bench':
+        b.add(cube, 0xb5894f, at(trs(0, 0.45, 0, 0, 0, 0, 0.7, 0.12, len - 0.4)));
+        b.add(cube, 0xb5894f, at(trs(0.3, 0.8, 0, 0, 0, 0, 0.1, 0.5, len - 0.4)));
+        break;
+      case 'shelf': {
+        b.add(cube, 0x8f7aa8, at(trs(0, 1.1, 0, 0, 0, 0, wid * 0.7, 2.2, len - 0.15)));
+        for (let y = 0.5; y < 2.1; y += 0.55) for (let i = 0; i < Math.round(len); i++) {
+          const k = hash2(p.x * 3 + i, p.z + y * 10);
+          b.add(cube, [0xff6b6b, 0xffd43b, 0x74c0fc, 0x8ce99a, 0xffa94d][Math.floor(k * 5)], at(trs(0, y + 0.18, -len / 2 + 0.36 + i, 0, 0, 0, wid * 0.74, 0.3, 0.46)), 'none');
+          // A second, differently sized product beside it so rows are not uniform bricks.
+          const k2 = hash2(p.x * 7 + i + 3, p.z * 3 + y * 20);
+          if (k2 > 0.18) b.add(cube, [0xf783ac, 0xfff3bf, 0x66d9e8, 0xb197fc, 0xffc078][Math.floor(k2 * 5)], at(trs(0, y + 0.1 + k2 * 0.1, -len / 2 + 0.78 + i, 0, 0, 0, wid * 0.74, 0.16 + k2 * 0.2, 0.26)), 'none');
+        }
+        // Shelf boards and end panels.
+        for (let y = 0.44; y < 2.2; y += 0.55) b.add(cube, 0xcfc3e0, at(trs(0, y, 0, 0, 0, 0, wid * 0.76, 0.05, len - 0.13)), 'none');
+        for (const sz of [-1, 1]) b.add(cube, 0x7a6694, at(trs(0, 1.12, sz * (len / 2 - 0.09), 0, 0, 0, wid * 0.78, 2.26, 0.07)), 'none');
+        break;
+      }
+      case 'desk':
+        b.add(cube, 0xb5894f, at(trs(0, 0.75, 0, 0, 0, 0, wid * 0.8, 0.1, len * 0.8)));
+        b.add(cube, 0x8a6a40, at(trs(0, 0.37, 0, 0, 0, 0, wid * 0.7, 0.74, len * 0.7)));
+        b.add(cube, 0x2b2540, at(trs(0, 1.1, 0, 0, r, 0, 0.6, 0.45, 0.08)));
+        // Screen glow, keyboard, a mug and drawer fronts.
+        b.add(cube, 0x9fe8ff, at(trs(0, 1.1, 0, 0, r, 0, 0.5, 0.35, 0.09)), 'none');
+        b.add(cube, 0x2b2540, at(trs(0, 0.86, 0, 0, r, 0, 0.1, 0.14, 0.06)), 'none');
+        b.add(cube, 0xe8e6f2, at(trs(0.22, 0.815, 0.05, 0, r, 0, 0.16, 0.03, 0.46)), 'none');
+        b.add(cyl, 0xff8fa3, at(trs(-0.2, 0.87, len * 0.26, 0, 0, 0, 0.055, 0.14, 0.055)), 'none');
+        for (const sz of [-1, 1]) for (const y of [0.24, 0.52]) b.add(cube, 0xa07a4a, at(trs(0, y, sz * (len * 0.35 + 0.006), 0, 0, 0, wid * 0.56, 0.2, 0.01)), 'none');
+        break;
+      case 'bed':
+        b.add(cube, 0xe8e6f2, at(trs(0, 0.5, 0, 0, 0, 0, wid * 0.6, 0.35, len * 0.9)));
+        b.add(cube, 0x74c0fc, at(trs(0, 0.72, 0.2, 0, 0, 0, wid * 0.62, 0.12, len * 0.6)), 'none');
+        b.add(cube, 0xffffff, at(trs(0, 0.75, -len * 0.35, 0, 0, 0, wid * 0.5, 0.18, 0.4)), 'none');
+        // Steel frame: legs, head and foot rails, and a folded blanket edge.
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cube, 0x8f93a8, at(trs(sx * wid * 0.28, 0.17, sz * len * 0.42, 0, 0, 0, 0.07, 0.34, 0.07)), 'none');
+        b.add(cube, 0x8f93a8, at(trs(0, 0.82, -len * 0.455, 0, 0, 0, wid * 0.62, 0.62, 0.06)), 'box', 0.02);
+        b.add(cube, 0x8f93a8, at(trs(0, 0.66, len * 0.455, 0, 0, 0, wid * 0.62, 0.34, 0.06)), 'box', 0.02);
+        b.add(cube, 0xa5d8ff, at(trs(0, 0.74, -len * 0.1, 0, 0, 0, wid * 0.63, 0.13, 0.14)), 'none');
+        break;
+      case 'counter':
+        b.add(cube, col ?? 0xd9c7e8, at(trs(0, 0.55, 0, 0, 0, 0, wid * 0.8, 1.1, len - 0.1)));
+        b.add(cube, 0x8f7aa8, at(trs(0, 1.12, 0, 0, 0, 0, wid * 0.86, 0.08, len - 0.05)), 'none');
+        // Kick plate, panel seams and (sometimes) a till.
+        b.add(cube, 0x3a3554, at(trs(0, 0.08, 0, 0, 0, 0, wid * 0.81, 0.16, len - 0.09)), 'none');
+        for (let i = 1, n = Math.max(1, Math.round(len / 1.0)); i < n; i++) b.add(cube, 0x3a3554, at(trs(0, 0.62, -len / 2 + i * (len / n), 0, 0, 0, wid * 0.81, 0.9, 0.02)), 'none');
+        if (r < 0.45) { b.add(cube, 0x54506e, at(trs(0, 1.3, (r - 0.2) * len * 0.5, 0, 0, 0, 0.36, 0.28, 0.4)), 'box', 0.018); b.add(cube, 0x9fe8ff, at(trs(0, 1.5, (r - 0.2) * len * 0.5, 0.4, 0, 0, 0.3, 0.16, 0.03)), 'none'); }
+        break;
+      case 'pillar':
+        b.add(cube, col ?? 0xbdb5cc, at(trs(0, CEIL_H / 2, 0, 0, 0, 0, wid * 0.6, CEIL_H, len * 0.6)));
+        // Plinth, capital and a painted safety band.
+        b.add(cube, 0x8f88a6, at(trs(0, 0.2, 0, 0, 0, 0, wid * 0.72, 0.4, len * 0.72)), 'box', 0.02);
+        b.add(cube, 0x8f88a6, at(trs(0, CEIL_H - 0.18, 0, 0, 0, 0, wid * 0.74, 0.36, len * 0.74)), 'box', 0.02);
+        b.add(cube, 0xffd43b, at(trs(0, 1.25, 0, 0, 0, 0, wid * 0.61, 0.3, len * 0.61)), 'none');
+        b.add(cube, 0x2b2540, at(trs(0, 1.25, 0, 0, 0, 0, wid * 0.615, 0.08, len * 0.615)), 'none');
         break;
       case 'gen':
-        b.add(cube, 0xf2c14e, at(trs(0, 0.7, 0, 0, 0, 0, 1.6, 1.4, 1.3), cx, cz));
-        b.add(cube, 0x2b2540, at(trs(0, 0.85, -0.66, 0, 0, 0, 1.0, 0.6, 0.04), cx, cz), 'none');
-        b.add(cyl, 0x5a5670, at(trs(0.5, 1.6, 0.3, 0, 0, 0, 0.12, 0.5, 0.12), cx, cz), 'smooth');
+        b.add(cube, 0xf2c14e, at(trs(0, 0.7, 0, 0, 0, 0, 1.6, 1.4, 1.3)));
+        b.add(cube, 0x2b2540, at(trs(0, 0.85, -0.66, 0, 0, 0, 1.0, 0.6, 0.04)), 'none');
+        b.add(cyl, 0x5a5670, at(trs(0.5, 1.6, 0.3, 0, 0, 0, 0.12, 0.5, 0.12)), 'smooth');
+        break;
+      case 'radio':
+        b.add(cube, 0xb5894f, at(trs(0, 0.5, 0, 0, 0, 0, 1.5, 1.0, 1.0)));
+        b.add(cube, 0x5a7a5a, at(trs(0, 1.25, 0, 0, 0, 0, 1.0, 0.5, 0.6)));
+        b.add(cube, 0xffd43b, at(trs(-0.25, 1.25, -0.31, 0, 0, 0, 0.3, 0.2, 0.02)), 'none');
+        b.add(cyl, 0x2b2540, at(trs(0.35, 1.9, 0, 0, 0, 0.2, 0.03, 0.9, 0.03)), 'none');
+        break;
+      case 'lever':
+        b.add(cube, 0x6f7f9a, at(trs(0, 0.7, 0, 0, 0, 0, 0.9, 1.4, 0.6)));
+        b.add(cyl, 0xff6b6b, at(trs(0, 1.6, -0.1, 0.5, 0, 0, 0.07, 0.8, 0.07)), 'none');
+        b.add(ball, 0x2b2540, at(trs(0, 1.95, -0.3, 0, 0, 0, 0.14)), 'none');
+        break;
+      case 'terminal':
+        b.add(cube, 0x6f7f9a, at(trs(0, 0.6, 0, 0, 0, 0, 1.3, 1.2, 0.9)));
+        b.add(cube, 0x2b2540, at(trs(0, 1.55, 0.15, -0.3, 0, 0, 1.1, 0.75, 0.12)));
+        b.add(cube, 0x6cf0c2, at(trs(0, 1.55, 0.08, -0.3, 0, 0, 0.9, 0.58, 0.02)), 'none');
+        break;
+      case 'valve':
+        b.add(cyl, 0x8f93a8, at(trs(0, 0.6, 0, Math.PI / 2, 0, 0, 0.35, 1.9, 0.35)), 'smooth');
+        b.add(cyl, 0xff6b6b, at(trs(0, 1.25, 0, 0, 0, 0, 0.55, 0.08, 0.55)), 'none');
+        b.add(cyl, 0x8f93a8, at(trs(0, 1.0, 0, 0, 0, 0, 0.08, 0.5, 0.08)), 'none');
+        break;
+      case 'battery':
+        b.add(cube, 0x3b3a66, at(trs(0, 0.55, 0, 0, 0, 0, 1.4, 1.1, 1.0)));
+        b.add(cyl, 0xff6b6b, at(trs(-0.35, 1.2, 0, 0, 0, 0, 0.12, 0.2, 0.12)), 'none');
+        b.add(cyl, 0x2b2540, at(trs(0.35, 1.2, 0, 0, 0, 0, 0.12, 0.2, 0.12)), 'none');
+        b.add(cube, 0xffd43b, at(trs(0, 0.7, -0.51, 0, 0, 0, 0.8, 0.25, 0.02)), 'none');
+        break;
+      case 'tank': {
+        const c = col ?? 0xc9a8ff;
+        if (p.w === p.d) {
+          // Upright storage tank: body, a cream band, a shallow dome and a ladder.
+          const R = wid / 2 - 0.2, H = Math.min(9, 2 + wid);
+          b.add(cyl, c, at(trs(0, H / 2, 0, 0, 0, 0, R, H, R)), 'smooth');
+          b.add(cyl, 0xfff1e6, at(trs(0, H * 0.55, 0, 0, 0, 0, R + 0.04, H * 0.16, R + 0.04)), 'smooth');
+          b.add(ball, c, at(trs(0, H, 0, 0, 0, 0, R, R * 0.3, R)), 'smooth');
+          b.add(cube, 0x2b2540, at(trs(R + 0.06, H / 2, 0, 0, 0, 0, 0.08, H, 0.45)), 'none');
+        } else {
+          // Tanker car: a horizontal barrel on a low chassis.
+          const R = Math.min(wid / 2 - 0.15, 1.3), l = len - 0.6, y = 0.75 + R;
+          b.add(cube, 0x2b2540, at(trs(0, 0.6, 0, 0, 0, 0, wid * 0.7, 0.25, len - 0.3)));
+          b.add(cyl, c, at(trs(0, y, 0, Math.PI / 2, 0, 0, R, l, R)), 'smooth');
+          for (const s of [-1, 1]) b.add(ball, c, at(trs(0, y, (s * l) / 2, 0, 0, 0, R, R, 0.35)), 'smooth');
+          b.add(cyl, 0xfff1e6, at(trs(0, y + R, 0, 0, 0, 0, 0.35, 0.3, 0.35)), 'smooth');
+          for (const sx of [-1, 1]) for (const sz of [-0.35, 0.35]) b.add(cyl, 0x2b2540, at(trs(sx * wid * 0.3, 0.4, sz * len, 0, 0, Math.PI / 2, 0.4, 0.25, 0.4)), 'smooth');
+        }
+        break;
+      }
+      case 'beacon':
+        b.add(cyl, 0x5a5670, at(trs(0, 1.6, 0, 0, 0, 0, 0.18, 3.2, 0.18)), 'smooth');
+        b.add(cube, 0x6f7f9a, at(trs(0, 0.3, 0, 0, 0, 0, 1.2, 0.6, 1.2)));
         break;
     }
   }
-  for (const l of MAP.lamps) {
-    b.add(cyl, 0x2b2840, at(trs(0, 1.75, 0, 0, 0, 0, 0.07, 3.5, 0.07), l.x, l.z), 'none');
-    b.add(cube, 0x2b2840, at(trs(0, 3.5, 0, 0, 0, 0, 0.5, 0.1, 0.5), l.x, l.z), 'none');
-    glows.push(make(ball, undefined, trs(l.x, 3.28, l.z, 0, 0, 0, 0.24)));
-    pools.push(make(ring(0, 3.2, 20), undefined, trs(l.x, 0.03, l.z)));
-  }
-  add(b.build());
-  if (glows.length) {
-    add(meshEntity(toMesh(device, merge(glows)), makeUnlit({ color: 0xffe9b0, fog: false })));
-    add(meshEntity(toMesh(device, merge(pools)), makeUnlit({ color: 0xffc46b, alpha: 0.2, blend: 'add' })));
-  }
-  // Generator beacon (animated separately).
-  const gen = MAP.props.find((p) => p.type === 'gen')!;
-  const beacon = add(meshEntity(toMesh(device, make(ball)), makeUnlit({ fog: false })));
-  beacon.setPosition((gen.x + 0.5) * T + 0.5, 1.95, (gen.z + 0.5) * T + 0.3);
-  beacon.setLocalScale(0.16, 0.16, 0.16);
-  return beacon;
-}
 
-const RING: Record<string, number> = { medkit: 0xff6b8a, ammo: 0xa9e34b, smg: 0x74c0fc, shotgun: 0x74c0fc, rifle: 0x74c0fc, gen: 0xffd43b };
-const ringMesh = toMesh(device, make(ring(0.42, 0.56, 24)));
-const arrowMesh = toMesh(device, make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
-const bulletMesh = toMesh(device, make(cylinder(8), 0xffc94a, trs(0, 0, 0, 0, 0, 0, 0.05, 0.22, 0.05)));
-
-function buildPickup(def: Pickup): PickupView {
-  const group = new pc.Entity('pickup');
-  group.setPosition(def.x, 0, def.z);
-  const float = new pc.Entity('float');
-  float.setLocalPosition(0, 0.75, 0);
-  switch (def.kind) {
-    case 'medkit':
-      float.addChild(inkBox(0.55, 0.38, 0.28, 0xfff5f5));
-      float.addChild(inkBox(0.3, 0.09, 0.3, 0xff4d6d, 0));
-      float.addChild(inkBox(0.09, 0.3, 0.3, 0xff4d6d, 0));
-      break;
-    case 'ammo': {
-      float.addChild(inkBox(0.62, 0.36, 0.42, 0x7fa650));
-      float.addChild(inkBox(0.64, 0.1, 0.44, 0xffd43b, 0));
-      for (let i = 0; i < 3; i++) {
-        const bullet = meshEntity(bulletMesh, toonMat);
-        bullet.setLocalPosition(-0.16 + i * 0.16, 0.28, 0);
-        float.addChild(bullet);
-      }
-      break;
+  // ------------------------------------------------------------------ doors
+  const doorViews = def.doors.map((d) => {
+    const w = (d.x1 - d.x0 + 1) * T, dd = (d.z1 - d.z0 + 1) * T;
+    const sx = w >= dd ? w : 0.4, sz = w >= dd ? 0.4 : dd;
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+    const g = cv.getContext('2d')!;
+    if (d.kind === 'shutter') {
+      g.fillStyle = '#ffd43b'; g.fillRect(0, 0, 128, 128); g.fillStyle = '#1a1226';
+      for (let i = -128; i < 256; i += 48) { g.beginPath(); g.moveTo(i, 128); g.lineTo(i + 24, 128); g.lineTo(i + 152, 0); g.lineTo(i + 128, 0); g.fill(); }
+    } else if (d.kind === 'barricade') {
+      g.fillStyle = '#7a5235'; g.fillRect(0, 0, 128, 128);
+      for (let y = 0; y < 128; y += 32) { g.fillStyle = y % 64 ? '#b5894f' : '#a0743f'; g.fillRect(0, y + 3, 128, 26); }
+      g.strokeStyle = '#1a1226'; g.lineWidth = 6; g.beginPath(); g.moveTo(8, 8); g.lineTo(120, 120); g.moveTo(120, 8); g.lineTo(8, 120); g.stroke();
+    } else {
+      g.fillStyle = '#4a4e66'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#c9ccdc'; g.lineWidth = 3;
+      for (let i = -128; i < 256; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 128, 128); g.moveTo(i + 128, 0); g.lineTo(i, 128); g.stroke(); }
     }
-    case 'gen':
-      float.addChild(meshEntity(arrowMesh, makeUnlit({ color: 0xffd43b, fog: false })));
-      break;
-    default: {
-      const gun = buildGun(def.kind).ent;
-      gun.setLocalScale(1.9, 1.9, 1.9);
-      gun.setLocalEulerAngles(0, 90, 0);
-      float.addChild(gun);
-    }
-  }
-  group.addChild(float);
-  if (def.kind !== 'gen') {
-    const ringEnt = meshEntity(ringMesh, makeUnlit({ color: RING[def.kind], alpha: 0.85, blend: 'normal' }));
-    ringEnt.setLocalPosition(0, 0.04, 0);
-    group.addChild(ringEnt);
-    const pedestal = inkBox(0.5, 0.36, 0.5, 0x54506e);
-    pedestal.setLocalPosition(0, 0.18, 0);
-    group.addChild(pedestal);
-  }
-  add(group);
-  return { def, group, float, taken: false };
-}
-
-function buildSky(): pc.Entity {
-  const sky = new pc.Entity('sky');
-  const mat = new pc.ShaderMaterial({
-    uniqueName: 'Sky', attributes: { aPosition: pc.SEMANTIC_POSITION },
-    vertexGLSL: /* glsl */ `attribute vec3 aPosition; uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; varying vec3 vDir;
-      void main(void) { vDir = normalize(aPosition); gl_Position = matrix_viewProjection * matrix_model * vec4(aPosition, 1.0); }`,
-    fragmentGLSL: /* glsl */ `varying vec3 vDir;
-      void main(void) {
-        float h = clamp(normalize(vDir).y, -0.1, 1.0);
-        vec3 horizon = vec3(0.99, 0.62, 0.64), mid = vec3(0.56, 0.38, 0.74), top = vec3(0.17, 0.15, 0.38);
-        // Hard bands keep the sky in the same cel language as everything else.
-        float b = floor(smoothstep(-0.02, 0.75, h) * 7.0) / 7.0;
-        vec3 c = b < 0.45 ? mix(horizon, mid, b / 0.45) : mix(mid, top, (b - 0.45) / 0.55);
-        gl_FragColor = vec4(c, 1.0);
-      }`,
+    const tex = canvasTexture(cv); textures.push(tex);
+    const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setScale(sx, CEIL_H, sz))), makeToon({ tex })));
+    const x = ((d.x0 + d.x1 + 1) / 2) * T, z = ((d.z0 + d.z1 + 1) / 2) * T;
+    const v = { d, e, x, z, y: CEIL_H / 2, open: false };
+    e.setPosition(x, v.y, z);
+    return v;
   });
-  mat.cull = pc.CULLFACE_NONE; mat.depthWrite = false; mat.update();
-  sky.addChild(meshEntity(toMesh(device, make(sphere(24, 16), undefined, new pc.Mat4().setScale(300, 300, 300))), mat));
+  const doorTarget = (v: (typeof doorViews)[number]) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
 
-  // Moon, halo and stars are flat shapes pinned to the dome, facing the centre.
-  const disc = (dir: pc.Vec3, dist: number, size: number): Geo => {
-    const n = dir.clone().normalize(), u = new pc.Vec3().cross(pc.Vec3.UP, n).normalize(), v = new pc.Vec3().cross(n, u);
-    const g = make(ring(0, size, 28));
-    for (let i = 0; i < g.pos.length; i += 3) {
-      const x = g.pos[i], z = g.pos[i + 2];
-      g.pos[i] = n.x * dist + u.x * x + v.x * z; g.pos[i + 1] = n.y * dist + u.y * x + v.y * z; g.pos[i + 2] = n.z * dist + u.z * x + v.z * z;
-    }
+  // ---------------------------------------------------------------- pickups
+  const RING: Record<string, number> = { medkit: 0xff6b8a, ammo: 0xa9e34b, item: 0xffd43b };
+  /** Ground ring colour: fixed for supplies, by tier for weapons (blue = basic, orange-gold = tier 2). */
+  const ringColor = (kind: string): number => RING[kind] ?? ((WEAPONS.find((w) => w.id === kind)?.tier ?? 1) >= 2 ? 0xffa53a : 0x74c0fc);
+  const arrowMesh = mesh(make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
+  const objMat = makeUnlit({ color: 0xffd43b, fog: false });
+  // Pickup models are one mesh each, shared by every pickup of that kind: the toon parts plus their
+  // ink hull wound inside-out and coloured ink, so a single back-face-culled toon draw shows both.
+  type BoxPart = [w: number, h: number, d: number, color: number, x?: number, y?: number, z?: number, ink?: number];
+  const insideOut = (g: Geo): Geo => {
+    for (let i = 0; i < g.idx.length; i += 3) { const t = g.idx[i]; g.idx[i] = g.idx[i + 1]; g.idx[i + 1] = t; }
+    for (let i = 0; i < g.nor.length; i++) g.nor[i] = -g.nor[i];
     return g;
   };
-  const moonDir = new pc.Vec3(-90, 150, 230);
-  const flatSky = (g: Geo, color: number, alpha = 1) => {
-    // Blended so they draw in the transparent pass, after the opaque sky dome.
-    const m = makeUnlit({ color, fog: false, cull: 'none', alpha, blend: 'normal' });
-    sky.addChild(meshEntity(toMesh(device, g), m));
-  };
-  flatSky(disc(moonDir, 288, 31), 0xffd9c2, 0.25);
-  flatSky(disc(moonDir, 285, 22), 0xfff6d6);
-  const stars: Geo[] = [];
-  for (let i = 0; i < 260; i++) {
-    const a = hash2(i, 7) * Math.PI * 2, e = 0.25 + hash2(i, 31) * 1.2;
-    stars.push(disc(new pc.Vec3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)), 290, 0.35 + hash2(i, 3) * 0.4));
+  const inkModel = (parts: BoxPart[], extra: Geo[] = []): pc.Mesh => mesh(inkGeo(parts, extra));
+  function inkGeo(parts: BoxPart[], extra: Geo[] = []): Geo {
+    const list: Geo[] = [...extra];
+    for (const [w, h, d, color, x = 0, y = 0, z = 0, t = 0.03] of parts) {
+      const m = trs(x, y, z, 0, 0, 0, w, h, d);
+      list.push(make(cube, color, m));
+      if (t > 0) list.push(insideOut(make(inflateBox(cube, t / w, t / h, t / d), INK_LIT, m)));
+    }
+    return merge(list);
   }
-  flatSky(merge(stars), 0xfff6d6);
-  add(sky);
-  return sky;
-}
+  const bullet = (x: number) => make(cylinder(8), 0xffc94a, trs(x, 0.28, 0, 0, 0, 0, 0.05, 0.22, 0.05));
+  const FLOAT: Record<string, () => pc.Mesh> = {
+    medkit: () => inkModel([[0.55, 0.38, 0.28, 0xfff5f5], [0.3, 0.09, 0.3, 0xff4d6d, 0, 0, 0, 0], [0.09, 0.3, 0.3, 0xff4d6d, 0, 0, 0, 0]]),
+    ammo: () => inkModel([[0.62, 0.36, 0.42, 0x7fa650], [0.64, 0.1, 0.44, 0xffd43b, 0, 0, 0, 0]], [bullet(-0.16), bullet(0), bullet(0.16)]),
+    fuel: () => inkModel([[0.42, 0.55, 0.26, 0xe8413c], [0.1, 0.14, 0.1, 0xffd43b, 0.12, 0.33, 0]]),
+    fuse: () => inkModel([[0.18, 0.5, 0.18, 0xe8e6f2], [0.22, 0.08, 0.22, 0xc9a04a, 0, -0.22, 0], [0.22, 0.08, 0.22, 0xc9a04a, 0, 0.22, 0]]),
+    keycard: () => inkModel([[0.45, 0.3, 0.04, 0x74c0fc], [0.45, 0.06, 0.05, 0x2b2540, 0, 0.06, 0, 0]]),
+    medicine: () => inkModel([[0.4, 0.32, 0.3, 0xffffff], [0.41, 0.1, 0.31, 0x39c5bb, 0, 0, 0, 0]]),
+    tape: () => inkModel([[0.4, 0.26, 0.08, 0x2b2540], [0.3, 0.1, 0.09, 0xfff1c9, 0, 0, 0, 0]]),
+    part: () => inkModel([[0.4, 0.4, 0.4, 0x8f93a8], [0.2, 0.2, 0.42, 0xffd43b, 0, 0, 0, 0]]),
+  };
+  const floatCache = new Map<string, pc.Mesh>();
+  const floatMesh = (key: string): pc.Mesh => {
+    let m = floatCache.get(key);
+    if (!m) { m = (FLOAT[key] ?? FLOAT.part)(); floatCache.set(key, m); }
+    return m;
+  };
+  // Floor rings and pedestals never move, so every one on the map shares two meshes (one draw each),
+  // rebuilt whenever a pickup appears or is taken (see `rebuildBases`).
+  const ringGeo = ring(0.42, 0.56, 24);
+  const pedGeo = inkGeo([[0.5, 0.36, 0.5, 0x54506e, 0, 0.18, 0]]), notePedGeo = inkGeo([[0.5, 0.5, 0.5, 0x54506e, 0, 0.25, 0]]);
+  const ringsEnt = add(meshEntity(mesh(make(ringGeo)), makeUnlit({ alpha: 0.85, blend: 'normal' })));
+  const pedsEnt = add(meshEntity(mesh(pedGeo), toonMat));
+  let basesDirty = true;
 
-export function buildWorld(): World {
-  buildWalls();
-  buildCeilings();
-  buildGround();
-  const beacon = buildProps();
-  const sky = buildSky();
-  const pickups = MAP.pickups.map(buildPickup);
+  function buildPickup(p: Pickup): PickupView {
+    const group = new pc.Entity('pickup');
+    group.setPosition(p.x, 0, p.z);
+    const float = new pc.Entity('float');
+    float.setLocalPosition(0, 0.75, 0);
+    switch (p.kind) {
+      case 'medkit': case 'ammo': float.addChild(meshEntity(floatMesh(p.kind), toonMat)); break;
+      case 'obj': float.addChild(meshEntity(arrowMesh, objMat)); break;
+      case 'item': float.addChild(meshEntity(floatMesh(p.look ?? 'part'), toonMat)); break;
+      default: {
+        const gun = buildGun(p.kind, false, meshes).ent;
+        gun.setLocalScale(1.9, 1.9, 1.9);
+        gun.setLocalEulerAngles(0, 90, 0);
+        float.addChild(gun);
+      }
+    }
+    group.addChild(float);
+    add(group);
+    const shown = p.kind !== 'obj' && p.kind !== 'item';
+    group.enabled = shown;
+    return { def: p, group, float, taken: false, shown };
+  }
+  const pickups = def.pickups.map(buildPickup);
 
-  // Roll-up shutter gate.
-  const gw = (MAP.gate.x1 - MAP.gate.x0 + 1) * T;
-  const gcv = document.createElement('canvas'); gcv.width = 128; gcv.height = 128;
-  const gg = gcv.getContext('2d')!;
-  gg.fillStyle = '#ffd43b'; gg.fillRect(0, 0, 128, 128);
-  gg.fillStyle = '#1a1226';
-  for (let i = -128; i < 256; i += 48) { gg.beginPath(); gg.moveTo(i, 128); gg.lineTo(i + 24, 128); gg.lineTo(i + 152, 0); gg.lineTo(i + 128, 0); gg.fill(); }
-  const gate = add(meshEntity(toMesh(device, make(box(), undefined, new pc.Mat4().setScale(gw, CEIL_H, 0.4))), makeToon({ tex: canvasTexture(gcv) })));
-  const gx = (MAP.gate.x0 + MAP.gate.x1 + 1) / 2 * T, gz = (MAP.gate.z + 0.5) * T;
-  let gateY = CEIL_H / 2, gateOpen = false, genActive = false;
-  gate.setPosition(gx, gateY, gz);
+  const noteMat = makeUnlit({ color: 0xfff6e0 });
+  const paperMesh = mesh(make(box(), undefined, trs(0, 0, 0, 0, 0, 0, 0.42, 0.02, 0.55)));
+  const notes: NoteView[] = def.notes.map((n) => {
+    const group = new pc.Entity('note');
+    group.setPosition(n.x, 0, n.z);
+    const paper = meshEntity(paperMesh, noteMat);
+    paper.setLocalPosition(0, 0.62, 0); paper.setLocalEulerAngles(-25, hash2(n.id, 3) * 360, 0);
+    group.addChild(paper);
+    add(group);
+    return { def: n, group, read: false };
+  });
 
-  return {
-    pickups,
-    setGate(open, instant) { gateOpen = open; if (instant) { gateY = CEIL_H / 2 + (open ? CEIL_H - 0.3 : 0); gate.setPosition(gx, gateY, gz); } },
-    setTaken(id, taken) { const p = pickups[id]; if (p) { p.taken = taken; p.group.enabled = !taken; } },
-    setGenerator(active) { genActive = active; const p = pickups.find((q) => q.def.kind === 'gen'); if (p) p.group.enabled = !active; },
-    update(t, dt, camX, camY, camZ) {
-      const target = CEIL_H / 2 + (gateOpen ? CEIL_H - 0.3 : 0);
-      gateY += (target - gateY) * Math.min(1, dt * 1.8);
-      gate.setPosition(gx, gateY, gz);
+  function rebuildBases(): void {
+    basesDirty = false;
+    const rings: Geo[] = [], peds: Geo[] = [];
+    for (const p of pickups) {
+      if (!p.shown || p.taken || p.def.kind === 'obj') continue;
+      rings.push(make(ringGeo, ringColor(p.def.kind), trs(p.def.x, 0.04, p.def.z)));
+      if (p.def.kind !== 'item') peds.push(make(pedGeo, undefined, trs(p.def.x, 0, p.def.z)));
+    }
+    for (const n of def.notes) { rings.push(make(ringGeo, 0xfff6e0, trs(n.x, 0.04, n.z))); peds.push(make(notePedGeo, undefined, trs(n.x, 0, n.z))); }
+    for (const [e, list] of [[ringsEnt, rings], [pedsEnt, peds]] as const) {
+      e.enabled = list.length > 0;
+      // Unpinned: the mesh instance owns it, and frees the one it replaces.
+      if (list.length) e.render!.meshInstances[0].mesh = toMesh(device, merge(list), false);
+    }
+  }
+
+  // Beacon light that blinks over the active objective machine.
+  const beacon = add(meshEntity(mesh(make(ball)), makeUnlit({ fog: false })));
+  beacon.setLocalScale(0.16, 0.16, 0.16);
+  beacon.enabled = false;
+  let activeObj = -1;
+
+  const atmo = buildAtmosphere(ctx, glowSpots); // light map, sky, skyline, glows, weather
+
+  const world: World = {
+    L, dressing, pickups, notes,
+    setDoors(mask, instant) {
+      for (const v of doorViews) {
+        v.open = !!(mask & (1 << v.d.id));
+        if (instant) { v.y = doorTarget(v); v.e.setPosition(v.x, v.y, v.z); }
+      }
+    },
+    setTaken(id, taken) { const p = pickups[id]; if (p) { if (p.taken !== taken) basesDirty = true; p.taken = taken; p.group.enabled = p.shown && !taken; } },
+    setStep(step) {
+      const s = def.steps[step];
+      activeObj = s?.kind === 'use' && s.target !== undefined ? s.target : -1;
       for (const p of pickups) {
+        if (p.def.kind === 'item') p.shown = s?.kind === 'collect' && s.group === p.def.group;
+        else if (p.def.kind === 'obj') p.shown = p.def.id === activeObj;
+        p.group.enabled = p.shown && !p.taken;
+      }
+      basesDirty = true;
+      const o = pickups[activeObj];
+      beacon.enabled = !!o;
+      if (o) beacon.setPosition(o.def.x, 2.2, o.def.z);
+    },
+    setNoteRead(id) { const n = notes[id]; if (n) n.read = true; },
+    update(t, dt, camX, camY, camZ) {
+      if (basesDirty) rebuildBases();
+      for (const v of doorViews) {
+        const target = doorTarget(v);
+        if (Math.abs(target - v.y) > 0.001) { v.y += (target - v.y) * Math.min(1, dt * 1.8); v.e.setPosition(v.x, v.y, v.z); }
+      }
+      // Pickups are many small draw calls each: skip the ones the fog has already swallowed.
+      const far = theme.fogFar + 12;
+      for (const p of pickups) {
+        p.group.enabled = p.shown && !p.taken && (p.def.kind === 'obj' || (Math.abs(p.def.x - camX) < far && Math.abs(p.def.z - camZ) < far));
         if (!p.group.enabled) continue;
         p.float.setLocalEulerAngles(0, (t * 92 + p.def.id * 57) % 360, 0);
-        p.float.setLocalPosition(0, (p.def.kind === 'gen' ? 2.7 : 0.78) + Math.sin(t * 2.4 + p.def.id) * 0.07, 0);
+        p.float.setLocalPosition(0, (p.def.kind === 'obj' ? 2.9 : 0.78) + Math.sin(t * 2.4 + p.def.id) * 0.07, 0);
       }
-      const blink = genActive ? Math.sin(t * 18) > 0 : Math.sin(t * 3) > 0.6;
-      setTint(beacon, genActive ? (blink ? 0x7dff8a : 0x1f6a34) : blink ? 0xff4d5e : 0x6a1f2a);
-      sky.setPosition(camX, camY, camZ);
+      if (beacon.enabled) {
+        const used = pickups[activeObj]?.taken;
+        const blink = used ? Math.sin(t * 18) > 0 : Math.sin(t * 3) > 0.6;
+        setTint(beacon, used ? (blink ? 0x7dff8a : 0x1f6a34) : blink ? 0xff4d5e : 0x6a1f2a);
+      }
+      for (const n of notes) n.group.enabled = Math.abs(n.def.x - camX) < far && Math.abs(n.def.z - camZ) < far;
+      atmo.update(t, dt, camX, camY, camZ);
+    },
+    dispose() {
+      atmo.dispose();
+      root.destroy();
+      for (const t of textures) t.destroy();
+      for (const m of meshes) m.destroy();
     },
   };
+  return world;
 }

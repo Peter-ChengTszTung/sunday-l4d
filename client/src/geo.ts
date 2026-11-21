@@ -181,7 +181,8 @@ export function inflateSmooth(g: Geo, t: number): Geo {
   return g;
 }
 
-export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true): pc.Mesh {
+/** `alpha` (optional, one byte per vertex) fills the colour alpha channel, e.g. a part index. */
+export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true, alpha?: ArrayLike<number>): pc.Mesh {
   const mesh = new pc.Mesh(device);
   const n = g.pos.length / 3;
   mesh.setPositions(g.pos);
@@ -190,7 +191,7 @@ export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true): pc.Mesh {
   for (let i = 0; i < n; i++) {
     const has = g.col.length > 0;
     c[i * 4] = has ? Math.round(g.col[i * 3] * 255) : 255; c[i * 4 + 1] = has ? Math.round(g.col[i * 3 + 1] * 255) : 255;
-    c[i * 4 + 2] = has ? Math.round(g.col[i * 3 + 2] * 255) : 255; c[i * 4 + 3] = 255;
+    c[i * 4 + 2] = has ? Math.round(g.col[i * 3 + 2] * 255) : 255; c[i * 4 + 3] = alpha ? alpha[i] : 255;
   }
   mesh.setColors32(c);
   if (g.uv.length) mesh.setUvs(0, g.uv);
