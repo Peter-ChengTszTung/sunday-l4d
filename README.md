@@ -58,7 +58,7 @@ single-use: the first survivor to grab one takes it, so share them out. Loot com
 checkpoint restart.
 
 **The horde:** walkers, plus three specials — the *Leaper* (pounces from range), the
-*Puffer* (explodes into goo that calls more walkers) and the *Brute* (one per run, hits
+*Puffer* (explodes into goo that calls more walkers) and the *Brute* (one or two per run, hits
 like a truck). At 0 HP you go down and bleed out unless a teammate helps you up; knocked-out
 players are rescued next to a teammate after 25 s. If nobody is left standing the squad restarts at the last checkpoint.
 
@@ -84,8 +84,11 @@ docs/     campaign.md — story bible and per-chapter quest briefs
   drives a BUILD_UP → SUSTAIN → FADE → RELAX cycle; mobs come faster while the team pushes on,
   and a team that camps gets a horde from behind. Specials fill a few slots (per-type respawn
   cooldowns), lurk out of sight until the slots are full or ~20 s pass, then attack together; a
-  survivor who strays far from the team draws them. Run the server with `DIRECTOR_DEBUG=1` to log
-  phase changes, ambush releases and lone-wolf picks.
+  survivor who strays far from the team draws them. Besides the scripted Brute, each attempt may
+  roll a roaming one at a random point 30-70% along the chapter's route (clear of safe rooms,
+  holdouts and the scripted one); it comes from ahead when the team passes that point, and timed
+  mobs pause while a Brute is up. Run the server with `DIRECTOR_DEBUG=1` to log phase changes,
+  ambush releases, lone-wolf picks and the rolled Brute point.
 - **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
   custom GLSL shaders: 4-step banded lighting, a stepped flashlight cone, fog, and inverted-hull
   ink outlines. Architecture ink lines are thin beam geometry. Lamps light the scene through a

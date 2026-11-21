@@ -74,6 +74,21 @@ const DIRECTOR = {
     // specials within `lonerReach` path tiles of them go for them (unless someone is within 4 m).
     lonerDist: 14, lonerExit: 11, lonerTime: 2, lonerBias: 0.7, lonerSpawn: [6, 14] as const, lonerReach: 30,
   },
+  /**
+   * Roaming Brute (L4D Tank-flow style). Each attempt (fresh start or checkpoint restart) rolls, with
+   * `chance` (`scriptedChance` in a chapter that already has a `brute: true` step), a point in the
+   * `band` fraction of the chapter's route (ChapterData.route, path tiles), at least `minAhead` past
+   * where the attempt starts. A point within `clearance` tiles of a safe room or a holdout's machine,
+   * or from `clearance` before to `scriptGap` after where a scripted Brute's step begins, is rejected
+   * (up to `tries` draws, then no Brute this attempt). When the team's route progress passes it the
+   * Brute spawns `spawn` path tiles ahead, hidden; deferred during holdouts, while the whole team is
+   * in a safe room, or while another Brute is alive. While a Brute is up the mob timer and
+   * anti-camping pause (it is the peak; specials still fill their slots).
+   */
+  boss: {
+    chance: 0.8, scriptedChance: 0.4, band: [0.3, 0.7] as const, minAhead: 20,
+    clearance: 25, scriptGap: 70, tries: 12, spawn: [12, 24] as const,
+  },
 };
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
@@ -142,6 +157,12 @@ interface ChapterData {
   byProgress: number[][];
   open: number[];
   /** 1 where `open` has the cell. */ spawnable: Uint8Array;
+  /**
+   * The quest route as one distance (path tiles), monotone along the steps, unlike `progress` (some
+   * chapters loop back toward the start). Leg `i` runs from step i-1's objective to step i's, walked
+   * with step i's doors: it starts at `start[i]` and is `len[i]` long; `total` is the whole route.
+   */
+  route: { start: number[]; len: number[]; total: number };
 }
 const chapterData = new Map<number, ChapterData>();
 function dataFor(ch: number): ChapterData {
@@ -155,9 +176,38 @@ function dataFor(ch: number): ChapterData {
     open.push(i); spawnable[i] = 1;
     (byProgress[progress[i]] ??= []).push(i);
   }
-  d = { L, progress, byProgress, open, spawnable };
+  d = { L, progress, byProgress, open, spawnable, route: routeOf(L) };
   chapterData.set(ch, d);
   return d;
+}
+
+/** Cells of step `s`'s objective, walkable with door mask `doors`: its untaken items, its area, or around its waypoint. */
+function objectiveCells(L: Level, s: Step, doors: number, taken?: Set<number>): number[] {
+  const { W } = L, src: number[] = [];
+  const add = (tx: number, tz: number) => { if (!L.solidAt(tx, tz, doors)) src.push(tz * W + tx); };
+  if (s.kind === 'collect') {
+    for (const p of L.def.pickups) if (p.kind === 'item' && p.group === s.group && !taken?.has(p.id)) add(cellOf(p.x), cellOf(p.z));
+  } else if (s.area) {
+    for (let z = s.area.z0; z <= s.area.z1; z++) for (let x = s.area.x0; x <= s.area.x1; x++) add(x, z);
+  } else {
+    const tx = cellOf(s.at.x), tz = cellOf(s.at.z);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) add(tx + dx, tz + dz);
+  }
+  return src;
+}
+
+function routeOf(L: Level): ChapterData['route'] {
+  const def = L.def, start: number[] = [], len: number[] = [], field = new Int16Array(L.W * L.H);
+  let from = [def.startCell.z * L.W + def.startCell.x], total = 0;
+  def.steps.forEach((s, i) => {
+    const doors = L.doorsAfter(i), dst = objectiveCells(L, s, doors);
+    L.distanceField(dst, doors, field);
+    let d = INF;
+    for (const c of from) d = Math.min(d, field[c]);
+    start.push(total); len.push(d < INF ? d : 0); total += len[i];
+    if (dst.length) from = dst;
+  });
+  return { start, len, total };
 }
 
 interface Checkpoint { step: number; doors: number; taken: number[] }
@@ -187,6 +237,9 @@ export class Room {
   private kills = 0;
   private best = 0; // furthest progress (tiles) reached this attempt
   private pendingBrute = false;
+  /** Furthest route progress (ChapterData.route tiles) this attempt, and where the roaming Brute comes (-1 = none/spawned). */
+  private routeBest = 0;
+  private bossAt = -1;
   private globs: Glob[] = [];
   private puddles: Puddle[] = [];
   private nextPuddle = 1;
@@ -299,8 +352,10 @@ export class Room {
     for (const p of this.players.values()) this.spawnPlayer(p, spawns[slot++ % spawns.length], !cp || freshStart);
     const sp = spawns[0];
     this.best = this.progressAt(sp.x, sp.z);
+    this.routeBest = 0;
     this.resetPacing();
     this.beginStep(true);
+    this.rollBoss();
     this.fillBelt(BELT_MAX);
   }
 
@@ -368,6 +423,7 @@ export class Room {
     // A lever with a holdout saves its horde for the pull (the crescendo's opening burst), see onUse.
     if (s.horde && !(s.kind === 'use' && s.hold)) this.horde();
     if (s.brute) this.pendingBrute = true;
+    this.routeBest = Math.max(this.routeBest, this.cd.route.start[this.step]);
   }
 
   private completeStep(): void {
@@ -431,8 +487,11 @@ export class Room {
     }
     this.best = this.progressAt(at.x, at.z);
     this.waves = [];
+    this.pendingBrute = false;
+    this.routeBest = 0;
     this.resetPacing();
     this.beginStep();
+    this.rollBoss();
     this.fillBelt(BELT_MAX);
   }
 
@@ -898,16 +957,7 @@ export class Room {
     const key = `${this.step}|${this.doors}|${this.collected}`;
     if (key === this.objKey) return this.objField;
     this.objKey = key;
-    const { W } = this.L, src: number[] = [];
-    const add = (tx: number, tz: number) => { if (!this.L.solidAt(tx, tz, this.doors)) src.push(tz * W + tx); };
-    if (s.kind === 'collect') {
-      for (const p of this.def.pickups) if (p.kind === 'item' && p.group === s.group && !this.taken.has(p.id)) add(cellOf(p.x), cellOf(p.z));
-    } else if (s.area) {
-      for (let z = s.area.z0; z <= s.area.z1; z++) for (let x = s.area.x0; x <= s.area.x1; x++) add(x, z);
-    } else {
-      const tx = cellOf(s.at.x), tz = cellOf(s.at.z);
-      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) add(tx + dx, tz + dz);
-    }
+    const { W } = this.L, src = objectiveCells(this.L, s, this.doors, this.taken);
     if (this.objField.length !== W * this.L.H) this.objField = new Int16Array(W * this.L.H);
     this.L.distanceField(src, this.doors, this.objField);
     return this.objField;
@@ -1314,6 +1364,46 @@ export class Room {
     this.waves = this.waves.filter((w) => w.anchor >= 0 || w.hunt > this.time);
   }
 
+  /** Roll where on the route this attempt's roaming Brute comes (DIRECTOR.boss); -1 = none. */
+  private rollBoss(): void {
+    const B = DIRECTOR.boss, r = this.cd.route;
+    this.bossAt = -1;
+    const scripted = this.def.steps.some((s) => s.brute);
+    const lo = Math.max(r.total * B.band[0], this.routeBest + B.minAhead), hi = r.total * B.band[1];
+    let rejected = 0, why = 'no roll';
+    if (Math.random() < (scripted ? B.scriptedChance : B.chance)) {
+      why = lo < hi ? 'all rejected' : 'band behind';
+      for (let i = 0; lo < hi && i < B.tries; i++) {
+        const v = Math.round(rand(lo, hi));
+        if (this.bossClear(v)) { this.bossAt = v; break; }
+        rejected++;
+      }
+    }
+    if (DIRECTOR_DEBUG) {
+      console.log(`[director ${this.code}] boss: ${this.bossAt >= 0 ? `at route ${this.bossAt}` : why} of ${r.total} (from ${this.routeBest}, ${rejected} rejected${scripted ? ', chapter has a scripted Brute' : ''})`);
+    }
+  }
+
+  /** False if route point `v` is too near a safe room, a holdout, or a scripted Brute (DIRECTOR.boss). */
+  private bossClear(v: number): boolean {
+    const B = DIRECTOR.boss, r = this.cd.route;
+    return this.def.steps.every((s, i) => {
+      const end = r.start[i] + r.len[i];
+      if ((s.checkpoint || s.hold || s.kind === 'holdout') && Math.abs(v - end) < B.clearance) return false;
+      return !(s.brute && v > r.start[i] - B.clearance && v < r.start[i] + B.scriptGap);
+    });
+  }
+
+  /** A Brute ahead of the team (any side in a holdout), out of sight; announced. Cell centre: it's wide. */
+  private spawnBrute(): Zombie | null {
+    const [a, b] = DIRECTOR.boss.spawn;
+    const c = this.pickSpawnCell(a, b, this.holdout >= 0 ? 0 : 1);
+    if (c < 0) return null;
+    const p = this.cellPos(c), zb = this.spawnZombie(ZT.BRUTE, p.x, p.z);
+    this.events.push(['brute']);
+    return zb;
+  }
+
   private teamIntensity(): number {
     let m = 0;
     for (const p of this.players.values()) if (p.st === PSTATE.ALIVE) m = Math.max(m, p.intensity);
@@ -1380,6 +1470,9 @@ export class Room {
       for (const p of stand) lead = Math.min(lead, obj[cellOf(p.z) * this.L.W + cellOf(p.x)]);
       if (this.objKey !== this.objSeenKey) { this.objSeenKey = this.objKey; this.objBest = lead; advanced = true; }
       else if (lead < this.objBest) { this.objBest = lead; advanced = true; }
+      // Route progress: how far along this step's leg the lead survivor is.
+      const r = this.cd.route, len = r.len[this.step];
+      if (lead < INF) this.routeBest = Math.max(this.routeBest, r.start[this.step] + Math.max(0, len - lead));
     }
     if (advanced) { this.advancedAt = this.time; this.campT = 0; }
     const t = this.t, D = DIRECTOR;
@@ -1411,8 +1504,14 @@ export class Room {
       holders = 0;
     }
 
-    // ---- Deliberate events: bypass the pacing phases.
-    if (this.pendingBrute && this.spawnAt(ZT.BRUTE, 12, 24)) { this.pendingBrute = false; this.events.push(['brute']); }
+    // ---- Deliberate events: bypass the pacing phases. One Brute at a time: a scripted one waits for a
+    // roaming one to die; the roaming one also waits out holdouts and safe rooms.
+    let brute = byType[ZT.BRUTE] > 0;
+    if (this.pendingBrute && !brute && this.spawnBrute()) { this.pendingBrute = false; brute = true; }
+    if (this.bossAt >= 0 && this.routeBest >= this.bossAt && !brute && this.holdout < 0 && !allSafe && this.spawnBrute()) {
+      if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} roaming Brute at route ${this.routeBest} (rolled ${this.bossAt})`);
+      this.bossAt = -1; brute = true;
+    }
 
     // Drain queued hordes a walker at a time (oldest wave first), each from its wave's source.
     // Waves already queued are committed, so they keep draining in FADE/RELAX too.
@@ -1461,7 +1560,8 @@ export class Room {
       if (zb?.hold && !holders) this.ambushUntil = this.time + S.maxWait;
       t.special = zb ? roll(S.fill) : 1.5;
     }
-    if (ph !== Phase.BUILD_UP) return;
+    // A Brute fight is the peak: no timed mobs or camping hordes on top of it.
+    if (ph !== Phase.BUILD_UP || brute) return;
 
     // Mob timer: runs faster while the team pushes on, slower while it holds still.
     const moving = this.time - this.advancedAt < D.advanceWindow;
