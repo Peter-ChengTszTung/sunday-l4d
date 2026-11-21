@@ -103,18 +103,27 @@ export class Hud {
     this.set('wpDist', String(Math.round(dist)), (v) => { this.el.wpdist.textContent = `${v} m`; });
   }
 
-  /** Queue radio/bark lines; each shows for a few seconds. `now` replaces whatever is playing. */
+  /** A radio line went up (speaker, text, seconds it will show). Wired to the radio sound by main.ts. */
+  onRadioLine: ((who: string, text: string, seconds: number) => void) | null = null;
+  /** The radio went quiet: `cleared` when the queue was replaced/emptied mid-line rather than running out. */
+  onRadioEnd: ((cleared: boolean) => void) | null = null;
+
+  /** Queue radio/bark lines; each shows for a few seconds. `now` replaces whatever is playing (`[]` + `now` clears). */
   radio(lines: [string, string][], now = false): void {
-    if (now) { this.radioQ = []; this.radioT = 0; }
+    if (now) {
+      this.radioQ = []; this.radioT = 0;
+      if (!this.el.radio.hidden) { this.el.radio.hidden = true; this.onRadioEnd?.(true); }
+    }
     this.radioQ.push(...lines);
   }
   private nextRadio(): void {
-    const line = this.radioQ.shift();
+    const line = this.radioQ.shift(), was = !this.el.radio.hidden;
     this.el.radio.hidden = !line;
-    if (!line) return;
+    if (!line) { if (was) this.onRadioEnd?.(false); return; }
     this.el.radiowho.textContent = line[0];
     this.el.radioline.textContent = line[1];
     this.radioT = 2.6 + line[1].length * 0.05;
+    this.onRadioLine?.(line[0], line[1], this.radioT);
   }
 
   intro(chapterNo: number, title: string, subtitle: string, text: string): void {

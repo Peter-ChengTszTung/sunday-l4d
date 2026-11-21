@@ -5,10 +5,10 @@
 //                                                                 └─► send ─► reverb ──────────┤
 //   local voice (your gun, steps, foley) ─► local ─► world (+ a small reverb send) ────────────┤
 //   ambience beds ─► ambLP (dull indoors) ─┐                                                   │
-//   horde murmur, tension drone ───────────┴─► duck (dips under big blasts) ───────────────────┤
+//   horde murmur, tension drone ───────────┴─► duck (dips under big blasts) ─► talk (dips under radio) ┤
 //                                                                                              ▼
 //                                     muffle (down / pinned / near death / shellshock) ─► master ─► limiter ─► out
-//   ui (pickups, stingers, heartbeat, tinnitus) ──────────────────────────────────────► master
+//   ui (pickups, stingers, heartbeat, tinnitus, radio chatter) ────────────────────────────────► master
 import { WEAPONS, ZT, ZSTATE } from '../../shared/constants';
 
 /** What the listener is doing; main.ts feeds this every frame through `update`. */
@@ -34,6 +34,14 @@ interface Emit {
 const MAX_VOICES = 90;
 /** Vowel formant pairs (Hz): "ah", "oh", "oo", "uh". */
 const VOWELS: readonly [number, number][] = [[650, 1080], [450, 800], [320, 900], [560, 1450]];
+/** Radio voice colour: Dot is a clean dispatcher, the squad are cheap walkie-talkies, the Voice is warbled and detuned. */
+export type RadioVoice = 'dot' | 'team' | 'voice';
+/** Per voice: carrier hiss level, crackle level, AM wobble depth, murmur pitch (Hz), syllable length range (s). */
+const RADIO: Record<RadioVoice, { hiss: number; crack: number; am: number; mur: number; f0: number; syl: [number, number] }> = {
+  dot: { hiss: 0.09, crack: 0.035, am: 0.18, mur: 0.07, f0: 205, syl: [0.08, 0.17] },
+  team: { hiss: 0.12, crack: 0.06, am: 0.28, mur: 0.06, f0: 290, syl: [0.07, 0.15] },
+  voice: { hiss: 0.14, crack: 0.05, am: 0.45, mur: 0.05, f0: 175, syl: [0.16, 0.34] },
+};
 const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
 const pick = <T>(xs: readonly T[]): T => xs[(Math.random() * xs.length) | 0];
 
@@ -43,13 +51,15 @@ export class Sfx {
   private noise!: AudioBuffer;
   /** 4 s of decorrelated stereo noise for the looping beds (a 1 s loop is audible as a pattern). */
   private wide!: AudioBuffer;
+  /** 2 s of sparse clicks and pops for radio crackle. */
+  private crackle!: AudioBuffer;
   muted = false;
   /** Set by main.ts: true when a wall stands between the listener and (x, z). */
   occluded: ((x: number, z: number) => boolean) | null = null;
 
   private world!: GainNode; private local!: GainNode; private ui!: GainNode;
   private muffle!: BiquadFilterNode; private verbIn!: GainNode; private verbOut!: GainNode; private verbRoom!: GainNode;
-  private duck!: GainNode; private ambLP!: BiquadFilterNode;
+  private duck!: GainNode; private talk!: GainNode; private ambLP!: BiquadFilterNode;
   private hordeG!: GainNode; private tensionG!: GainNode; private dissG!: GainNode;
   /** Where helper voices connect and a pitch multiplier; both are set for the duration of `emit`. */
   private out!: AudioNode; private pj = 1;
@@ -61,6 +71,8 @@ export class Sfx {
   private ambT = 6; private dripT = 0; private beatT = 0; private ctlT = 0; private shell = 0; private tension = 0;
   /** Scheduled reload foley, cut short if the reload is cancelled. */
   private pending: AudioScheduledSourceNode[] = [];
+  /** The radio line playing now: its output gain and every source to stop when it ends. */
+  private line: { out: GainNode; srcs: AudioScheduledSourceNode[]; voice: RadioVoice } | null = null;
 
   /** Must be called from a user gesture. */
   unlock(): void {
@@ -73,6 +85,16 @@ export class Sfx {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     this.wide = c.createBuffer(2, c.sampleRate * 4, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const w = this.wide.getChannelData(ch); for (let i = 0; i < w.length; i++) w[i] = Math.random() * 2 - 1; }
+    // Crackle: ~35 pops a second, some in little clusters, each a 0.3-3 ms decaying burst.
+    this.crackle = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+    const k = this.crackle.getChannelData(0);
+    for (let n = 0; n < 70; n++) {
+      let at = Math.floor(Math.random() * k.length);
+      for (let j = 0, m = Math.random() < 0.25 ? 2 + ((Math.random() * 4) | 0) : 1; j < m; j++, at += Math.floor(rnd(0.002, 0.012) * c.sampleRate)) {
+        const len = Math.floor(rnd(0.0003, 0.003) * c.sampleRate), amp = rnd(0.15, 1) * (Math.random() < 0.5 ? -1 : 1);
+        for (let i = 0; i < len; i++) k[(at + i) % k.length] += amp * (Math.random() * 0.6 + 0.4) * (1 - i / len) ** 2;
+      }
+    }
 
     this.master = c.createGain();
     this.master.gain.value = this.muted ? 0 : 0.5;
@@ -96,7 +118,8 @@ export class Sfx {
     this.local = this.gain(1, this.world);
     this.local.connect(this.gain(0.16, this.verbIn));
     this.out = this.local;
-    this.duck = this.gain(1, this.muffle);
+    this.talk = this.gain(1, this.muffle);
+    this.duck = this.gain(1, this.talk);
     this.ambLP = c.createBiquadFilter();
     this.ambLP.type = 'lowpass'; this.ambLP.frequency.value = 18000;
     this.ambLP.connect(this.duck);
@@ -203,6 +226,17 @@ export class Sfx {
     o.connect(a).connect(mk); o.connect(b).connect(mk); o.connect(chest).connect(this.gain(0.35, g));
     o.start(t); vib.start(t); o.stop(end + 0.05); vib.stop(end + 0.05);
     this.track(o);
+  }
+
+  /** A short run of radio crackle (the shared pop buffer through a highpass). */
+  private pops(vol: number, hp: number, dur: number, when = 0): void {
+    const g = this.env(vol, 0.005, dur, when);
+    if (!g || !this.ctx) return;
+    const s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), t = this.ctx.currentTime + when;
+    s.buffer = this.crackle; s.loop = true; s.playbackRate.value = rnd(0.7, 1.3) * this.pj;
+    f.type = 'highpass'; f.frequency.value = hp;
+    s.connect(f).connect(g); s.start(t, Math.random() * 2); s.stop(t + dur + 0.05);
+    this.track(s);
   }
 
   /** Distance falloff, `1/(1+(d/9)^2)`. */
@@ -698,5 +732,116 @@ export class Sfx {
   brute(): void {
     this.emit(null, {}, () => { this.tone('sawtooth', 70, 38, 0.55, 0.25, 1.5); this.tone('square', 52, 30, 0.3, 0.3, 1.4); this.hiss('lowpass', 500, 100, 1, 0.45, 0.3, 1.3); this.vocal(50, 36, 315, 560, 0.7, 0.2, 1.4); });
     this.dip(0.35, 1.2);
+  }
+
+  // ------------------------------------------------------------------ radio
+  /**
+   * A radio line comes in (call as its subtitle appears; `sec` is how long it shows). A PTT click and a
+   * burst of open-squelch static, then, until `radioEnd`, a bed of band-limited hiss and crackle whose
+   * level wobbles like a weak carrier, with a faint formant murmur in syllables to suggest talking.
+   * If a line is already up it unkeys first, so back-and-forth chatter sounds like two handsets.
+   * Plays on the UI bus (in your ear: not occluded or muffled) and dips the ambience a little.
+   */
+  radioLine(voice: RadioVoice, sec: number): void {
+    if (!this.ctx) return;
+    const handover = this.line !== null;
+    if (handover) this.radioEnd();
+    const c = this.ctx, v = RADIO[voice], now = c.currentTime, w0 = handover ? rnd(0.18, 0.3) : 0.02, t0 = now + w0, end = t0 + sec;
+    const srcs: AudioScheduledSourceNode[] = [];
+    this.flat(() => {
+      this.tone('square', rnd(2200, 2800), 1700, 0.07, 0.001, 0.012, w0);
+      this.hiss('bandpass', rnd(1800, 2600), rnd(1100, 1500), 1.2, 0.15, 0.003, rnd(0.07, 0.15), w0 + 0.005);
+      this.hiss('highpass', 4000, 2500, 0.7, 0.06, 0.002, 0.05, w0 + 0.005);
+    });
+    const out = this.gain(0, this.ui);
+    out.gain.setValueAtTime(0, now); out.gain.setTargetAtTime(1, t0 + 0.05, 0.05);
+    // The carrier breathes: AM wobble, much slower and deeper for the Voice.
+    const am = this.gain(1 - v.am * 0.5, out);
+    this.lfo(am.gain, voice === 'voice' ? rnd(0.5, 0.9) : rnd(3.5, 8), v.am * 0.5, srcs);
+    const hiss = this.bedNoise('bandpass', rnd(1500, 2300), rnd(1.2, 2), v.hiss, am, srcs);
+    if (voice === 'voice') { this.lfo(hiss.f.frequency, rnd(0.2, 0.4), 500, srcs); this.lfo(am.gain, 6.5, 0.08, srcs); }
+    const cs = c.createBufferSource(), chp = c.createBiquadFilter();
+    cs.buffer = this.crackle; cs.loop = true; cs.playbackRate.value = rnd(0.7, 1.3);
+    chp.type = 'highpass'; chp.frequency.value = rnd(900, 1600);
+    cs.connect(chp).connect(this.gain(v.crack, am)); cs.start(t0, Math.random() * 2); srcs.push(cs);
+
+    // Garbled voice: a buzz through two moving vowel formants, squeezed into the 350-2700 Hz radio band,
+    // gated in syllables and words. The Voice gets a detuned second throat, vibrato and a pitch drift.
+    const fa = c.createBiquadFilter(), fb = c.createBiquadFilter(), hp = c.createBiquadFilter(), lp = c.createBiquadFilter(), syl = this.gain(0, am);
+    fa.type = 'bandpass'; fa.Q.value = 4; fb.type = 'bandpass'; fb.Q.value = 6;
+    hp.type = 'highpass'; hp.frequency.value = 350; lp.type = 'lowpass'; lp.frequency.value = 2700;
+    const mk = this.gain(1.6, hp); fa.connect(mk); fb.connect(mk); hp.connect(lp).connect(syl);
+    const throats: OscillatorNode[] = [];
+    for (let i = 0, n = voice === 'voice' ? 2 : 1; i < n; i++) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = v.f0; o.detune.value = i * rnd(18, 30);
+      o.connect(fa); o.connect(fb); o.start(t0); srcs.push(o); throats.push(o);
+      if (voice === 'voice') { this.lfo(o.frequency, rnd(4.5, 5.5), v.f0 * 0.05, srcs); this.lfo(o.frequency, rnd(0.2, 0.35), v.f0 * 0.07, srcs); }
+    }
+    const f0 = v.f0 * rnd(0.92, 1.08), soft = voice === 'voice' ? 0.04 : 0.012;
+    let s = t0 + rnd(0.15, 0.3), inWord = 0;
+    while (s < end - 0.3) {
+      const len = rnd(v.syl[0], v.syl[1]), [a, b] = pick(VOWELS), last = Math.random() < 0.3 || inWord > 3;
+      const p = f0 * rnd(0.9, 1.12) * (last ? 0.88 : 1);
+      for (const o of throats) o.frequency.setTargetAtTime(p, s, 0.02);
+      fa.frequency.setTargetAtTime(a, s, 0.015); fb.frequency.setTargetAtTime(b, s, 0.015);
+      syl.gain.setTargetAtTime(v.mur * rnd(0.5, 1), s, soft); syl.gain.setTargetAtTime(0, s + len * 0.7, 0.03);
+      s += len; inWord++;
+      if (last) { inWord = 0; s += Math.random() < 0.1 ? rnd(0.3, 0.5) : rnd(0.06, 0.2); }
+    }
+    syl.gain.setTargetAtTime(0, end - 0.3, 0.03);
+    // Safety: never outlive the line by long, even if the HUD stalls.
+    for (const src of srcs) src.stop(end + 1.5);
+    for (const src of srcs) this.track(src);
+    this.line = { out, srcs, voice };
+    const g = this.talk.gain;
+    g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.setTargetAtTime(0.7, now, 0.15);
+  }
+
+  /**
+   * The line is over: unkey. `tail` plays the sign-off (Dot: a two-tone roger beep; the squad: a click and a
+   * "kssh"; the Voice: a long tail with a falling, beating whistle). `false` cuts it dead (queue cleared).
+   */
+  radioEnd(tail = true): void {
+    const l = this.line;
+    if (!l || !this.ctx) return;
+    this.line = null;
+    const t = this.ctx.currentTime, g = l.out.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.setTargetAtTime(0, t, tail ? 0.015 : 0.01);
+    for (const s of l.srcs) { try { s.stop(t + 0.15); } catch { /* already stopped */ } }
+    const tg = this.talk.gain;
+    tg.cancelScheduledValues(t); tg.setValueAtTime(tg.value, t); tg.setTargetAtTime(1, t + (tail ? 0.3 : 0), 0.4);
+    if (!tail) return;
+    this.flat(() => {
+      switch (l.voice) {
+        case 'dot': {
+          const j = rnd(0.97, 1.03);
+          this.tone('triangle', 1200 * j, 1200 * j, 0.09, 0.002, 0.06); this.tone('triangle', 900 * j, 900 * j, 0.09, 0.002, 0.08, 0.075);
+          this.hiss('bandpass', 2400, 1300, 1.2, 0.12, 0.002, rnd(0.1, 0.16), 0.17);
+          break;
+        }
+        case 'team':
+          this.tone('square', 1900, 1500, 0.05, 0.001, 0.01);
+          this.hiss('bandpass', rnd(2200, 2800), 1200, 1.1, 0.14, 0.002, rnd(0.12, 0.22), 0.01);
+          break;
+        case 'voice':
+          this.hiss('lowpass', 3000, 600, 0.8, 0.12, 0.004, rnd(0.3, 0.45));
+          this.tone('sine', 1100, 700, 0.035, 0.02, 0.55, 0.05); this.tone('sine', 1132, 688, 0.035, 0.02, 0.55, 0.05);
+          break;
+      }
+    });
+  }
+
+  /** A radio set sitting in the level, crackling to itself. Returns seconds until its next burst. */
+  radioProp(x: number, z: number): number {
+    this.emit([x, z], { reach: 0.7, wet: 0.2, jit: 0.1 }, () => {
+      const len = rnd(0.15, 0.5);
+      this.hiss('bandpass', rnd(1500, 2500), rnd(1100, 1800), 1.8, rnd(0.07, 0.12), 0.01, len);
+      this.pops(rnd(0.08, 0.14), 1200, len + rnd(0.1, 0.4));
+      // Now and then a ghost of a voice, or a heterodyne whistle drifting.
+      if (Math.random() < 0.3) { const [a, b] = pick(VOWELS); this.vocal(rnd(190, 260), rnd(170, 230), a, b, 0.05, 0.02, rnd(0.12, 0.2), len * 0.4); }
+      if (Math.random() < 0.2) { const f = rnd(1800, 2600); this.tone('sine', f, f * rnd(0.96, 1.04), 0.012, 0.15, rnd(0.6, 1.1)); }
+    });
+    return rnd(1.2, 3.2);
   }
 }

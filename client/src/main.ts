@@ -69,6 +69,9 @@ fx.onSplat = (x, z) => sfx.splat(x, z);
 // Walls between you and a sound muffle it.
 sfx.occluded = (x, z) => !L.hasLOS(cam.x, cam.z, x, z, doors);
 const hud = new Hud();
+// Radio chatter: crackle under each subtitle line and a sign-off when it ends; the speaker picks the handset.
+hud.onRadioLine = (who, _text, sec) => sfx.radioLine(who === t('Voice') ? 'voice' : who === t('Dot') ? 'dot' : 'team', sec);
+hud.onRadioEnd = (cleared) => sfx.radioEnd(!cleared);
 const net = new Net();
 const vm = new ViewModel(WEAPONS.map((w) => w.id));
 
@@ -1247,6 +1250,19 @@ function zedAudio(dt: number): void {
   }
 }
 
+/** Radio sets in the current level, each with its own timer until it next crackles. */
+let radioSets: { x: number; z: number; t: number }[] = [], radioLevel: Level | null = null;
+/** The nearest radio set within earshot hisses and crackles to itself, so it draws you over. */
+function radioAudio(dt: number): void {
+  if (radioLevel !== L) {
+    radioLevel = L;
+    radioSets = L.def.props.filter((p) => p.type === 'radio').map((p) => ({ x: (p.x + p.w / 2) * TILE, z: (p.z + p.d / 2) * TILE, t: Math.random() * 2 }));
+  }
+  let near: (typeof radioSets)[number] | null = null, best = 18;
+  for (const r of radioSets) { const d = Math.hypot(r.x - cam.x, r.z - cam.z); if (d < best) { best = d; near = r; } }
+  if (near && (near.t -= dt) <= 0) near.t = sfx.radioProp(near.x, near.z);
+}
+
 const indoorAt = (x: number, z: number): boolean => isIndoor(L.floorAt(x, z));
 const _fwd = new pc.Vec3();
 /** Feed the audio listener: where you hear from (the camera, so spectating works), and how you are. */
@@ -1254,6 +1270,7 @@ function listen(dt: number): void {
   _fwd.copy(camera.forward);
   const h = Math.hypot(_fwd.x, _fwd.z) || 1;
   sfx.setScene(range ? -1 : chapter);
+  if (inGame && !range) radioAudio(dt);
   sfx.update(dt, {
     x: cam.x, z: cam.z, fx: _fwd.x / h, fz: _fwd.z / h, indoor: indoorAt(cam.x, cam.z),
     hurt: inGame && me.st === PSTATE.ALIVE ? 1 - me.hp / PLAYER.hp : 0,
