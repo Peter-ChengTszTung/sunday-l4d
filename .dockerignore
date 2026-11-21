@@ -1,3 +1,25 @@
+# Dependencies and build output are produced inside the image
 node_modules
 dist
+
+# VCS, editor and agent tooling
 .git
+.gitignore
+.claude
+.agents
+skills-lock.json
+.vscode
+.idea
+.DS_Store
+
+# Docs and container files aren't needed in the build context
+docs
+README.md
+Dockerfile
+.dockerignore
+
+# Logs and local env
+*.log
+npm-debug.log*
+.env
+.env.*

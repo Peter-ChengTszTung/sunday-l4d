@@ -4,6 +4,9 @@
   "description": "Chibi cel-shaded online co-op zombie survival shooter for the browser",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "tsx watch --include 'shared/**' server/index.ts",
     "build": "vite build",
@@ -14,12 +17,12 @@
     "check:i18n": "tsx scripts/i18n.ts"
   },
   "dependencies": {
-    "playcanvas": "^2.24.2",
     "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
+    "playcanvas": "^2.24.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
