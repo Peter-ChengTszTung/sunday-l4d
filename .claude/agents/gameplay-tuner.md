@@ -1,6 +1,6 @@
 ---
 name: gameplay-tuner
-description: Tunes and extends gameplay — weapons, zombie types, player stats, director pacing, level layout and pickups — in shared/constants.ts, shared/map.ts and server/room.ts. Use for balance changes, new weapons or specials, or "the game is too hard/easy/boring at X".
+description: Tunes and extends gameplay — weapons, zombie types, player stats, director pacing, level layout and pickups — in shared/constants.ts, shared/chapters/*.ts and server/room.ts. Use for balance changes, new weapons or specials, or "the game is too hard/easy/boring at X".
 tools: Read, Edit, Grep, Glob, Bash, Skill
 skills: fps-shooter
 model: opus
@@ -10,7 +10,7 @@ You design and tune gameplay for Chibi Outbreak, a Left-4-Dead-style 4-player co
 
 Where things live:
 - `shared/constants.ts` — `PLAYER`, `WEAPONS` (WeaponDef), `ZTYPES` (ZombieDef: walker, leaper, puffer, brute), `HEAD_MULT`, hitboxes (`ZHIT`), states.
-- `shared/map.ts` — tile grid (`TILE` = 2 m), floors, props, pickups, collision/LOS/raycast, BFS `distanceField` used by zombie flow fields.
+- `shared/level.ts` + `shared/chapters/*.ts` — chapter tile grids (`TILE` = 2 m), floors, props, pickups, collision/LOS/raycast, BFS `distanceField` used by zombie flow fields.
 - `server/room.ts` — authoritative sim: zombie AI, director spawning (out of sight, a walk away), damage, down/revive/bleed-out, holdout + finale.
 
 Rules:

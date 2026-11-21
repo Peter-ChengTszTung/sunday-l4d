@@ -13,7 +13,13 @@ export class Hud {
     ringfg: document.getElementById('ringfg') as unknown as SVGCircleElement, ringlabel: $('ringlabel'), hitmark: $('hitmark'), vignette: $('vignette'),
     goo: $('goo'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
     spectate: $('spectate'), end: $('end'), endtitle: $('endtitle'), endstats: $('endstats'), endboard: $('endboard'), pause: $('pause'),
+    endnext: $('endnext'), waypoint: $('waypoint'), wpdist: $('wpdist'), radio: $('radio'), radiowho: $('radiowho'), radioline: $('radioline'),
+    intro: $('intro'), introch: $('introch'), introtitle: $('introtitle'), introsub: $('introsub'), introtext: $('introtext'),
+    notecard: $('notecard'), notetitle: $('notetitle'), notetext: $('notetext'),
   };
+  private radioQ: [string, string][] = [];
+  private radioT = 0;
+  private introT = 0;
   private last: Record<string, string> = {};
   private hurtT = 0;
   private dirT = 0;
@@ -82,6 +88,47 @@ export class Hud {
   }
 
   setObjective(text: string): void { this.set('obj', text, (v) => { this.el.objective.textContent = v; }); }
+  flashObjective(): void { const o = this.el.objective; o.classList.remove('flash'); void o.offsetWidth; o.classList.add('flash'); }
+
+  /** Screen position (CSS px) of the quest marker, or null to hide it. `edge` = clamped because it is off-screen. */
+  waypoint(x: number | null, y = 0, dist = 0, edge = false): void {
+    const w = this.el.waypoint;
+    this.set('wpOn', String(x !== null), () => { w.hidden = x === null; });
+    if (x === null) return;
+    w.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
+    this.set('wpEdge', String(edge), () => { w.classList.toggle('edge', edge); });
+    this.set('wpDist', String(Math.round(dist)), (v) => { this.el.wpdist.textContent = `${v} m`; });
+  }
+
+  /** Queue radio/bark lines; each shows for a few seconds. `now` replaces whatever is playing. */
+  radio(lines: [string, string][], now = false): void {
+    if (now) { this.radioQ = []; this.radioT = 0; }
+    this.radioQ.push(...lines);
+  }
+  private nextRadio(): void {
+    const line = this.radioQ.shift();
+    this.el.radio.hidden = !line;
+    if (!line) return;
+    this.el.radiowho.textContent = line[0];
+    this.el.radioline.textContent = line[1];
+    this.radioT = 2.6 + line[1].length * 0.05;
+  }
+
+  intro(chapterNo: number, title: string, subtitle: string, text: string): void {
+    const e = this.el;
+    e.introch.textContent = `CHAPTER ${chapterNo}`;
+    e.introtitle.textContent = title; e.introsub.textContent = subtitle; e.introtext.textContent = text;
+    e.intro.hidden = false;
+    e.intro.style.animation = 'none'; void e.intro.offsetWidth; e.intro.style.animation = '';
+    this.introT = 9;
+  }
+
+  note(title: string | null, text = ''): void {
+    this.el.notecard.hidden = title === null;
+    if (title === null) return;
+    this.el.notetitle.textContent = title; this.el.notetext.textContent = text;
+  }
+  get noteOpen(): boolean { return !this.el.notecard.hidden; }
   setHoldout(seconds: number): void {
     this.set('ho', String(seconds), () => { this.el.holdout.hidden = seconds < 0; this.el.holdout.textContent = `HOLD OUT! ${seconds}s`; });
   }
@@ -132,13 +179,16 @@ export class Hud {
 
   update(dt: number): void {
     this.hurtT -= dt;
+    if (this.radioT > 0 || this.radioQ.length) { this.radioT -= dt; if (this.radioT <= 0) this.nextRadio(); }
+    if (this.introT > 0) { this.introT -= dt; if (this.introT <= 0) this.el.intro.hidden = true; }
     if (this.dirT > 0) { this.dirT -= dt; if (this.dirT <= 0) this.el.dmgdir.style.opacity = '0'; }
     if (this.gooT > 0) { this.gooT -= dt; if (this.gooT <= 1.2) { this.el.goo.style.transition = 'opacity 1.2s'; this.el.goo.style.opacity = '0'; } }
   }
 
-  showEnd(won: boolean, kills: number, seconds: number, board: { name: string; kills: number }[]): void {
+  showEnd(won: boolean, kills: number, seconds: number, board: { name: string; kills: number }[], next: string): void {
     this.el.end.hidden = false;
-    this.el.endtitle.textContent = won ? 'You made it!' : 'Squad wiped…';
+    this.el.endnext.textContent = next;
+    this.el.endtitle.textContent = won ? 'Chapter complete!' : 'Squad wiped…';
     this.el.endtitle.style.color = won ? '#2f9e44' : '#c92a4b';
     const m = Math.floor(seconds / 60), s = String(seconds % 60).padStart(2, '0');
     this.el.endstats.textContent = `${kills} zombies bonked in ${m}:${s}`;

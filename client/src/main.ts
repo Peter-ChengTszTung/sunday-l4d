@@ -2,9 +2,10 @@
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
 import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS } from '../../shared/constants';
-import { MAP, F, floorAt, moveSlide, rayGrid } from '../../shared/map';
+import { F, isIndoor, type Level } from '../../shared/level';
+import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
-import { buildWorld, type PickupView } from './world';
+import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
 import { ViewModel, buildGun, type Gun } from './viewmodel';
 import { app, setTorch } from './gfx';
@@ -31,7 +32,16 @@ camera.addComponent('camera', { fov: 74, nearClip: 0.08, farClip: 600, clearColo
 app.root.addChild(camera);
 const cam = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1, rot: new pc.Quat() };
 
-const world = buildWorld();
+let chapter = Math.max(0, Math.min(CHAPTERS.length - 1, Number(params.get('ch') ?? localStorage.getItem('chibi.ch') ?? 0) || 0));
+let L: Level = getLevel(chapter);
+let world: World = buildWorld(L);
+/** Swap the rendered world when the room moves to another chapter. */
+function loadChapter(ch: number): void {
+  if (ch === chapter && world) return;
+  world.dispose();
+  chapter = ch; L = getLevel(ch); world = buildWorld(L);
+  step = 0; qc = 0; doors = 0;
+}
 const fx = new FX();
 const sfx = new Sfx();
 const hud = new Hud();
@@ -48,7 +58,7 @@ interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry
 interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; z: number; scale: number }
 
 const me = {
-  id: 0, x: MAP.spawns[0].x, y: 0, z: MAP.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
+  id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
   hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, medkits: 0, respawn: 0, rev: 0,
   weapon: 0, primary: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve),
   fireCd: 0, reloadT: 0, shoveCd: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
@@ -58,7 +68,7 @@ const mates = new Map<number, Mate>();
 const zeds = new Map<number, Zed>();
 const corpses: Corpse[] = [];
 let inGame = false, locked = false, ended = false;
-let gateOpen = false, genStarted = false, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play';
+let doors = 0, step = 0, qc = 0, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play', debugServer = false;
 let torchOn = true, groanT = 2, sendT = 0, lookDX = 0, lookDY = 0, time = 0;
 const keys = new Set<string>();
 const mouse = { left: false };
@@ -124,10 +134,10 @@ const _d: V3 = { x: 0, y: 0, z: 0 }, _end: V3 = { x: 0, y: 0, z: 0 }, _muz: V3 =
 function castShot(o: V3, d: V3, range: number): { t: number; zed: Zed | null; head: boolean } {
   const h = Math.hypot(d.x, d.z);
   let t = range;
-  if (h > 1e-5) t = Math.min(t, rayGrid(o.x, o.z, d.x / h, d.z / h, range * h, gateOpen) / h);
+  if (h > 1e-5) t = Math.min(t, L.rayGrid(o.x, o.z, d.x / h, d.z / h, range * h, doors) / h);
   if (d.y < -1e-5) t = Math.min(t, -o.y / d.y);
-  const f = floorAt(o.x, o.z);
-  if (d.y > 1e-5 && f >= F.INTERIOR) t = Math.min(t, (CEIL_H - o.y) / d.y);
+  const f = L.floorAt(o.x, o.z);
+  if (d.y > 1e-5 && isIndoor(f)) t = Math.min(t, (CEIL_H - o.y) / d.y);
   let zed: Zed | null = null, head = false;
   const sphere = (cx: number, cy: number, cz: number, r: number): number => {
     const ox = cx - o.x, oy = cy - o.y, oz = cz - o.z;
@@ -205,7 +215,7 @@ function shove(): void {
 }
 
 // ------------------------------------------------------------- interactions
-type Target = { kind: 'revive'; mate: Mate } | { kind: 'pickup'; pv: PickupView; usable: boolean; text: string } | null;
+type Target = { kind: 'revive'; mate: Mate } | { kind: 'pickup'; pv: PickupView; usable: boolean; text: string } | { kind: 'note'; nv: NoteView } | null;
 let target: Target = null;
 
 function findTarget(): Target {
@@ -217,15 +227,20 @@ function findTarget(): Target {
     if (d < bestD) { bestD = d; best = { kind: 'revive', mate: m }; }
   }
   if (best) return best;
+  for (const nv of world.notes) {
+    const d = Math.hypot(nv.def.x - me.x, nv.def.z - me.z);
+    if (d < bestD) { bestD = d; best = { kind: 'note', nv }; }
+  }
   for (const pv of world.pickups) {
-    if (pv.taken) continue;
+    if (pv.taken || !pv.shown) continue;
     const d = Math.hypot(pv.def.x - me.x, pv.def.z - me.z);
     if (d >= bestD) continue;
     const k = pv.def.kind;
     let usable = true, text = '';
     if (k === 'medkit') { usable = me.medkits < 1; text = usable ? 'Grab medkit' : 'Already carrying a medkit'; }
     else if (k === 'ammo') { usable = me.primary >= 0; text = usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'; }
-    else if (k === 'gen') { if (genStarted || gateOpen) continue; text = 'Start the generator (it will be LOUD)'; }
+    else if (k === 'obj') { if (holdout >= 0) continue; text = pv.def.label ?? 'Use'; }
+    else if (k === 'item') text = `Pick up ${pv.def.label ?? 'item'}`;
     else { const wi = WEAPONS.findIndex((w) => w.id === k); text = me.primary === wi ? `Restock ${WEAPONS[wi].name}` : `Take ${WEAPONS[wi].name}`; }
     bestD = d; best = { kind: 'pickup', pv, usable, text };
   }
@@ -233,9 +248,12 @@ function findTarget(): Target {
 }
 
 function interact(): void {
+  if (hud.noteOpen) { hud.note(null); return; }
   if (!target) return;
   if (target.kind === 'pickup' && target.usable) net.send({ t: 'u', id: target.pv.def.id });
+  if (target.kind === 'note') { hud.note(target.nv.def.title, target.nv.def.text); openNote = target.nv; world.setNoteRead(target.nv.def.id); sfx.pickup(); }
 }
+let openNote: NoteView | null = null;
 
 function onGot(pickupId: number): void {
   const pv = world.pickups[pickupId];
@@ -243,7 +261,7 @@ function onGot(pickupId: number): void {
   const k = pv.def.kind;
   if (k === 'medkit') hud.feed('Medkit grabbed — hold Q to heal');
   else if (k === 'ammo') { if (me.primary >= 0) me.reserve[me.primary] = WEAPONS[me.primary].reserve; hud.feed('Ammo topped up'); }
-  else if (k !== 'gen') {
+  else if (k !== 'obj' && k !== 'item') {
     const wi = WEAPONS.findIndex((w) => w.id === k);
     me.primary = wi; me.mag[wi] = WEAPONS[wi].mag; me.reserve[wi] = WEAPONS[wi].reserve;
     switchWeapon(wi);
@@ -336,19 +354,33 @@ const POSE: Pose[] = ['idle', 'run', 'attack', 'stagger', 'windup', 'leap'];
 // -------------------------------------------------------------------- events
 function onEvent(ev: GameEvent): void {
   switch (ev[0]) {
-    case 'reset':
+    case 'reset': {
+      const [, ch, st, dm, taken, keep] = ev;
       for (const z of zeds.values()) z.chibi.dispose();
       zeds.clear();
       for (const c of corpses) c.chibi.dispose();
       corpses.length = 0;
-      Object.assign(me, { weapon: 0, primary: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
-      vm.setWeapon(0);
-      gateOpen = false; genStarted = false; ended = false;
-      world.setGate(false, true); world.setGenerator(false);
+      const newChapter = ch !== chapter;
+      loadChapter(ch);
+      if (keep) {
+        // Checkpoint restart: keep your gun, top the ammo back up.
+        for (let i = 0; i < WEAPONS.length; i++) { me.mag[i] = WEAPONS[i].mag; me.reserve[i] = WEAPONS[i].reserve; }
+        Object.assign(me, { reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0 });
+      } else {
+        Object.assign(me, { weapon: 0, primary: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
+        vm.setWeapon(0);
+      }
+      ended = false;
+      doors = dm; world.setDoors(dm, true);
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
+      for (const id of taken) world.setTaken(id, true);
+      enterStep(st, false);
+      if (!keep || newChapter) showIntro();
+      else { hud.banner('Back to the checkpoint!'); hud.radio([], true); }
       hud.hideEnd();
       hud.pause(inGame && !locked && !DEBUG);
       break;
+    }
     case 'tp': if (ev[1] === me.id) { me.x = ev[2]; me.z = ev[3]; me.yaw = ev[4]; me.y = 0; me.vy = 0; me.vx = me.vz = 0; } break;
     case 'msg': hud.feed(ev[1]); break;
     case 'heal': if (ev[1] === me.id) sfx.heal(); break;
@@ -366,12 +398,24 @@ function onEvent(ev: GameEvent): void {
     case 'shove': { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.6; break; }
     case 'pk': world.setTaken(ev[1], true); break;
     case 'got': if (ev[1] === me.id) onGot(ev[2]); break;
-    case 'holdstart':
-      genStarted = true; world.setGenerator(true);
-      hud.banner('HOLD OUT!', true); sfx.horde(); sfx.gate();
-      hud.feed(`${ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone'} started the generator`);
+    case 'use': {
+      world.setTaken(ev[2], true);
+      const s = L.def.steps[step];
+      const who = ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone';
+      hud.feed(`${who}: ${(L.def.pickups[ev[2]]?.label ?? 'used it').replace(/\s*\(.*\)$/, '')}`);
+      sfx.gate();
+      if (s?.hold) { hud.banner('HOLD OUT!', true); sfx.horde(); }
       break;
-    case 'gate': gateOpen = true; world.setGate(true); hud.banner('The gate is open — RUN!'); sfx.gate(); break;
+    }
+    case 'door': doors = ev[2] ? doors | (1 << ev[1]) : doors & ~(1 << ev[1]); world.setDoors(doors); sfx.gate(); break;
+    case 'step': enterStep(ev[1], true); break;
+    case 'item': {
+      const who = ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone';
+      hud.feed(`${who} found a ${L.def.pickups[ev[2]]?.label ?? 'item'} (${ev[3]}/${ev[4]})`);
+      sfx.pickup();
+      break;
+    }
+    case 'checkpoint': hud.banner('Checkpoint saved'); sfx.heal(); break;
     case 'zdie': killZed(ev[1], ev[5] === 1); if (ev[6] === me.id) hud.hitmark(ev[5] === 1, true); break;
     case 'boom': {
       const p = { x: ev[1], y: 0.9, z: ev[2] };
@@ -401,7 +445,10 @@ function onEvent(ev: GameEvent): void {
     case 'end': {
       ended = true;
       const board = (ev[4] ?? []).map(([id, kills]) => ({ name: id === me.id ? 'You' : roster.get(id)?.name ?? '???', kills }));
-      hud.showEnd(ev[1] === 1, ev[2], ev[3], board);
+      const ni = ev[5] ?? -1, next = CHAPTERS[ni];
+      hud.showEnd(ev[1] === 1, ev[2], ev[3], board,
+        ev[1] === 1 ? (next ? (ni === 0 ? 'Campaign complete! Back to chapter 1…' : `Next: Chapter ${ni + 1} — ${next.title}`) : '')
+          : 'Back to the last checkpoint (or the chapter start)…');
       hud.pause(false);
       if (ev[1] === 1) sfx.win(); else sfx.lose();
       break;
@@ -412,9 +459,14 @@ function onEvent(ev: GameEvent): void {
 net.onMessage = (m: ServerMsg) => {
   switch (m.t) {
     case 'w':
+      loadChapter(m.ch);
       me.id = m.id; me.x = m.x; me.z = m.z;
+      for (const pv of world.pickups) world.setTaken(pv.def.id, false);
       for (const id of m.taken) world.setTaken(id, true);
-      gateOpen = m.gate === 1; world.setGate(gateOpen, true);
+      doors = m.doors; world.setDoors(doors, true);
+      debugServer = m.debug === 1;
+      enterStep(m.step, false);
+      showIntro();
       history.replaceState(null, '', `${location.pathname}${location.search}#${m.room}`);
       hud.setRoom(m.room);
       enterGame();
@@ -422,8 +474,8 @@ net.onMessage = (m: ServerMsg) => {
     case 'ro': syncRoster(m.players); break;
     case 'err': $('lobbymsg').textContent = m.msg; break;
     case 's':
-      serverState = m.st; holdout = m.ho;
-      if ((m.g === 1) !== gateOpen) { gateOpen = m.g === 1; world.setGate(gateOpen); }
+      serverState = m.st; holdout = m.ho; qc = m.qc;
+      if (m.g !== doors) { doors = m.g; world.setDoors(doors); }
       for (const ev of m.ev) onEvent(ev);
       applyPlayers(m.p);
       applyZombies(m.z);
@@ -451,7 +503,8 @@ async function join(): Promise<void> {
   $('lobbymsg').textContent = '';
   sfx.unlock();
   try { localStorage.setItem('chibi.name', nameInput.value.trim()); } catch { /* private mode */ }
-  try { await net.connect(nameInput.value.trim(), codeInput.value.trim()); }
+  try { localStorage.setItem('chibi.ch', String(chapter)); } catch { /* private mode */ }
+  try { await net.connect(nameInput.value.trim(), codeInput.value.trim(), chapter); }
   catch (e) { $('lobbymsg').textContent = (e as Error).message; btn.disabled = false; }
 }
 $('join').addEventListener('submit', (e) => { e.preventDefault(); void join(); });
@@ -464,7 +517,69 @@ function enterGame(): void {
   hud.pause(!locked && !DEBUG);
   if (!DEBUG) void canvas.requestPointerLock();
 }
-if (DEBUG && params.has('room')) void join();
+// `?room=X&step=N` (from the map viewer) joins straight away and jumps to that quest step on a dev server.
+if ((DEBUG || params.has('step')) && params.has('room')) void join();
+
+// Chapter picker (also swaps the lobby backdrop).
+const chapterSelect = $<HTMLSelectElement>('chapter');
+chapterSelect.replaceChildren(...CHAPTERS.map((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = `${i + 1}. ${c.title}`; return o; }));
+chapterSelect.value = String(chapter);
+chapterSelect.addEventListener('change', () => { loadChapter(Number(chapterSelect.value)); });
+
+function showIntro(): void {
+  const d = L.def;
+  hud.intro(chapter + 1, d.title, d.subtitle, d.intro);
+}
+
+/** A new quest step became active: update markers, play its radio lines. */
+function enterStep(i: number, announce: boolean): void {
+  step = i; qc = 0;
+  world.setStep(i);
+  const s = L.def.steps[i];
+  if (!s) return;
+  hud.radio(s.radio, true);
+  if (announce) { hud.flashObjective(); sfx.pickup(); }
+}
+
+/** Where the quest marker should point right now (world metres). */
+function waypointTarget(): { x: number; z: number } | null {
+  const s = L.def.steps[step];
+  if (!s || serverState !== 'play') return null;
+  if (s.kind === 'collect') {
+    let best: { x: number; z: number } | null = null, bd = Infinity;
+    for (const pv of world.pickups) {
+      if (pv.def.kind !== 'item' || pv.def.group !== s.group || pv.taken) continue;
+      const d = Math.hypot(pv.def.x - me.x, pv.def.z - me.z);
+      if (d < bd) { bd = d; best = pv.def; }
+    }
+    return best;
+  }
+  if ((s.kind === 'reach' || s.kind === 'gather') && s.area && L.inRect(me.x, me.z, s.area)) return null;
+  if (holdout >= 0 && s.kind !== 'holdout') return null;
+  return s.at;
+}
+
+const _wp = new pc.Vec3(), _scr = new pc.Vec3();
+function updateWaypoint(): void {
+  const t = me.st === PSTATE.DEAD ? null : waypointTarget();
+  if (!t) { hud.waypoint(null); return; }
+  const dist = Math.hypot(t.x - me.x, t.z - me.z);
+  _wp.set(t.x, 1.6, t.z);
+  const w = canvas.clientWidth, h = canvas.clientHeight, m = 36;
+  const ahead = (t.x - cam.x) * cam.fx + (1.6 - cam.y) * cam.fy + (t.z - cam.z) * cam.fz;
+  camera.camera!.worldToScreen(_wp, _scr);
+  let x = _scr.x, y = _scr.y;
+  let edge = false;
+  if (ahead <= 0.1) { x = w - x; y = h - y; edge = true; } // behind: mirror, then push to the edge
+  if (edge || x < m || x > w - m || y < m || y > h - m) {
+    const cx = w / 2, cy = h / 2;
+    let dx = x - cx, dy = y - cy;
+    if (ahead <= 0.1 && Math.abs(dy) > Math.abs(dx) * 0.2) dy = Math.abs(dy); // behind → bottom edge reads better
+    const k = Math.min((w / 2 - m) / Math.max(1e-3, Math.abs(dx)), (h / 2 - m) / Math.max(1e-3, Math.abs(dy)));
+    x = cx + dx * k; y = cy + dy * k; edge = true;
+  }
+  hud.waypoint(x, y, dist, edge);
+}
 
 // ---------------------------------------------------------------- simulation
 function updateMe(dt: number): void {
@@ -483,7 +598,7 @@ function updateMe(dt: number): void {
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
   me.vx += (wx - me.vx) * k; me.vz += (wz - me.vz) * k;
   if (alive) {
-    moveSlide(me, (me.vx + me.kx) * dt, (me.vz + me.kz) * dt, PLAYER.radius, gateOpen);
+    L.moveSlide(me, (me.vx + me.kx) * dt, (me.vz + me.kz) * dt, PLAYER.radius, doors);
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
     if (on && keys.has('Space') && me.onGround) { me.vy = 6.4; me.onGround = false; }
     me.vy -= 19 * dt; me.y += me.vy * dt;
@@ -493,7 +608,7 @@ function updateMe(dt: number): void {
       const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
       const d = Math.hypot(dx, dz);
-      if (d < min && d > 0.001) moveSlide(me, (dx / d) * (min - d), (dz / d) * (min - d), PLAYER.radius, gateOpen);
+      if (d < min && d > 0.001) L.moveSlide(me, (dx / d) * (min - d), (dz / d) * (min - d), PLAYER.radius, doors);
     }
   } else { me.vx = me.vz = 0; me.y = 0; }
 
@@ -596,8 +711,10 @@ function updateHud(dt: number): void {
   const team: MateView[] = [...mates.values()].map((m) => ({ id: m.id, name: m.name, color: hex(SURVIVORS[m.look % SURVIVORS.length].shirt), hp: m.hp, st: m.st, respawn: m.respawn }));
   hud.setTeam(team);
   hud.setHoldout(holdout);
-  hud.setObjective(serverState !== 'play' ? '—' : holdout >= 0 ? 'Survive until the gate opens!' : gateOpen ? 'Get everyone into the safe house!'
-    : me.z > 61 * TILE ? 'Start the generator to open the gate' : floorAt(me.x, me.z) === F.SAFE_A ? 'Gear up, then head out the door' : 'Fight your way to the safe house');
+  const s = L.def.steps[step];
+  hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${s.objective} ${qc}/${s.count}` : s.objective);
+  updateWaypoint();
+  if (openNote && Math.hypot(openNote.def.x - me.x, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
   hud.crosshair(me.st === PSTATE.ALIVE);
   hud.spread(6 + (w.spread + me.bloom) * 260);
   hud.spectate(me.st === PSTATE.DEAD ? `Knocked out — a teammate will rescue you in ${me.respawn}s` : me.st === PSTATE.DOWN ? 'You are down! Wait for a teammate to help you up' : null);
@@ -609,7 +726,8 @@ function updateHud(dt: number): void {
     else { hud.ring(null); hud.prompt(`<kbd>Hold E</kbd> Help ${target.mate.name} up`); }
   } else {
     hud.ring(null);
-    hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text) : null);
+    hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
+      : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> Read: ${target.nv.def.title}` : null);
   }
   hud.update(dt);
 }
@@ -630,7 +748,8 @@ app.on('update', (rawDt: number) => {
   } else {
     // Lobby backdrop: a slow drift down the main street.
     orbit += dt * 0.12;
-    cam.x = 43 + Math.sin(orbit) * 6; cam.y = 3.2; cam.z = 30 + Math.cos(orbit * 0.7) * 8;
+    const look = L.def.steps[0]?.at ?? L.def.spawns[0];
+    cam.x = look.x + Math.sin(orbit) * 4; cam.y = 3.2; cam.z = look.z + Math.cos(orbit * 0.7) * 4;
     quatYXZ(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0, cam.rot);
     camera.setPosition(cam.x, cam.y, cam.z);
     camera.setRotation(cam.rot);
@@ -642,4 +761,7 @@ app.on('update', (rawDt: number) => {
 });
 app.start();
 
-if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, world, fire, shove, interact, state: () => ({ inGame, locked, ended, gateOpen, genStarted, holdout, serverState }) } });
+// Debug: `?debug&step=N` jumps the room to quest step N after joining (dev server only).
+const jump = (n: number) => { if (debugServer) net.send({ t: 'dbg', step: n }); };
+if (params.has('step')) { const n = Number(params.get('step')); const t = setInterval(() => { if (me.id && debugServer) { jump(n); clearInterval(t); } }, 200); }
+if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, get world() { return world; }, get level() { return L; }, fire, shove, interact, jump, state: () => ({ inGame, locked, ended, chapter, step, qc, doors, holdout, serverState }) } });

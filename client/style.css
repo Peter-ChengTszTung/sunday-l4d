@@ -113,3 +113,30 @@ input:focus { box-shadow: 3px 3px 0 var(--pink); }
 #endboard { list-style: none; padding: 0; margin: 10px 0; }
 #endboard li { display: flex; justify-content: space-between; padding: 4px 10px; border-radius: 8px; }
 #endboard li:nth-child(odd) { background: rgba(26, 18, 38, 0.08); }
+
+/* Quest waypoint: a diamond pinned over the objective, clamped to the screen edge when off-screen. */
+#waypoint { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; will-change: transform; }
+#waypoint i { position: absolute; left: -11px; top: -11px; width: 18px; height: 18px; background: var(--yellow); border: 3px solid var(--ink); transform: rotate(45deg); border-radius: 3px; box-shadow: 2px 2px 0 var(--ink); }
+#waypoint.edge i { background: var(--pink); }
+#waypoint span { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); font-size: 13px; white-space: nowrap; color: var(--yellow); text-shadow: 0 2px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink); }
+#objective.flash { animation: objflash 1.2s ease-out; }
+@keyframes objflash { 0% { transform: scale(1.25); background: var(--yellow); } 100% { transform: scale(1); } }
+
+/* Radio subtitles. */
+#radio { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); max-width: min(640px, 90vw); background: rgba(26, 18, 38, 0.82); border: 3px solid var(--ink); border-radius: 14px; padding: 8px 14px; font-size: 16px; line-height: 1.35; text-align: center; }
+#radio b { color: var(--yellow); margin-right: 8px; }
+#radio b::after { content: ":"; }
+
+/* Chapter title card. */
+#intro { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); text-align: center; width: min(620px, 92vw); text-shadow: 0 3px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink); animation: intro 9s ease-in-out forwards; }
+#intro small { display: block; color: var(--teal); font-size: 16px; letter-spacing: 3px; }
+#intro h2 { margin: 4px 0; font-size: clamp(34px, 6vw, 62px); color: var(--yellow); }
+#intro em { display: block; font-style: normal; color: var(--pink); font-size: 20px; }
+#intro p { font-size: 16px; line-height: 1.45; margin-top: 14px; color: var(--cream); }
+@keyframes intro { 0% { opacity: 0; } 8% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
+
+#notecard { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+#notecard .card { text-align: left; transform: rotate(-1.5deg); }
+#notecard p { font-size: 17px; line-height: 1.5; }
+
+select { font: inherit; font-size: 16px; padding: 9px 10px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); outline: none; }

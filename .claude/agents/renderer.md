@@ -12,7 +12,7 @@ Ground rules for this codebase:
 - **No asset files.** Every model is built in code from the primitive/merge kit in `client/src/geo.ts`; keep it that way.
 - **Look:** `client/src/gfx.ts` holds the custom GLSL: 4-step banded lighting, stepped flashlight cone, fog, inverted-hull ink outlines. Architecture ink lines are thin beam geometry. Match this style for anything new.
 - **WebGL2 / GLSL only** — don't introduce WGSL or WebGPU-only paths.
-- Characters: `chibi.ts`; level: `world.ts` (reads `shared/map.ts`); first-person weapon: `viewmodel.ts`; particles/effects: `fx.ts`.
+- Characters: `chibi.ts`; level: `world.ts` (reads the chapter `Level` from `shared/level.ts`); first-person weapon: `viewmodel.ts`; particles/effects: `fx.ts`.
 - Rendering is client-only. Never move gameplay state into rendering code.
 
 Workflow:

@@ -9,7 +9,7 @@ model: opus
 You design enemy AI for Chibi Outbreak. The AI runs on the authoritative server (`server/room.ts`).
 
 How it works now (verify by reading the code):
-- Zombies follow a breadth-first flow field (`distanceField` in `shared/map.ts`) toward the nearest survivor, and beeline when close with line of sight (`hasLOS`).
+- Zombies follow a breadth-first flow field (`Level.distanceField` in `shared/level.ts`) toward the nearest survivor, and beeline when close with line of sight (`hasLOS`).
 - States `ZSTATE`: IDLE, RUN, ATTACK, STAGGER, WINDUP, LEAP. Types `ZTYPES`/`ZT`: walker, leaper (pounce, `leapDmg`), puffer (bursts, `boomDmg`/`boomRadius`, goo calls walkers), brute (one per run).
 - Director spawns zombies out of survivors' sight, a walk away; triggers hordes, the brute, and the generator holdout.
 - Zombie snapshots (`ZombieSnap` in `shared/protocol.ts`) carry state to clients, which animate in `client/src/chibi.ts`/`main.ts`.

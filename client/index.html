@@ -16,6 +16,7 @@
     <div id="dmgdir"></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b id="hitmark"></b></div>
 
+    <div id="waypoint" hidden><i></i><span id="wpdist"></span></div>
     <div id="top">
       <div id="objective"></div>
       <div id="holdout" hidden></div>
@@ -37,6 +38,9 @@
     </div>
     <div id="ammo"><div id="wname"></div><div id="acount"><b id="mag">15</b><span id="reserve">∞</span></div><div id="slots"></div></div>
     <div id="spectate" hidden></div>
+    <div id="radio" hidden><b id="radiowho"></b><span id="radioline"></span></div>
+    <div id="intro" hidden><small id="introch"></small><h2 id="introtitle"></h2><em id="introsub"></em><p id="introtext"></p></div>
+    <div id="notecard" hidden><div class="card small"><h2 id="notetitle"></h2><p id="notetext"></p><p class="dim">Press E or walk away to close</p></div></div>
   </div>
 
   <div id="lobby">
@@ -46,6 +50,7 @@
       <form id="join">
         <label>Name <input id="name" maxlength="14" autocomplete="off" placeholder="Mochi" /></label>
         <label>Room code <input id="code" maxlength="6" autocomplete="off" placeholder="blank = quick play" /></label>
+        <label>Chapter <select id="chapter"></select></label>
         <button type="submit" id="play">PLAY</button>
       </form>
       <p id="lobbymsg"></p>
@@ -69,7 +74,7 @@
       <h2 id="endtitle"></h2>
       <p id="endstats"></p>
       <ul id="endboard"></ul>
-      <p class="dim">Next run starts automatically…</p>
+      <p class="dim" id="endnext">Next run starts automatically…</p>
     </div>
   </div>
 

@@ -59,16 +59,20 @@ function newCode(): string {
   return c;
 }
 
-function findRoom(requested: unknown): Room {
+// Dev servers accept the step-jump debug message (map testing).
+const ALLOW_DEBUG = !PROD || process.env.ALLOW_DEBUG === '1';
+
+function findRoom(requested: unknown, chapter: unknown): Room {
   const code = String(requested ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const ch = Number.isInteger(chapter) ? (chapter as number) : -1;
   if (code) {
     let r = rooms.get(code);
-    if (!r) { r = new Room(code); rooms.set(code, r); }
+    if (!r) { r = new Room(code, Math.max(0, ch), ALLOW_DEBUG); rooms.set(code, r); }
     return r;
   }
-  // Quick play: any room with a free seat, otherwise a fresh one.
-  for (const r of rooms.values()) if (r.players.size < MAX_PLAYERS) return r;
-  const fresh = new Room(newCode());
+  // Quick play: any room on the requested chapter (or any, if none asked) with a free seat, otherwise a fresh one.
+  for (const r of rooms.values()) if (r.players.size < MAX_PLAYERS && (ch < 0 || r.chapter === ch)) return r;
+  const fresh = new Room(newCode(), Math.max(0, ch), ALLOW_DEBUG);
   rooms.set(fresh.code, fresh);
   return fresh;
 }
@@ -92,7 +96,7 @@ wss.on('connection', (ws: WebSocket) => {
     if (!m || typeof m !== 'object') return;
     if (!player || !room) {
       if (m.t !== 'j') return;
-      room = findRoom(m.room);
+      room = findRoom(m.room, m.ch);
       const name = String(m.name ?? '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 14);
       player = room.addPlayer(ws, name);
       if (!player) {
