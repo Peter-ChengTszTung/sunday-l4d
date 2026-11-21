@@ -4,6 +4,7 @@ import { CHAPTERS, getLevel } from '../../shared/chapters';
 import { F, FLOOR_NAMES, WALL, ALL_OPEN, cellOf, type Level, type Step } from '../../shared/level';
 import { validateChapter, type ChapterReport } from '../../shared/validate';
 import { TILE } from '../../shared/constants';
+import { wandererRegions, type Regions } from '../../shared/regions';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const cv = $<HTMLCanvasElement>('cv'), g = cv.getContext('2d')!;
@@ -20,7 +21,7 @@ const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', s
 const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', obj: '!', item: '★' };
 const KIND_COL: Record<string, string> = { reach: '#74c0fc', gather: '#7ddc6a', use: '#ffd43b', collect: '#ff922b', holdout: '#ff5d8f' };
 
-const LAYERS = { grid: false, props: true, loot: true, lamps: true, paint: true, quest: true, route: true, heat: false, items: true };
+const LAYERS = { grid: false, props: true, loot: true, lamps: true, paint: true, quest: true, route: true, heat: false, items: true, regions: false };
 type LayerKey = keyof typeof LAYERS;
 
 let chIndex = Math.max(0, Number(new URLSearchParams(location.search).get('ch') ?? 0) || 0);
@@ -28,6 +29,46 @@ let L: Level, report: ChapterReport, sel = -1, progress: Int16Array, routes: num
 let scale = 6, ox = 0, oy = 0;
 const tileCv = document.createElement('canvas');
 let tileKey = '';
+
+// ---------------------------------------------------------- wanderer regions
+// The server's spatial partition for dormant wanderers (shared/regions.ts): each region is stocked
+// once per attempt with ~`weight` sleepers. Drawn as a tinted overlay with borders and labels.
+let regs: Regions;
+const regCv = document.createElement('canvas');
+let regBorders = new Path2D();
+let regLabels: { x: number; z: number; id: number; weight: number }[] = [];
+const regionHue = (id: number) => (id * 137.508) % 360; // golden angle: neighbours rarely share a hue
+function buildRegions(): void {
+  const { W, H } = L;
+  regs = wandererRegions(L);
+  regCv.width = W; regCv.height = H;
+  const rg = regCv.getContext('2d')!;
+  rg.clearRect(0, 0, W, H);
+  for (let i = 0; i < W * H; i++) {
+    const id = regs.regionOf[i];
+    if (id < 0) continue;
+    // Density 0 cells (no wanderers) are dark; others tinted by region, brighter where denser.
+    const m = regs.mult[i];
+    rg.fillStyle = m <= 0 ? 'rgba(10,6,20,0.7)' : `hsla(${regionHue(id)} 85% ${m > 1 ? 62 : 55}% / ${m > 1 ? 0.7 : 0.5})`;
+    rg.fillRect(i % W, (i / W) | 0, 1, 1);
+  }
+  // Borders: a unit edge wherever two neighbouring cells differ in region (and at least one is in one).
+  regBorders = new Path2D();
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const a = regs.regionOf[z * W + x];
+    if (x + 1 < W) { const b = regs.regionOf[z * W + x + 1]; if (a !== b && (a >= 0 || b >= 0)) { regBorders.moveTo(x + 1, z); regBorders.lineTo(x + 1, z + 1); } }
+    if (z + 1 < H) { const b = regs.regionOf[(z + 1) * W + x]; if (a !== b && (a >= 0 || b >= 0)) { regBorders.moveTo(x, z + 1); regBorders.lineTo(x + 1, z + 1); } }
+  }
+  // Label each region at its cell nearest the centroid (centroids of L-shapes can fall outside).
+  regLabels = regs.list.map((r, id) => {
+    let sx = 0, sz = 0;
+    for (const c of r.cells) { sx += c % W; sz += (c / W) | 0; }
+    const cx = sx / r.cells.length, cz = sz / r.cells.length;
+    let best = r.cells[0], bd = Infinity;
+    for (const c of r.cells) { const d = (c % W - cx) ** 2 + (((c / W) | 0) - cz) ** 2; if (d < bd) { bd = d; best = c; } }
+    return { x: (best % W) + 0.5, z: ((best / W) | 0) + 0.5, id, weight: r.weight };
+  });
+}
 
 // ------------------------------------------------------------------ routing
 function walkable(c: number, open: number): boolean { return !L.solidAt(c % L.W, (c / L.W) | 0, open); }
@@ -113,6 +154,28 @@ function draw(): void {
   }
   g.imageSmoothingEnabled = false;
   g.drawImage(tileCv, 0, 0);
+  if (LAYERS.regions) {
+    g.drawImage(regCv, 0, 0);
+    g.strokeStyle = 'rgba(10,6,20,0.85)'; g.lineWidth = 1.5 * px; g.stroke(regBorders);
+    // Designer density overrides (b.density): dashed outline with the multiplier.
+    g.setLineDash([6 * px, 4 * px]); g.lineWidth = 2 * px;
+    for (const d of def.density) {
+      g.strokeStyle = d.mult <= 0 ? '#ff8080' : '#ffffff';
+      g.strokeRect(d.x0, d.z0, d.x1 - d.x0 + 1, d.z1 - d.z0 + 1);
+      g.fillStyle = g.strokeStyle; g.font = `bold ${Math.max(0.7, 12 * px)}px sans-serif`;
+      g.fillText(`×${d.mult}`, d.x0 + 0.2, d.z0 + Math.max(0.9, 14 * px));
+    }
+    g.setLineDash([]);
+    if (scale >= 4) {
+      g.font = `bold ${Math.max(0.55, 10 * px)}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.lineWidth = 3 * px; g.strokeStyle = 'rgba(10,6,20,0.9)'; g.fillStyle = '#fff';
+      for (const r of regLabels) {
+        const t = scale >= 8 ? `R${r.id} ~${r.weight.toFixed(1)}` : `${r.id}`;
+        g.strokeText(t, r.x, r.z); g.fillText(t, r.x, r.z);
+      }
+      g.textAlign = 'start'; g.textBaseline = 'alphabetic';
+    }
+  }
   if (LAYERS.grid && scale >= 6) {
     g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = px;
     g.beginPath();
@@ -219,6 +282,7 @@ function renderSide(): void {
       <b>Steps</b><span>${def.steps.length} · ${s.checkpoints} checkpoints · ${s.doors} doors</span>
       <b>Pickups</b><span>${Object.entries(s.pickups).map(([k, v]) => `${k} ${v}`).join(', ')}</span>
       <b>Props / lamps</b><span>${def.props.length} / ${def.lamps.length}</span>
+      <b>Wanderers</b><span>${s.wanderers.regions} regions, ~${s.wanderers.budget} sleepers if all stocked${def.density.length ? ` · ${def.density.length} density override${def.density.length > 1 ? 's' : ''}` : ''} (layer: regions)</span>
     </div>
     <div class="issues">${report.errors.map((e) => `<div class="err">✖ ${esc(e)}</div>`).join('')}${report.warnings.map((e) => `<div class="warn">⚠ ${esc(e)}</div>`).join('')}${!report.errors.length && !report.warnings.length ? '<div style="color:var(--green)">✔ No issues</div>' : ''}</div>
     <h3>Quest (${def.steps.length} steps) — click to focus</h3>
@@ -263,6 +327,7 @@ function load(i: number): void {
   progress = L.distanceField([L.def.startCell.z * L.W + L.def.startCell.x], ALL_OPEN);
   sel = -1;
   computeRoutes();
+  buildRegions();
   $('tabs').innerHTML = CHAPTERS.map((c, k) => `<button class="${k === i ? 'on' : ''}" data-ch="${k}">${k + 1}. ${esc(c.title)}</button>`).join(' ');
   for (const b of $('tabs').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => load(Number(b.dataset.ch));
   renderSide(); fit();
@@ -287,6 +352,11 @@ cv.addEventListener('mousemove', (e) => {
   const def = L.def, i = tz * L.W + tx;
   const lines = [`tile ${tx}, ${tz}   (${tx * TILE}–${tx * TILE + TILE} m, ${tz * TILE} m)`, `floor: ${FLOOR_NAMES[def.floor[i]]}${def.floor[i] === F.NONE ? ` (${['building', 'rock', 'hedge', 'fence'][def.wallKind[i]]} ${def.wallH[i].toFixed(1)} m)` : ''}`];
   if (progress[i] < 32767) lines.push(`progress from start: ${progress[i]} tiles`);
+  const rid = regs.regionOf[i];
+  if (rid >= 0) {
+    const r = regs.list[rid];
+    lines.push(`wander region R${rid}: ${r.cells.length} cells, ~${r.weight.toFixed(1)} sleepers${regs.mult[i] !== 1 ? `, density ×${regs.mult[i]}` : ''}`);
+  }
   const prop = def.props.find((p) => tx >= p.x && tx < p.x + p.w && tz >= p.z && tz < p.z + p.d);
   if (prop) lines.push(`prop: ${prop.type} ${prop.w}x${prop.d}`);
   if (def.doorCell[i] >= 0) { const d = def.doors[def.doorCell[i]]; lines.push(`door D${d.id} (${d.kind})${d.label ? ' ' + d.label : ''}, opened by step ${def.steps.findIndex((s) => s.opens.includes(d.id)) + 1 || '—'}`); }

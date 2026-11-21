@@ -114,6 +114,8 @@ npm run check:maps # validates every chapter (reachability per door state, pacin
 chapter top-down (floors, props, loot, doors, lamps, quest areas and the routed critical path),
 the validator report and estimated play time, per-step radio lines and lore notes. Click a step
 to focus it (doors shown as at that step); "play from this step" opens the game jumped there.
+The `regions` layer shows the wanderer regions (tinted, bordered, labelled with id and expected
+sleepers at higher zoom) and any `b.density` overrides; hover a tile for its region.
 Dev servers accept the step jump (`?room=X&ch=N&step=K`); production does not unless `ALLOW_DEBUG=1`.
 
 `?debug` on the URL allows input without pointer lock and exposes `window.__game`.
