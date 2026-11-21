@@ -295,6 +295,29 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     TP(r < 0.5 ? 0xffd43b : 0x74c0fc, 0, 0.17, 0.02, 0.2, 0.34);
     C(WOODC, 0.05, 0.75, -0.08, 0.02, 1.3, 0, -0.13); SP(0xe8e6f2, 0.05, 0.14, 0.08, 0.1, 0.1, 0.1, 0);
   });
+  const wardBed = it(0.95, 1.05, (r) => {
+    B(STEEL, 0, 0.42, 0, 1.9, 0.08, 0.84); B(0xe8e6f2, 0, 0.54, 0, 1.84, 0.16, 0.8, 0);
+    B(CREAM, -0.95, 0.62, 0, 0.06, 0.86, 0.88); B(CREAM, 0.95, 0.5, 0, 0.06, 0.62, 0.88);
+    B(PAPER, -0.66, 0.67, 0, 0.36, 0.1, 0.5, 0); B(pick(r, [0x74c0fc, 0x8ce99a, 0xffc9d6, 0xb197fc]), 0.28, 0.635, 0, 1.2, 0.05, 0.82, 0);
+    B(STEEL, 0.1, 0.8, 0.41, 1.0, 0.04, 0.03, 0); for (const s of [-1, 1]) B(DARK, s * 0.8, 0.19, 0, 0.08, 0.38, 0.7, 0);
+  });
+  const linenCart = it(0.55, 1.3, (r) => {
+    for (const s of [-1, 1]) B(STEEL, s * 0.42, 0.66, 0, 0.04, 1.24, 0.5);
+    for (let j = 0; j < 3; j++) {
+      B(0xc9c6d6, 0, 0.2 + j * 0.42, 0, 0.82, 0.03, 0.48, 0);
+      B(pick(R(j), [PAPER, 0xbfeaff, 0xd3f9d8, 0xffc9d6]), (R(j + 3) - 0.5) * 0.16, 0.3 + j * 0.42, 0, 0.46 + R(j + 6) * 0.2, 0.17, 0.4, j === 2 ? 1 : 0);
+    }
+    void r;
+  });
+  const bioBin = it(0.42, 0.8, (r) => {
+    B(r < 0.6 ? 0xff8a3c : 0xe8413c, 0, 0.34, 0, 0.4, 0.68, 0.38); B(DARK, 0, 0.71, 0, 0.44, 0.07, 0.42, 0);
+    B(0xffd43b, 0, 0.4, 0.193, 0.22, 0.22, 0.01, 0); B(DARK, 0, 0.4, 0.2, 0.1, 0.1, 0.01, 0, 0, 0, Math.PI / 4);
+  });
+  const supplyBoxes = it(0.6, 0.95, (r) => {
+    B(0xe8e6f2, -0.2, 0.2, 0, 0.58, 0.4, 0.5); B(0x39c5bb, -0.2, 0.3, 0, 0.59, 0.07, 0.51, 0);
+    B(0xd8ecf5, 0.36, 0.16, 0.02, 0.44, 0.32, 0.42, 1, 0, r - 0.5);
+    if (r < 0.7) { B(0xe8e6f2, -0.16, 0.56, 0, 0.44, 0.32, 0.4, 1, 0, r * 2); B(0xff4d6d, -0.16, 0.725, 0, 0.14, 0.01, 0.14, 0, 0, r * 2); }
+  });
 
   // ---- mall and shops
   const lowBench = it(0.5, 0.5, (r) => {
@@ -538,6 +561,9 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   const K_SUBURB_ST = [wheelie, wheelie, wheelie, bags, hydrant, cone, tricycle, scooter, bike, boxes, planter, sign, postbox, bushlet, ball];
   const K_PARKING = [cone, cone, cone, sawhorse, tyres, drum, bollard, bollard, boxes, bin, jerry, sign, bags];
   const K_HOSP = [gurney, gurney, wheelchair, wheelchair, ivStand, ivStand, chair, seatRow, seatRow, plant, cabinet, crashCart, crashCart, wetSign, o2, laundryCart, medBin, waterCooler, mopBucket, boxes];
+  // Hospital corridors (ch2): big things parked along the wall, and slim things tucked in beside them.
+  const K_CORR_BIG = [gurney, seatRow, linenCart, wardBed, crashCart, cabinet, laundryCart, gurney, supplyBoxes, wheelchair, wardBed, waterCooler, seatRow, plant];
+  const K_CORR_SMALL = [ivStand, o2, medBin, bioBin, wetSign, plant, chair, wheelchair, boxes, mopBucket, ivStand];
   const K_LAB = [cabinet, cabinet, chair, plant, o2, crashCart, medBin, boxes, waterCooler, gasCyl, drum, mopBucket];
   const K_MALL = [lowBench, lowBench, palm, palm, kiosk, dressForm, dressForm, rack, rack, shopBags, shopBags, cafeSet, vending, stanchion, trashcan, trashcan, aboard, plant, boxes];
   const K_SHOP = [boxes, boxes, chair, plant, vending, trashcan, cabinet, bookStack, bottleCrate, shopBags, mopBucket, stackChairs, lowBench];
@@ -563,7 +589,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
 
   // ------------------------------------------------------------------ masks
   const n = W * H;
-  const NO_FLOOR = 1, NO_WALL = 2;
+  const NO_FLOOR = 1, NO_WALL = 2, NO_PAINT = 4;
   const mask = new Uint8Array(n), hint = new Uint8Array(n);
   const stamp = (cx: number, cz: number, rad: number, bits: number) => {
     for (let z = Math.max(0, Math.floor(cz - rad)); z <= Math.min(H - 1, Math.floor(cz + rad)); z++)
@@ -589,10 +615,10 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   for (const s of def.steps) stamp(s.at.x / T, s.at.z / T, 2.0, NO_FLOOR);
   for (const s of def.spawns) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
   for (const k in def.checkpointSpawns) for (const s of def.checkpointSpawns[k]) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
-  for (const a of def.arrows) stamp(a.x, a.z, 1.1, NO_FLOOR);
+  for (const a of def.arrows) { stamp(a.x, a.z, 1.1, NO_FLOOR); stamp(a.x, a.z, 0.75, NO_PAINT); }
   for (const l of def.labels) {
     const across = Math.abs(Math.sin(l.rot)) > 0.7, hw = (l.text.length * l.size * 0.62) / 80 + 0.2, hh = (l.size * 1.1) / 80 + 0.1;
-    rectMask(l.x - (across ? hh : hw), l.z - (across ? hw : hh), l.x + (across ? hh : hw), l.z + (across ? hw : hh), NO_FLOOR);
+    rectMask(l.x - (across ? hh : hw), l.z - (across ? hw : hh), l.x + (across ? hh : hw), l.z + (across ? hw : hh), NO_FLOOR | NO_PAINT);
     for (const [re, id, rad] of HINTS) if (re.test(l.text)) {
       for (let z = Math.max(0, Math.floor(l.z - rad)); z <= Math.min(H - 1, Math.floor(l.z + rad)); z++)
         for (let x = Math.max(0, Math.floor(l.x - rad)); x <= Math.min(W - 1, Math.floor(l.x + rad)); x++) hint[z * W + x] = id;
@@ -615,6 +641,131 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     s = z + 1;
   }
   const lampNear = (x: number, z: number, r: number): boolean => { for (const l of def.lamps) if (Math.abs(l.x - x) < r && Math.abs(l.z - z) < r) return true; return false; };
+
+  // ---------------------------------------------- hospital corridors (ch2)
+  // Long 2-5 tile wide passages on the hospital's tiled floors get their own treatment: a steady
+  // rhythm of parked equipment down both walls, handrails, signs and floor stripes, with the
+  // middle lane left clear. `corr` holds which way each such cell runs.
+  const CX = 1, CZ = 2;
+  const corr = new Uint8Array(n), hosp = new Uint8Array(n);
+  if (chap === 2) {
+    // The hospital is the big connected tiled areas (not the mall's tiled shop floors or the roof huts).
+    const seen = new Uint8Array(n);
+    for (let s = 0; s < n; s++) {
+      if (seen[s] || def.floor[s] !== F.TILES) continue;
+      const comp = [s]; seen[s] = 1;
+      for (let k = 0; k < comp.length; k++) {
+        const c = comp[k], cx = c % W;
+        for (const d of [1, -1, W, -W]) {
+          const j = c + d;
+          if (j < 0 || j >= n || seen[j] || def.floor[j] !== F.TILES || (d === 1 && cx === W - 1) || (d === -1 && cx === 0)) continue;
+          seen[j] = 1; comp.push(j);
+        }
+      }
+      if (comp.length >= 600) for (const c of comp) hosp[c] = 1;
+    }
+    // One pass per axis. `at(a, b)` is the cell `a` tiles along the corridor on line `b`.
+    for (const bit of [CX, CZ]) {
+      const LA = bit === CX ? W : H, LB = bit === CX ? H : W;
+      const at = (a: number, b: number) => (bit === CX ? b * W + a : a * W + b);
+      const along = new Uint16Array(n), across = new Uint16Array(n);
+      for (let b = 0; b < LB; b++) for (let a = 0, s = 0; a <= LA; a++) {
+        if (a < LA && hosp[at(a, b)]) continue;
+        for (let k = s; k < a; k++) along[at(k, b)] = a - s;
+        s = a + 1;
+      }
+      for (let a = 0; a < LA; a++) for (let b = 0, s = 0; b <= LB; b++) {
+        if (b < LB && hosp[at(a, b)]) continue;
+        for (let k = s; k < b; k++) across[at(a, k)] = b - s;
+        s = b + 1;
+      }
+      const is = new Uint8Array(n);
+      for (let i = 0; i < n; i++) if (hosp[i] && across[i] >= 2 && across[i] <= 5 && along[i] >= Math.max(8, across[i] * 3)) is[i] = 1;
+      for (let b = 0; b < LB; b++) {
+        // A doorway stub can look like a corridor seen end-on: forget those first.
+        for (let a = 0, s = -1; a <= LA; a++) {
+          const on = a < LA && is[at(a, b)] > 0;
+          if (on && s < 0) s = a;
+          if (!on && s >= 0) { if (a - s < 3) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
+        }
+        // Carry the corridor across side openings and junctions...
+        for (let a = 0, prev = -1; a <= LA; a++) {
+          if (a === LA || !hosp[at(a, b)]) { prev = -1; continue; }
+          if (is[at(a, b)] !== 1) continue;
+          if (prev >= 0 && a - prev - 1 <= 20) for (let m = prev + 1; m < a; m++) is[at(m, b)] = 2;
+          prev = a;
+        }
+        // ...drop short stubs (a lift shaft, a doorway vestibule)...
+        for (let a = 0, s = -1; a <= LA; a++) {
+          const on = a < LA && is[at(a, b)] > 0;
+          if (on && s < 0) s = a;
+          if (!on && s >= 0) { if (a - s < 8) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
+        }
+        // ...and run on to the end wall.
+        for (let a = 0, s = 0; a <= LA; a++) {
+          if (a < LA && hosp[at(a, b)]) continue;
+          let first = -1, last = -1;
+          for (let k = s; k < a; k++) if (is[at(k, b)]) { if (first < 0) first = k; last = k; }
+          if (first >= 0 && first - s <= 5) for (let m = s; m < first; m++) is[at(m, b)] = 2;
+          if (last >= 0 && a - 1 - last <= 5) for (let m = last + 1; m < a; m++) is[at(m, b)] = 2;
+          s = a + 1;
+        }
+      }
+      for (let i = 0; i < n; i++) if (is[i]) corr[i] |= bit;
+    }
+  }
+  const wallAt = (x: number, z: number): boolean => x >= 0 && z >= 0 && x < W && z < H && def.floor[z * W + x] === F.NONE;
+  const CORR_MINOR = 0.8; // how often a slim item is tucked in after a big one
+  /** The corridor rhythm: a big item every fourth tile on each wall (the two walls half a step apart), slim ones between. */
+  function corridorItem(x: number, z: number, i: number, narrow: number): boolean {
+    if (narrow < 2) return false;
+    for (let di = 0; di < 4; di++) {
+      const [dx, dz] = DIRS[di];
+      if (!(corr[i] & (dz ? CX : CZ)) || !wallAt(x - dx, z - dz)) continue;
+      const a = dz ? x : z, line = dz ? z - dz : x - dx, side = di & 1, k = (a + side * 2) & 3;
+      const major = k === 0;
+      if (!major && !(k === 1 && hash2(a * 7 + side, line * 13 + 5) < CORR_MINOR * DENSITY)) continue;
+      const slim = narrow === 2 ? 0.5 : narrow === 3 ? 0.8 : 9;
+      let list = (major ? K_CORR_BIG : K_CORR_SMALL).filter((it) => it.d <= slim);
+      if (!list.length) list = K_CORR_SMALL.filter((it) => it.d <= slim);
+      if (!list.length) continue;
+      const item = list[((a >> 2) * 3 + side * 5 + line * 7 + (major ? 0 : 2)) % list.length];
+      const off = 1 - item.d / 2 - 0.09, j = hash2(x * 3 + 9, z * 5 + 1) - 0.5, sh = major ? j * 0.12 : -0.4 + j * 0.2;
+      const px = (x + 0.5) * T - dx * off + (dz ? sh : 0), pz = (z + 0.5) * T - dz * off + (dx ? sh : 0);
+      if (item.h > 1.2 && lampNear(px, pz, 0.8)) continue;
+      begin(px, pz, Math.atan2(dx, dz));
+      item.f(hash2(x * 41 + 1, z * 43 + 3));
+      faceItem.set(i * 4 + di, item.h); stats.items++;
+      return true;
+    }
+    return false;
+  }
+  /** Things dropped in a hurry: charts, a clipboard, a stethoscope. All flat on the floor. */
+  function corridorLitter(x: number, z: number): void {
+    const r = hash2(x * 19 + 31, z * 13 + 47), p = 0.13 * DENSITY;
+    if (r > p) return;
+    const q = hash2(x * 11 + 3, z * 19 + 7), k = r / p;
+    begin((x + 0.2 + hash2(x * 5 + 1, z * 3 + 2) * 0.6) * T, (z + 0.2 + hash2(x * 3 + 4, z * 7 + 6) * 0.6) * T, q * 6.283); stats.scatter++;
+    const clipboard = (cx: number, cz: number, rot: number) => {
+      B(0x8a5a3c, cx, 0.014, cz, 0.25, 0.028, 0.34, 1, 0, rot); sheet(PAPER, cx, cz + 0.015, 0.2, 0.26, rot, false, 0.032);
+      B(STEEL, cx - Math.sin(rot) * 0.14, 0.04, cz - Math.cos(rot) * 0.14, 0.11, 0.025, 0.04, 0, 0, rot);
+    };
+    if (k < 0.46) {
+      // Patient charts: sheets with a coloured header strip.
+      for (let b = 0; b < 2 + Math.floor(q * 3); b++) {
+        const sx = (R(b) - 0.5) * 0.9, sz = (R(b + 4) - 0.5) * 0.9, rot = R(b + 8) * 6;
+        sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, sx, sz, 0.21, 0.3, rot);
+        if (b % 2 === 0) sheet(pick(R(b + 12), [0x74c0fc, 0xff8fa3, 0x8ce99a, 0xffd43b]), sx - Math.sin(rot) * 0.11, sz - Math.cos(rot) * 0.11, 0.19, 0.05, rot, false, 0.034);
+      }
+    } else if (k < 0.66) { clipboard(0, 0, q * 5); if (q < 0.5) sheet(PAPER, 0.34, 0.2, 0.21, 0.3, q * 9); }
+    else if (k < 0.8) {
+      // A dropped stethoscope beside its owner's clipboard.
+      clipboard(-0.3, 0.1, q * 5);
+      B(DARK, 0.2, 0.012, 0, 0.36, 0.024, 0.028, 0); B(DARK, 0.46, 0.012, 0.07, 0.24, 0.024, 0.026, 0, 0, -0.6); B(DARK, 0.46, 0.012, -0.07, 0.24, 0.024, 0.026, 0, 0, 0.6);
+      C(STEEL, 0, 0.014, 0, 0.045, 0.028, 0);
+    } else if (k < 0.92) { C(pick(q, [0xe8413c, 0xfff1e0, 0x74c0fc]), 0, 0.045, 0, 0.045, 0.13, 0, HP); sheet(0xd8ecf5, 0.2, 0.1, 0.2, 0.14, q * 5, false, 0.02); }
+    else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6);
+  }
 
   // ------------------------------------------------------------ wall faces
   // Same order as arch.ts: the direction from a wall cell out to the open cell it faces.
@@ -717,6 +868,11 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     const nature = f === F.GRASS || f === F.DIRT;
     let placed = false;
     const tri0 = triCount;
+    if (corr[i]) {
+      // Hospital corridor: its own rhythm instead of the random kit.
+      if (!corridorItem(x, z, i, narrow) && narrow >= 2) { corridorLitter(x, z); stats.trisScatter += triCount - tri0; }
+      continue;
+    }
     if (walls.length && narrow >= 2) {
       const corner = walls.length >= 2 && !(walls.includes(0) && walls.includes(1) && walls.length === 2) && !(walls.includes(2) && walls.includes(3) && walls.length === 2);
       const base = f === F.SAFE ? 0.5 : nature ? 0.17 : isIndoor(f) ? 0.16 : chap === 1 ? 0.29 : 0.2; // ch1 is the smallest map: spend its spare budget on the streets
@@ -835,11 +991,13 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
         S: [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], A: [[0, 0, 0.5, 1], [0.5, 1, 1, 0], [0.22, 0.4, 0.78, 0.4]],
         F: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5]], E: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5], [0, 0, 1, 0]], Z: [[0, 1, 1, 1], [1, 1, 0, 0], [0, 0, 1, 0]],
         O: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]], K: [[0, 0, 0, 1], [0, 0.5, 1, 1], [0, 0.5, 1, 0]],
+        W: [[0, 1, 0.25, 0], [0.25, 0, 0.5, 0.6], [0.5, 0.6, 0.75, 0], [0.75, 0, 1, 1]], R: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0.5], [1, 0.5, 0, 0.5], [0.4, 0.5, 1, 0]],
+        D: [[0, 0, 0, 1], [0, 1, 0.7, 1], [0.7, 1, 1, 0.7], [1, 0.7, 1, 0.3], [1, 0.3, 0.7, 0], [0.7, 0, 0, 0]], 3: [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0], [0.3, 0.5, 1, 0.5]],
         '<': [[0.5, 0, 0, 0.6], [0.5, 0, 1, 0.6], [0, 0.6, 0.25, 0.95], [0.25, 0.95, 0.5, 0.65], [0.5, 0.65, 0.75, 0.95], [0.75, 0.95, 1, 0.6]], // heart
       };
-      const write = (text: string, c: number, x0: number, y0: number, size: number, w = 0.035) => {
+      const write = (text: string, c: number, x0: number, y0: number, size: number, w = 0.035, o = 0.03) => {
         let cx = x0;
-        for (const ch of text) { for (const [a, b, c2, d2] of glyphs[ch] ?? []) stroke(c, cx + a * size * 0.6, y0 + b * size, cx + c2 * size * 0.6, y0 + d2 * size, w); cx += size * (ch === ' ' ? 0.5 : 0.85); }
+        for (const ch of text) { for (const [a, b, c2, d2] of glyphs[ch] ?? []) stroke(c, cx + a * size * 0.6, y0 + b * size, cx + c2 * size * 0.6, y0 + d2 * size, w, o); cx += size * (ch === ' ' ? 0.5 : 0.85); }
       };
       const poster = (u: number, y: number) => {
         const c = pick(q, PASTEL), ang = (hash2(x + di, z * 3) - 0.5) * 0.14, hw = 0.3, hh = 0.42;
@@ -880,6 +1038,49 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
       };
       const pipeRun = (y: number, c: number) => { prim(CYL_S, c, 0, y, 0.1, 0.06, 2, 0.06, 2, 0, 0, HP); if ((x * Math.abs(tx) + z * Math.abs(tz)) % 3 === 0) B(DARK, 0, y, 0.07, 0.07, 0.17, 0.14, 0); };
 
+      if (corr[i] & (dz ? CX : CZ)) {
+        // Hospital corridor wall: a fixed rhythm of fittings instead of the random scatter.
+        const a = dz ? x : z, side = di & 1, b = a + side * 3 + (dz ? wz : wx), m = b % 6, g = Math.floor(b / 6);
+        // A side opening next door gets a room-number plaque on the near edge of this panel.
+        let open = 0;
+        for (const s of [-1, 1]) if (!wallAt(wx + (dz ? s : 0), wz + (dz ? 0 : s)) && !(corr[i + (dz ? s : s * W)] & (dz ? CZ : CX))) open = s * (dz ? tx : tz);
+        if (open) {
+          const pu = open * 0.66;
+          card(PAPER, pu, 1.62, 0.2, 0.12); rq(pick(q, [0x39c5bb, 0xff8fa3, 0x74c0fc, 0xffa94d]), pu, 1.7, 0.2, 0.04, 0.055);
+          write('3' + pick(r, ['OS', 'Z3', 'SO', '3Z', 'OZ']), 0x1a1226, -pu - 0.14, 1.53, 0.1, 0.02, 0.056);
+          stats.wall++; continue;
+        }
+        const cu = (q - 0.5) * 0.3;
+        if (m === 0) { if (below <= 1.05) sanitiser(cu); else vent(cu, 3.1); }
+        else if (m === 1) {
+          if (g % 2 === 0) {
+            // Directional sign pointing along the wall to the nearest ward (floor 3) or the ER (ground floor).
+            let to: { x: number; z: number } | null = null, best = 1e9, ward = false;
+            for (const l of def.labels) {
+              const w = /^WARD 3/.test(l.text) && l.z - z > -10 && l.z - z < 38, er = l.text === 'ER' && Math.abs(l.z - z) < 40 && Math.abs(l.x - x) < 70;
+              const d = Math.hypot(l.x - x, l.z - z) - (w ? 1000 : 0);
+              if ((w || er) && d < best) { best = d; to = l; ward = w; }
+            }
+            if (to) {
+              const sd = (to.x - x - 0.5) * tx + (to.z - z - 0.5) * tz, left = Math.abs(sd) > 2 ? sd > 0 : q < 0.5;
+              const text = ward ? 'WARD 3' : 'ER', tw = ward ? 0.7 : 0.24, x0 = -(tw + 0.3) / 2 + (left ? 0.3 : 0), xa = left ? x0 - 0.3 : x0 + tw + 0.06, hd = left ? 1 : -1, tipx = left ? xa : xa + 0.2;
+              card(ward ? 0x3f7cc4 : 0xe8413c, 0, 2.42, (tw + 0.3) / 2 + 0.1, 0.14);
+              write(text, PAPER, x0, 2.35, 0.14, 0.026, 0.056);
+              stroke(PAPER, xa, 2.42, xa + 0.2, 2.42, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.49, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.35, 0.03, 0.056);
+            } else signPlate(cu, 2.9, 1);
+          } else if (g % 4 === 1) clock(cu, 2.75); else signPlate(cu, 2.9, 1);
+        }
+        else if (m === 2) { if (below <= 1.5) { if (g % 2) picture(cu, 1.98); else poster(cu, 1.95); } }
+        else if (m === 4) {
+          if (below > 1.0) { if (below <= 1.5 && g % 2) board(0, 2.05); }
+          else if (g % 3 === 0) board(0, 1.95);
+          else if (g % 3 === 1) { B(0xe8413c, -cu, 1.25, 0.06, 0.42, 0.68, 0.12); rq(0xd8f6ff, cu, 1.25, 0.15, 0.27, 0.125); rq(0xc0322e, cu, 1.2, 0.055, 0.17, 0.13); rq(DARK, cu, 1.4, 0.03, 0.035, 0.13); } // extinguisher cabinet
+          else { B(0xffd43b, -cu, 1.34, 0.07, 0.24, 0.3, 0.14); B(0xe8413c, -cu, 1.51, 0.07, 0.26, 0.05, 0.16, 0); rq(DARK, cu, 1.32, 0.05, 0.05, 0.145, 0.78); } // sharps box
+        }
+        else if (m === 5 && q < 0.6) signPlate(cu, below > 1.5 ? 2.7 : 2.05, 2);
+        else continue;
+        stats.wall++; continue;
+      }
       const industrial = chap === 3 || (!indoor && f === F.CONCRETE);
       // Long pipe runs: decided per stretch of wall so neighbouring tiles line up.
       const stretch = hash2(Math.floor((x * Math.abs(tx) + z * Math.abs(tz)) / 6) + di * 31, (x * Math.abs(dx) + z * Math.abs(dz)) * 7 + 5);
@@ -935,6 +1136,48 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
         if (k < 0.34) graffiti(u, 1.5); else if (k < 0.62) { poster(u - 0.34, 1.6); if (q < 0.6) poster(u + 0.36, 1.66); } else if (k < 0.74) vent(u, 0.75);
         else if (k < 0.86) fuseBox(u, 1.45); else if (k < 0.93) signPlate(u, 2.0, 3); else { B(0x54506e, -u, 1.25, 0.05, 0.07, 2.5, 0.07, 0); B(DARK, -u, 1.7, 0.06, 0.12, 0.05, 0.1, 0); } // conduit
       }
+    }
+  }
+
+  // ------------------------------------- pass 3: corridor rails and stripes
+  // One beam (or one painted quad) per straight run, cut at chunk edges so culling stays tight.
+  if (chap === 2) for (const di of [0, 1, 2, 3]) {
+    const [dx, dz] = DIRS[di], bit = dz ? CX : CZ, LA = dz ? W : H, LB = dz ? H : W;
+    const cell = (a: number, b: number) => (dz ? b * W + a : a * W + b);
+    /** Runs of `ok` cells along line `b`; `fn` gets the inclusive ends and whether each end is cut short by an opening. */
+    const runs = (b: number, ok: (a: number, i: number) => boolean, fn: (a0: number, a1: number, e0: boolean, e1: boolean) => void) => {
+      for (let a = 0, s = -1, e0 = true; a <= LA; a++) {
+        const on = a < LA && ok(a, cell(a, b));
+        if (s >= 0 && (!on || a % CHUNK === 0)) { fn(s, a - 1, e0, !on); s = -1; }
+        if (on && s < 0) { s = a; e0 = a % CHUNK !== 0 || a === 0 || !ok(a - 1, cell(a - 1, b)); }
+      }
+    };
+    /** World position `a` tiles along line `b`, `o` metres out from the wall face on this side. */
+    const place = (a: number, b: number, o: number) => { const pa = a * T, pb = (b + 0.5 - (dx + dz) * 0.5) * T + (dx + dz) * o; return dz ? [pa, pb] : [pb, pa]; };
+    const wallSide = (a: number, b: number) => (dz ? wallAt(a, b - dz) : wallAt(b - dx, a));
+    for (let b = 0; b < LB; b++) {
+      // Handrail at 0.9 m.
+      runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && wallSide(a, b), (a0, a1, e0, e1) => {
+        const s0 = a0 * T + (e0 ? 0.14 : 0), s1 = (a1 + 1) * T - (e1 ? 0.14 : 0), [px, pz] = place((s0 + s1) / 2 / T, b, 0);
+        begin(px, pz, Math.atan2(dx, dz));
+        B(0xe8b98a, 0, 0.92, 0.05, s1 - s0, 0.1, 0.06); stats.wall++;
+      });
+      // A curtain rail over each room opening, the curtain bunched to one side.
+      runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && !wallSide(a, b) && hosp[i - (dz ? dz * W : dx)] === 1 && !corr[i - (dz ? dz * W : dx)] && def.doorCell[i - (dz ? dz * W : dx)] < 0, (a0, a1, e0, e1) => {
+        if (!e0 || !e1 || a1 - a0 > 2 || !wallSide(a0 - 1, b) || !wallSide(a1 + 1, b)) return;
+        const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = hash2(a0 * 5 + di, b * 3 + 1);
+        begin(px, pz, Math.atan2(dx, dz));
+        B(STEEL, 0, 2.66, -0.16, len, 0.045, 0.045, 0);
+        const cx = (hs < 0.5 ? -1 : 1) * (len / 2 - 0.22), c = pick(hs * 2 % 1, [0x9fe3cf, 0xffc9d6, 0xbfeaff, 0xfff3bf]);
+        B(c, cx, 1.6, -0.16, 0.36, 2.08, 0.14); for (const s of [-1, 1]) B(DARK, cx + s * 0.07, 1.6, -0.085, 0.012, 2.0, 0.01, 0);
+        stats.wall++;
+      });
+      // Wayfinding stripes painted down the first lane (one wall only).
+      if (!(di & 1)) runs(b, (a, i) => (corr[i] & bit) !== 0 && !(corr[i - (dz ? W : 1)] & bit) && !(mask[i] & NO_PAINT) && !def.propCell[i] && def.doorCell[i] < 0 && hash2(a * 3 + 1, b * 7 + di) > 0.05, (a0, a1) => {
+        const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = (b + di) % 3;
+        begin(px, pz, Math.atan2(dx, dz));
+        for (let k = 0; k < 2; k++) sheet([0x39c5bb, 0xff8fa3, 0xffd43b, 0x74c0fc, 0xff8a3c, 0x8ce99a][hs * 2 + k], 0, 1.2 + k * 0.2, len, 0.1, 0, true, 0.024);
+      });
     }
   }
 
