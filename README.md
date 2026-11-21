@@ -82,8 +82,10 @@ docs/     campaign.md — story bible and per-chapter quest briefs
   beeline when close with line of sight. The director spawns out of sight, a walk away, and
   paces itself like Left 4 Dead's: each survivor's intensity (hurt, downed, pinned, close kills)
   drives a BUILD_UP → SUSTAIN → FADE → RELAX cycle; mobs come faster while the team pushes on,
-  and a team that camps gets a horde from behind. Run the server with `DIRECTOR_DEBUG=1` to log
-  phase changes.
+  and a team that camps gets a horde from behind. Specials fill a few slots (per-type respawn
+  cooldowns), lurk out of sight until the slots are full or ~20 s pass, then attack together; a
+  survivor who strays far from the team draws them. Run the server with `DIRECTOR_DEBUG=1` to log
+  phase changes, ambush releases and lone-wolf picks.
 - **Look:** PlayCanvas has no built-in toon material, so `client/src/gfx.ts` holds a few small
   custom GLSL shaders: 4-step banded lighting, a stepped flashlight cone, fog, and inverted-hull
   ink outlines. Architecture ink lines are thin beam geometry. Lamps light the scene through a

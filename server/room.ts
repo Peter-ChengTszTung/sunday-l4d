@@ -48,14 +48,42 @@ const DIRECTOR = {
   mobAfterHoldout: [70, 100] as const,
   // Anti-camping: this long in BUILD_UP without progress (outside holdouts/safe rooms) -> a horde from behind.
   camp: 80,
+  /**
+   * Specials (L4D2-style). `slots[n - 1]` specials may be alive at once for n players (the Brute is
+   * extra; per-type caps are in pickSpecial). A type whose last one dies is off for its rolled `cd`
+   * (the Alarm Clock uses its own `alarmAt`). Free slots fill one at a time every `fill` s, after
+   * `first` s, in BUILD_UP/SUSTAIN only. New specials spawn *holding*: they lurk unseen `holdNear`..
+   * `holdFar` path tiles from their target and attack together once the slots are full or `maxWait`
+   * s after the first holder spawned. A holder that is spotted (in sight within `spotClose` m, or
+   * in a survivor's view cone `spotCone` within `spotR` m), hurt, or walked up on (`closeTiles`)
+   * attacks at once and cuts the rest's wait to `blownWait`. Holdout specials never hold.
+   * `place[type]`: chance of [ahead, level/flank, behind] the team; the rest anywhere.
+   */
+  specials: {
+    slots: [2, 2, 3, 4], first: [20, 30] as const, fill: [4, 8] as const,
+    cd: { [ZT.LEAPER]: [16, 26], [ZT.PUFFER]: [18, 28], [ZT.CHARGER]: [24, 36], [ZT.DROOLER]: [18, 28] } as Record<number, readonly [number, number]>,
+    maxWait: 22, blownWait: 3, holdNear: 6, holdFar: 10, closeTiles: 4, spotR: 26, spotClose: 9, spotCone: 0.6,
+    place: {
+      [ZT.CHARGER]: [0.75, 0.2, 0], // needs a straight run at the team: meet them head on
+      [ZT.LEAPER]: [0.1, 0.5, 0.3], [ZT.PUFFER]: [0.15, 0.45, 0.3], [ZT.DROOLER]: [0.1, 0.5, 0.3],
+      [ZT.ALARM]: [0.6, 0.25, 0], // has to be found to matter
+    } as Record<number, readonly [number, number, number]>,
+    // Lone wolf (2+ players): a survivor further than `lonerDist` m (walking, if they can't see each
+    // other) from every standing teammate for `lonerTime` s is singled out until back within
+    // `lonerExit` m. `lonerBias` of special spawns then come `lonerSpawn` path tiles from them, and
+    // specials within `lonerReach` path tiles of them go for them (unless someone is within 4 m).
+    lonerDist: 14, lonerExit: 11, lonerTime: 2, lonerBias: 0.7, lonerSpawn: [6, 14] as const, lonerReach: 30,
+  },
 };
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
 const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
 
 const enum Phase { BUILD_UP, SUSTAIN, FADE, RELAX }
 const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
-/** Which side of the team (toward the objective or away from it) a spawn must be on; 0 = any. */
-type Side = -1 | 0 | 1;
+/** Which side of the team a spawn must be on: 1 ahead (toward the objective), -1 behind, 2 level with it (a flank), 0 any. */
+type Side = -1 | 0 | 1 | 2;
+/** Specials that hold for a coordinated attack and go for a lone survivor (not the Alarm Clock: it keeps away and rings). */
+const AMBUSHER = (type: number) => type === ZT.LEAPER || type === ZT.PUFFER || type === ZT.CHARGER || type === ZT.DROOLER;
 
 export interface Player {
   id: number; ws: WebSocket; name: string; look: number;
@@ -87,6 +115,8 @@ interface Zombie {
   pinT: number; acc: number;
   /** Damage taken from survivors while pinning (knocks it off at CHARGER.pinBreakDmg). */ pinHit: number;
   /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
+  /** Special holding for a coordinated attack: 0 = attacking, 1 = lurking unseen, 2 = lurking but in a survivor's sight (backs off). */
+  hold: number;
 }
 
 /**
@@ -174,6 +204,14 @@ export class Room {
   /** Closest the team has been to the current objective (path tiles), for the objective field `objSeenKey`. */
   private objBest = INF;
   private objSeenKey = '';
+  /** Specials: room time each type may fill a slot again; when the current holders attack anyway (Infinity = none holding). */
+  private spReady: number[] = ZTYPES.map(() => 0);
+  private ambushUntil = Infinity;
+  /** Lone wolf: id of the survivor singled out (0 = none), seconds each has been cut off, and the BFS field toward the loner. */
+  private loner = 0;
+  private isoT = new Map<number, number>();
+  private lonerField = new Int16Array(1);
+  private isoScratch = new Int16Array(1);
 
   /**
    * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
@@ -250,7 +288,7 @@ export class Room {
     this.clearHazards();
     this.alarmAt = 0;
     this.waves = []; this.marks.clear();
-    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: rand(20, 30), hordeTick: 0, holdSpecial: 8, belt: 0 };
+    this.t = { flow: 0, ambient: 3, horde: roll(DIRECTOR.mobFirst), special: roll(DIRECTOR.specials.first), hordeTick: 0, holdSpecial: 8, belt: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -628,7 +666,7 @@ export class Room {
       hp: type === ZT.BRUTE ? T.hp + 700 * (this.players.size - 1) : T.hp,
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0,
     };
     this.zombies.set(zb.id, zb);
     return zb;
@@ -664,6 +702,7 @@ export class Room {
     if (z.hp <= 0) return;
     z.hp -= dmg;
     z.dormant = false;
+    if (z.hold && z.hp > 0) this.blowAmbush(z, 'hurt'); // found out: it fights back now
     // Enough teammate fire knocks a pinning Charger off its victim.
     if (z.hp > 0 && by && z.type === ZT.CHARGER && z.st === ZSTATE.PIN) {
       z.pinHit += dmg;
@@ -675,6 +714,8 @@ export class Room {
     if (z.hp > 0) return;
     this.zombies.delete(z.id);
     this.kills++;
+    if (z.hold) this.blowAmbush(z, 'killed');
+    if (z.type !== ZT.WALKER && z.type !== ZT.BRUTE) this.specialGone(z.type);
     if (by) by.kills++;
     for (const p of this.players.values()) if (Math.hypot(p.x - z.x, p.z - z.z) < DIRECTOR.killR) this.bumpIntensity(p, DIRECTOR.kill);
     this.events.push(['zdie', z.id, r2(z.x), r2(z.z), z.type, head ? 1 : 0, by ? by.id : 0]);
@@ -768,9 +809,14 @@ export class Room {
   }
 
   /** Retreat one flow-field step away from the survivors (idles when cornered). */
-  private backOff(z: Zombie, mult: number, dt: number): void {
-    const to = this.flowStep(z, 1);
+  private backOff(z: Zombie, mult: number, dt: number, field: Int16Array = this.flow): void {
+    const to = this.flowStep(z, 1, field);
     if (!to) { z.st = ZSTATE.IDLE; return; }
+    this.walkTo(z, to, mult, dt);
+  }
+
+  /** Walk straight toward `to` at `mult` x its speed. */
+  private walkTo(z: Zombie, to: Vec2, mult: number, dt: number): void {
     const dx = to.x - z.x, dz = to.z - z.z, len = Math.hypot(dx, dz);
     if (len > 0.01) {
       const sp = z.speed * mult * dt;
@@ -781,16 +827,16 @@ export class Room {
   }
 
   /** Next flow-field cell centre toward (dir = -1) or away from (dir = 1) the survivors, or null if stuck. */
-  private flowStep(z: Zombie, dir: 1 | -1): { x: number; z: number } | null {
+  private flowStep(z: Zombie, dir: 1 | -1, field: Int16Array = this.flow): { x: number; z: number } | null {
     const L = this.L, W = L.W, go = this.doors;
     const cx = cellOf(z.x), cz = cellOf(z.z);
-    let best = this.flow[cz * W + cx], bx = cx, bz = cz;
+    let best = field[cz * W + cx], bx = cx, bz = cz;
     if (best >= INF) return null;
     for (const [ox, oz] of DIRS8) {
       const nx = cx + ox, nz = cz + oz;
       if (L.solidAt(nx, nz, go)) continue;
       if (ox && oz && (L.solidAt(cx + ox, cz, go) || L.solidAt(cx, cz + oz, go))) continue;
-      const v = this.flow[nz * W + nx];
+      const v = field[nz * W + nx];
       if (v >= INF) continue;
       if (dir < 0 ? v < best : v > best) { best = v; bx = nx; bz = nz; }
     }
@@ -880,7 +926,7 @@ export class Room {
 
   /**
    * `side` 1: no further from the objective than the lead survivor; -1: further from it than the
-   * rearmost survivor (behind the team); 0: anywhere. `field`: path distances `minD`..`maxD` are
+   * rearmost survivor (behind the team); 2: between the two (a flank); 0: anywhere. `field`: path distances `minD`..`maxD` are
    * measured on (default: to the nearest survivor).
    */
   private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
@@ -895,8 +941,9 @@ export class Room {
         if (v >= INF) continue;
         lead = Math.min(lead, v); rear = Math.max(rear, v);
       }
-      if (side > 0 && lead < INF) hi = lead + 2;
-      if (side < 0 && rear >= 0) lo = rear + 2;
+      if (side === 1 && lead < INF) hi = lead + 2;
+      if (side === -1 && rear >= 0) lo = rear + 2;
+      if (side === 2 && lead < INF) { lo = lead - 2; hi = rear + 2; } // level with the team, yet a walk away: a side branch
     }
     // Sample near the team first (most open cells are far away on a big map).
     const near = this.nearCells();
@@ -951,6 +998,153 @@ export class Room {
     if (c < 0) return null;
     const { W } = this.L;
     return this.spawnZombie(type, (c % W + 0.5) * TILE + rand(-0.5, 0.5), (((c / W) | 0) + 0.5) * TILE + rand(-0.5, 0.5));
+  }
+
+  /**
+   * Spawn special `type` `minD`..`maxD` path tiles from the team: near a lone wolf (lonerBias), else on
+   * the side its `place` entry rolls (any side in holdouts), the best covered of a few hidden cells.
+   * `hold`: lurk until the coordinated release (ambushers only).
+   */
+  private spawnSpecial(type: number, minD: number, maxD: number, hold: boolean): Zombie | null {
+    const S = DIRECTOR.specials;
+    let c = -1;
+    if (AMBUSHER(type) && this.lonerP() && Math.random() < S.lonerBias) {
+      const [a, b] = S.lonerSpawn;
+      c = this.trySpawnCell(a, b, 0, this.lonerField) ?? this.trySpawnCell(a, b + 6, 0, this.lonerField) ?? -1;
+    }
+    if (c < 0) {
+      const [pa, pf, pb] = S.place[type] ?? [0, 0, 0], r = Math.random();
+      const side: Side = this.holdout >= 0 ? 0 : r < pa ? 1 : r < pa + pf ? 2 : r < pa + pf + pb ? -1 : 0;
+      let cover = -1;
+      for (let i = 0; i < 3; i++) {
+        const k = this.trySpawnCell(minD, maxD, side) ?? this.trySpawnCell(minD, maxD + 8, side);
+        if (k === null) break;
+        const v = this.coverAt(k);
+        if (v > cover) { cover = v; c = k; }
+      }
+      if (c < 0 && side) c = this.trySpawnCell(minD, maxD + 8, 0) ?? -1;
+    }
+    if (c < 0) return null;
+    const p = this.cellPos(c), zb = this.spawnZombie(type, p.x + rand(-0.5, 0.5), p.z + rand(-0.5, 0.5));
+    if (hold && AMBUSHER(type)) zb.hold = 1;
+    return zb;
+  }
+
+  /** Solid cells (walls, props) around cell `c`: more = better cover to lurk behind. */
+  private coverAt(c: number): number {
+    const W = this.L.W, x = c % W, z = (c / W) | 0;
+    let n = 0;
+    for (const [ox, oz] of DIRS8) if (this.L.solidAt(x + ox, z + oz, this.doors)) n++;
+    return n;
+  }
+
+  // ------------------------------------------------------------- ambushes
+  /** Room time a type's cooldown starts: when the last live one of it is gone. */
+  private specialGone(type: number): void {
+    for (const o of this.zombies.values()) if (o.type === type && !o.dormant) return;
+    const cd = DIRECTOR.specials.cd[type];
+    if (cd) this.spReady[type] = this.time + roll(cd);
+  }
+
+  /** Holder `z` was found out: it attacks now, and the rest of the ambush follows shortly. */
+  private blowAmbush(z: Zombie, why: string): void {
+    z.hold = 0;
+    this.ambushUntil = Math.min(this.ambushUntil, this.time + DIRECTOR.specials.blownWait);
+    if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} ambush blown: ${ZTYPES[z.type].id} ${why}`);
+  }
+
+  /** Every holder attacks at once. */
+  private releaseAmbush(why: string): void {
+    let n = 0;
+    for (const z of this.zombies.values()) if (z.hold) { z.hold = 0; n++; }
+    this.ambushUntil = Infinity;
+    if (DIRECTOR_DEBUG && n) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} ambush released (${why}): ${n} specials`);
+  }
+
+  /** 0: no survivor sees (x, z); 1: one could (in sight, unaware); 2: spotted (close, or in someone's view cone). */
+  private seenAt(x: number, z: number): number {
+    const S = DIRECTOR.specials;
+    let seen = 0;
+    for (const p of this.players.values()) {
+      if (p.st !== PSTATE.ALIVE) continue;
+      const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+      if (d > S.spotR || !this.L.hasLOS(p.x, p.z, x, z, this.doors)) continue;
+      if (d < S.spotClose || (-Math.sin(p.ry) * dx - Math.cos(p.ry) * dz) / (d || 1) > S.spotCone) return 2;
+      seen = 1;
+    }
+    return seen;
+  }
+
+  /**
+   * A holding special stalks `target` on `field` (path tiles): closes to holdFar without stepping
+   * into anyone's sight, backs off inside holdNear or while seen, else waits facing them. Returns
+   * false when it stops holding (spotted or walked up on) and should attack this tick.
+   */
+  private lurk(z: Zombie, target: Player, field: Int16Array, dt: number): boolean {
+    const S = DIRECTOR.specials;
+    const here = field[cellOf(z.z) * this.L.W + cellOf(z.x)];
+    // Perception at 10 Hz, staggered by id.
+    if ((this.tickN + z.id) % 3 === 0) {
+      if (here <= S.closeTiles) { this.blowAmbush(z, 'walked up on'); return false; }
+      const seen = this.seenAt(z.x, z.z);
+      if (seen === 2) { this.blowAmbush(z, 'spotted'); return false; }
+      z.hold = seen ? 2 : 1;
+    }
+    if (here >= INF) { z.st = ZSTATE.IDLE; return true; }
+    if (z.hold === 2 || here < S.holdNear) { this.backOff(z, 0.9, dt, field); return true; }
+    if (here > S.holdFar) {
+      const to = this.flowStep(z, -1, field);
+      if (to && !this.seenAt(to.x, to.z)) { this.walkTo(z, to, 0.85, dt); return true; }
+    }
+    z.st = ZSTATE.IDLE; z.ry = Math.atan2(-(target.x - z.x), -(target.z - z.z));
+    return true;
+  }
+
+  /** The singled-out lone wolf, if still standing. */
+  private lonerP(): Player | null {
+    const p = this.loner ? this.players.get(this.loner) : undefined;
+    return p && p.st === PSTATE.ALIVE ? p : null;
+  }
+
+  /**
+   * Lone-wolf check (with the flow field, 4 Hz). A survivor's isolation is the distance to the nearest
+   * standing teammate: straight if they can see each other, else walking (one BFS from them, only
+   * when a teammate is out of sight yet near enough to matter). Singles out the most isolated one
+   * cut off for lonerTime (ties: the one further back), and keeps a field toward them.
+   */
+  private updateLoner(dt: number): void {
+    const S = DIRECTOR.specials, stand = this.standing(), { W, H } = this.L;
+    if (this.players.size < 2 || stand.length < 2) { this.loner = 0; this.isoT.clear(); return; }
+    let pick: Player | null = null, pickIso = 0;
+    for (const p of stand) {
+      let iso = Infinity, walked = false;
+      for (const q of stand) {
+        if (q === p) continue;
+        const d = Math.hypot(q.x - p.x, q.z - p.z);
+        if (d >= iso) continue;
+        if (d > S.lonerDist || this.L.hasLOS(p.x, p.z, q.x, q.z, this.doors)) { iso = d; continue; }
+        if (!walked) {
+          walked = true;
+          if (this.isoScratch.length !== W * H) this.isoScratch = new Int16Array(W * H);
+          this.L.distanceField([cellOf(p.z) * W + cellOf(p.x)], this.doors, this.isoScratch);
+        }
+        iso = Math.min(iso, this.isoScratch[cellOf(q.z) * W + cellOf(q.x)] * TILE);
+      }
+      const cut = p.id === this.loner ? iso > S.lonerExit : iso > S.lonerDist;
+      const t = cut ? (this.isoT.get(p.id) ?? 0) + dt : 0;
+      this.isoT.set(p.id, t);
+      if (t < S.lonerTime && p.id !== this.loner) continue;
+      if (!cut) continue;
+      if (!pick || iso > pickIso + 1 || (iso > pickIso - 1 && this.progressAt(p.x, p.z) < this.progressAt(pick.x, pick.z))) { pick = p; pickIso = iso; }
+    }
+    // Stick with the current loner while they're still cut off.
+    const cur = this.lonerP();
+    if (cur && (this.isoT.get(cur.id) ?? 0) > 0) pick = cur;
+    if ((pick?.id ?? 0) !== this.loner && DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} loner: ${pick ? pick.name : 'none'}`);
+    this.loner = pick ? pick.id : 0;
+    if (!pick) return;
+    if (this.lonerField.length !== W * H) this.lonerField = new Int16Array(W * H);
+    this.L.distanceField([cellOf(pick.z) * W + cellOf(pick.x)], this.doors, this.lonerField);
   }
 
   // ------------------------------------------------------------------ waves
@@ -1099,6 +1293,7 @@ export class Room {
     for (const p of this.players.values()) p.intensity = 0;
     this.phase = Phase.BUILD_UP; this.phaseT = 0; this.phaseLen = 0; this.phaseBest = this.best;
     this.advancedAt = this.time; this.campT = 0; this.objSeenKey = '';
+    this.spReady.fill(0); this.ambushUntil = Infinity; this.loner = 0; this.isoT.clear();
   }
 
   private setPhase(ph: Phase, why: string): void {
@@ -1191,12 +1386,14 @@ export class Room {
     t.belt -= dt;
     if (t.belt <= 0) { t.belt = 2; this.fillBelt(BELT_MAX); }
 
-    let commons = 0, specials = 0, nearCommons = 0;
+    let commons = 0, specials = 0, holders = 0, nearCommons = 0;
     const byType = ZTYPES.map(() => 0);
-    const W = this.L.W;
+    const W = this.L.W, S = D.specials;
     for (const z of this.zombies.values()) {
       if (z.dormant) continue;
       byType[z.type]++;
+      if (z.hold) holders++;
+      if (z.type === ZT.BRUTE) continue;
       if (z.type !== ZT.WALKER) { specials++; continue; }
       commons++;
       if (this.flow[cellOf(z.z) * W + cellOf(z.x)] <= D.fadeNear) nearCommons++;
@@ -1205,6 +1402,14 @@ export class Room {
 
     this.decayIntensity(dt);
     if (this.holdout < 0) this.updatePhase(dt, nearCommons);
+
+    // Holding specials attack together: slots full, waited long enough (in any phase), or a crescendo began.
+    const slots = S.slots[Math.min(n, S.slots.length) - 1];
+    if (!holders) this.ambushUntil = Infinity;
+    else if (specials >= slots || this.time >= this.ambushUntil || this.holdout >= 0) {
+      this.releaseAmbush(specials >= slots ? 'slots full' : this.holdout >= 0 ? 'holdout' : 'timeout');
+      holders = 0;
+    }
 
     // ---- Deliberate events: bypass the pacing phases.
     if (this.pendingBrute && this.spawnAt(ZT.BRUTE, 12, 24)) { this.pendingBrute = false; this.events.push(['brute']); }
@@ -1228,8 +1433,9 @@ export class Room {
       t.holdSpecial -= dt;
       if (t.holdSpecial <= 0) {
         t.holdSpecial = 14 - n;
+        // Holdout specials skip the slots/cooldowns and attack straight away.
         const type = specials < (n > 2 ? 3 : 2) ? this.pickSpecial(byType, true) : -1;
-        if (type >= 0) this.spawnAt(type, 8, 20);
+        if (type >= 0) this.spawnSpecial(type, 8, 20, false);
       }
       return;
     }
@@ -1245,14 +1451,15 @@ export class Room {
       t.ambient = rand(1.6, 3.2) - 0.25 * n;
       if (commons < 6 + 3 * n) this.spawnAt(ZT.WALKER, 10, 22);
     }
+    // Fill a free slot with a holding special (one at a time); re-check soon if every type is cooling down.
     t.special -= dt;
     if (t.special <= 0) {
-      t.special = rand(24, 38) - 2 * n;
-      const type = specials < 1 + (n >> 1) ? this.pickSpecial(byType, false) : -1;
-      if (type === ZT.ALARM) {
-        // Alarm clocks lurk a bit further out so they have room to keep their distance.
-        if (this.spawnAt(type, 12, 24)) this.alarmAt = this.time + 75;
-      } else if (type >= 0) this.spawnAt(type, 9, 20);
+      const type = specials < slots ? this.pickSpecial(byType, false) : -1;
+      // Alarm clocks lurk a bit further out so they have room to keep their distance.
+      const zb = type < 0 ? null : type === ZT.ALARM ? this.spawnSpecial(type, 12, 24, false) : this.spawnSpecial(type, 9, 20, true);
+      if (zb && type === ZT.ALARM) this.alarmAt = this.time + 75;
+      if (zb?.hold && !holders) this.ambushUntil = this.time + S.maxWait;
+      t.special = zb ? roll(S.fill) : 1.5;
     }
     if (ph !== Phase.BUILD_UP) return;
 
@@ -1274,8 +1481,9 @@ export class Room {
   }
 
   /**
-   * Weighted pick of the next special, respecting per-type caps for the team size (-1 = none).
-   * While someone is down (the team is struggling) no Chargers or Alarm Clocks join in.
+   * Weighted pick of the next special, respecting per-type caps for the team size and (outside
+   * holdouts) respawn cooldowns (-1 = none). While someone is down (the team is struggling) no
+   * Chargers or Alarm Clocks join in.
    */
   private pickSpecial(byType: number[], holdout: boolean): number {
     const n = this.players.size;
@@ -1290,7 +1498,8 @@ export class Room {
       [ZT.ALARM, holdout || struggling || this.time < ALARM.minChapterTime || this.time < this.alarmAt ? 0 : 1.3, 1],
     ];
     let sum = 0;
-    for (const e of table) { if (byType[e[0]] >= e[2]) e[1] = 0; sum += e[1]; }
+    // Outside holdouts a type is off until its respawn cooldown (from its last death) runs out.
+    for (const e of table) { if (byType[e[0]] >= e[2] || (!holdout && this.time < this.spReady[e[0]])) e[1] = 0; sum += e[1]; }
     if (sum <= 0) return -1;
     let r = Math.random() * sum;
     for (const [type, w] of table) { r -= w; if (r < 0 && w > 0) return type; }
@@ -1317,6 +1526,7 @@ export class Room {
     const players = [...this.players.values()].filter((p) => p.st !== PSTATE.DEAD);
     const zs = [...this.zombies.values()];
     const go = this.doors, L = this.L, W = L.W;
+    const loner = this.lonerP();
     this.checkPins();
 
     for (const z of zs) {
@@ -1340,6 +1550,10 @@ export class Room {
         }
         if (mt) { tgt = mt; d = md; field = this.markFlow; }
       }
+      // Specials single out a lone wolf within reach, unless someone else is right on top of them.
+      if (loner && AMBUSHER(z.type) && tgt !== loner && d > 4 && this.lonerField[cellOf(z.z) * W + cellOf(z.x)] <= DIRECTOR.specials.lonerReach) {
+        tgt = loner; d = Math.hypot(loner.x - z.x, loner.z - z.z); field = this.lonerField;
+      } else if (tgt === loner && loner && AMBUSHER(z.type)) field = this.lonerField;
 
       if (z.dormant) {
         if (tgt && (d < 5 || (d < 15 && L.hasLOS(z.x, z.z, tgt.x, tgt.z, go)))) { z.dormant = false; this.alertNear(z.x, z.z, 7); }
@@ -1467,6 +1681,8 @@ export class Room {
         continue;
       }
 
+      // Holding for a coordinated attack: stalk out of sight, no attack triggers until released.
+      if (z.hold && this.lurk(z, target, field, dt)) continue;
       if (z.type === ZT.PUFFER && target.st === PSTATE.ALIVE && d < T.range) { this.damageZombie(z, 9999, null, false); continue; }
       z.sp -= dt;
       if (z.type === ZT.CHARGER && target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > CHARGER.minRange && d < CHARGER.maxRange
@@ -1493,7 +1709,7 @@ export class Room {
         if (away) { this.backOff(z, 1.15, dt); continue; }
       }
       if (z.type === ZT.DROOLER && d < DROOLER.keepAway && d > T.range && L.hasLOS(z.x, z.z, target.x, target.z, go)) {
-        this.backOff(z, 0.9, dt); continue;
+        this.backOff(z, 0.9, dt, field); continue;
       }
       if (z.type === ZT.DROOLER && d < DROOLER.maxRange - 6 && d >= DROOLER.keepAway && L.hasLOS(z.x, z.z, target.x, target.z, go)) {
         z.st = ZSTATE.IDLE; face(); continue; // in its comfort band: wait for the next spit
@@ -1607,7 +1823,7 @@ export class Room {
       this.updatePlayers(dt);
       this.updateHazards(dt);
       this.t.flow -= dt;
-      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeMarks(); }
+      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeMarks(); this.updateLoner(0.25); }
       this.director(dt);
       this.updateZombies(dt);
       if (this.state === 'play') this.updateQuest(dt);
