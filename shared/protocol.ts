@@ -28,7 +28,8 @@ export type GameEvent =
   | ['dead', pid: number]
   | ['revived', pid: number, by: number]
   | ['kb', pid: number, vx: number, vz: number]
-  | ['horde']
+  // A horde is coming; (x, z): where its main body spawns from (absent if it trickles in from all over).
+  | ['horde', x?: number, z?: number]
   | ['brute']
   | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number]
   // --- Charger / Drooler / Alarm Clock (zombie states CHARGE, PIN, RING travel in ZombieSnap).

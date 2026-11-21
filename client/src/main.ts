@@ -580,7 +580,7 @@ function onEvent(ev: GameEvent): void {
       const who = ev[1] === me.id ? 'You' : roster.get(ev[1])?.name ?? 'Someone';
       hud.feed(`${who}: ${(L.def.pickups[ev[2]]?.label ?? 'used it').replace(/\s*\(.*\)$/, '')}`);
       sfx.gate();
-      if (s?.hold) { hud.banner('HOLD OUT!', true); sfx.horde(); }
+      if (s?.hold) { hud.banner('HOLD OUT!', true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
       break;
     }
     case 'door': doors = ev[2] ? doors | (1 << ev[1]) : doors & ~(1 << ev[1]); world.setDoors(doors); sfx.gate(); break;

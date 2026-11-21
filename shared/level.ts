@@ -59,7 +59,7 @@ export interface Step {
   /** Door ids opened when the step completes. */ opens: number[];
   /** Door ids closed when the step completes (seal a safe room behind the team). */ closes: number[];
   /** Completing this step saves a checkpoint (the team restarts here after a wipe). */ checkpoint: boolean;
-  /** Spawn a horde / a Brute when the step begins. */ horde: boolean; brute: boolean;
+  /** Spawn a horde / a Brute when the step begins (a `use` step with `hold`: its horde comes when the machine is used). */ horde: boolean; brute: boolean;
   /** Where the HUD waypoint points (metres). */ at: Vec2;
 }
 

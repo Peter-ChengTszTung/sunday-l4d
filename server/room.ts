@@ -17,6 +17,10 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 const BELT_NEAR = 14, BELT_FAR = 46, BELT_MAX = 34;
 /** Director spawns never appear closer than this (metres) to any survivor. */
 const MIN_SPAWN_DIST = 16;
+/** Horde waves: members spawn within CLUSTER tiles of their source; FLANK_CHANCE that a big team-sourced
+ * wave (FLANK_MIN+) also comes from a second side; NOISE_REACH: how far (path tiles) a noise source may sit
+ * from the noise; GOO_HUNT: seconds a gooed survivor stays marked (wave members chase them first). */
+const CLUSTER = 3, FLANK_CHANCE = 0.22, FLANK_MIN = 10, NOISE_REACH = 12, GOO_HUNT = 12;
 
 export interface Player {
   id: number; ws: WebSocket; name: string; look: number;
@@ -45,7 +49,15 @@ interface Zombie {
   /** Charger pin: time pinned, damage accumulator. */
   pinT: number; acc: number;
   /** Damage taken from survivors while pinning (knocks it off at CHARGER.pinBreakDmg). */ pinHit: number;
+  /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
 }
+
+/**
+ * A queued horde. Members drip in from hidden cells clustered around `srcs` (spawn cells; a second
+ * one flanks from another side). `anchor`: cell of the noise that called it (-1 = the team); a lost
+ * source is re-picked by the same rule. `hunt`: room time until which members chase marked survivors.
+ */
+interface Wave { left: number; srcs: number[]; anchor: number; hunt: number; repicks: number }
 
 /** Drooler goo in flight (simulated on the server along the same arc the clients draw). */
 interface Glob { x1: number; z1: number; t: number }
@@ -59,6 +71,7 @@ interface ChapterData {
   /** Spawnable cells (not safe rooms/doors) bucketed by progress. */
   byProgress: number[][];
   open: number[];
+  /** 1 where `open` has the cell. */ spawnable: Uint8Array;
 }
 const chapterData = new Map<number, ChapterData>();
 function dataFor(ch: number): ChapterData {
@@ -66,13 +79,13 @@ function dataFor(ch: number): ChapterData {
   if (d) return d;
   const L = getLevel(ch), { W, H } = L, def = L.def;
   const progress = L.distanceField([def.startCell.z * W + def.startCell.x], ALL_OPEN);
-  const byProgress: number[][] = [], open: number[] = [];
+  const byProgress: number[][] = [], open: number[] = [], spawnable = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
     if (def.solid[i] || def.floor[i] === F.SAFE || def.doorCell[i] >= 0 || progress[i] >= INF) continue;
-    open.push(i);
+    open.push(i); spawnable[i] = 1;
     (byProgress[progress[i]] ??= []).push(i);
   }
-  d = { L, progress, byProgress, open };
+  d = { L, progress, byProgress, open, spawnable };
   chapterData.set(ch, d);
   return d;
 }
@@ -109,7 +122,7 @@ export class Room {
   private nextPuddle = 1;
   /** Earliest `time` the director may send another Alarm Clock. */
   private alarmAt = 0;
-  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeLeft: 0, hordeTick: 0, holdSpecial: 8, belt: 0 };
+  private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeTick: 0, holdSpecial: 8, belt: 0 };
 
   /**
    * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
@@ -185,7 +198,8 @@ export class Room {
     this.pendingBrute = false;
     this.clearHazards();
     this.alarmAt = 0;
-    this.t = { flow: 0, ambient: 3, horde: rand(80, 110), special: rand(20, 30), hordeLeft: 0, hordeTick: 0, holdSpecial: 8, belt: 0 };
+    this.waves = []; this.marks.clear();
+    this.t = { flow: 0, ambient: 3, horde: rand(80, 110), special: rand(20, 30), hordeTick: 0, holdSpecial: 8, belt: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
@@ -261,7 +275,8 @@ export class Room {
     this.collected = 0;
     this.holdout = s.kind === 'holdout' ? (s.hold ?? 60) * HOLD_SCALE : -1;
     if (!silent) this.events.push(['step', this.step]);
-    if (s.horde) { this.spawnWave(12 + 4 * this.players.size); this.events.push(['horde']); }
+    // A lever with a holdout saves its horde for the pull (the crescendo's opening burst), see onUse.
+    if (s.horde && !(s.kind === 'use' && s.hold)) this.horde();
     if (s.brute) this.pendingBrute = true;
   }
 
@@ -531,9 +546,11 @@ export class Room {
     } else if (pk.kind === 'obj') {
       if (!s || s.kind !== 'use' || s.target !== id || this.holdout >= 0 || this.taken.has(id)) return;
       this.taken.add(id);
-      this.events.push(['use', p.id, id]);
       this.alertNear(pk.x, pk.z, 30);
-      if (s.hold) { this.holdout = s.hold * HOLD_SCALE; this.t.hordeLeft = 0; } else this.completeStep();
+      // Holdout first so the horde's source ignores the ahead bias. Its event goes before 'use' (whose HOLD OUT banner wins).
+      if (s.hold) { this.holdout = s.hold * HOLD_SCALE; if (s.horde) this.horde(); }
+      this.events.push(['use', p.id, id]);
+      if (!s.hold) this.completeStep();
       return;
     } else if (pk.kind === 'item') {
       if (!s || s.kind !== 'collect' || s.group !== pk.group || this.taken.has(id)) return;
@@ -557,7 +574,7 @@ export class Room {
       hp: type === ZT.BRUTE ? T.hp + 700 * (this.players.size - 1) : T.hp,
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0,
     };
     this.zombies.set(zb.id, zb);
     return zb;
@@ -733,13 +750,15 @@ export class Room {
       if (Math.hypot(p.x - z.x, p.z - z.z) > T.boomRadius) continue;
       this.damagePlayer(p, T.boomDmg, z.x, z.z);
       this.events.push(['goo', p.id]);
+      this.marks.set(p.id, this.time + GOO_HUNT);
       gooed = true;
     }
     for (const o of [...this.zombies.values()]) {
       if (o.type !== ZT.WALKER) continue;
       if (Math.hypot(o.x - z.x, o.z - z.z) < 3) this.damageZombie(o, 60, null, false);
     }
-    if (gooed) { this.spawnWave(6 + this.players.size); this.events.push(['msg', 'The goo is attracting more of them!']); }
+    // Like bile: the called wave comes at the gooed survivors and goes for them first.
+    if (gooed) { this.recomputeMarks(); this.spawnWave(6 + this.players.size, { hunt: GOO_HUNT }); this.events.push(['msg', 'The goo is attracting more of them!']); }
   }
 
   /** `quiet`: damage over time (goo) that shouldn't stagger/slow the victim on their client. */
@@ -799,7 +818,8 @@ export class Room {
       ?? -1;
   }
 
-  private trySpawnCell(minD: number, maxD: number, forward: boolean): number | null {
+  /** `field`: path distances `minD`..`maxD` are measured on (default: to the nearest survivor). */
+  private trySpawnCell(minD: number, maxD: number, forward: boolean, field = this.flow): number | null {
     const players = this.standing();
     const { W } = this.L, open = this.cd.open;
     let limit = INF;
@@ -813,7 +833,7 @@ export class Room {
     const near = this.nearCells();
     for (let tries = 0; tries < 90; tries++) {
       const c = near.length && tries < 80 ? near[(Math.random() * near.length) | 0] : open[(Math.random() * open.length) | 0];
-      const d = this.flow[c];
+      const d = field[c];
       if (d < minD || d > maxD) continue;
       if (obj && obj[c] > limit) continue;
       const x = (c % W + 0.5) * TILE, z = (((c / W) | 0) + 0.5) * TILE;
@@ -864,7 +884,141 @@ export class Room {
     return this.spawnZombie(type, (c % W + 0.5) * TILE + rand(-0.5, 0.5), (((c / W) | 0) + 0.5) * TILE + rand(-0.5, 0.5));
   }
 
-  private spawnWave(n: number): void { this.t.hordeLeft += n; }
+  // ------------------------------------------------------------------ waves
+  private waves: Wave[] = [];
+  /** Goo-marked survivors (pid → room time the mark wears off) and the BFS field toward them. */
+  private marks = new Map<number, number>();
+  private markFlow = new Int16Array(1);
+  private noiseField = new Int16Array(1);
+
+  private cellPos(c: number): Vec2 { const W = this.L.W; return { x: (c % W + 0.5) * TILE, z: (((c / W) | 0) + 0.5) * TILE }; }
+
+  /** A full horde: queue it and tell clients where it's coming from. */
+  private horde(): void {
+    const at = this.spawnWave(12 + 4 * this.players.size);
+    this.events.push(at ? ['horde', r2(at.x), r2(at.z)] : ['horde']);
+  }
+
+  /**
+   * Queue `n` walkers that arrive together from one place. `noise`: cell of a noise they come from
+   * (else a hidden cell a walk from the team, ahead-biased; or from the goo-marked survivors with
+   * `hunt`). Big team-sourced waves sometimes split to flank from a second side. `hunt`: seconds the
+   * members chase marked survivors first. Returns the main source (metres), null if none was found
+   * (members then pick cells one by one, as before).
+   */
+  private spawnWave(n: number, o: { noise?: number; hunt?: number } = {}): Vec2 | null {
+    const w: Wave = { left: n, srcs: [], anchor: o.noise ?? -1, hunt: o.hunt ? this.time + o.hunt : 0, repicks: 0 };
+    const s = this.waveSource(w);
+    if (s >= 0) {
+      w.srcs.push(s);
+      if (w.anchor < 0 && !w.hunt && n >= FLANK_MIN && Math.random() < FLANK_CHANCE) { const f = this.flankSource(s); if (f >= 0) w.srcs.push(f); }
+    }
+    this.waves.push(w);
+    return s >= 0 ? this.cellPos(s) : null;
+  }
+
+  /** Pick (or re-pick) a wave's main source by its rule; -1 if none. */
+  private waveSource(w: Wave): number {
+    if (w.anchor >= 0) { const c = this.noiseSource(w.anchor); if (c >= 0) return c; }
+    if (w.hunt > this.time && this.marks.size) {
+      const c = this.trySpawnCell(7, 18, false, this.markFlow) ?? this.trySpawnCell(7, 26, false, this.markFlow);
+      if (c !== null) return c;
+    }
+    return this.pickSpawnCell(8, 20, this.holdout >= 0 ? 0 : 0.75);
+  }
+
+  /**
+   * The hidden spawn cell nearest (by walking) to a noise at cell `at`, within NOISE_REACH of it
+   * and a walk from the team; -1 if none. Event-time only: one BFS plus a bounded number of sight tests.
+   */
+  private noiseSource(at: number): number {
+    const { W, H } = this.L;
+    if (this.noiseField.length !== W * H) this.noiseField = new Int16Array(W * H);
+    const nf = this.L.distanceField([at], this.doors, this.noiseField);
+    const cand: number[] = [];
+    for (const c of this.nearCells()) if (nf[c] <= NOISE_REACH && this.flow[c] >= 6) cand.push(c);
+    cand.sort((a, b) => nf[a] - nf[b]);
+    // Cells right by the noise are usually in view (survivors are looking at it): test the
+    // nearest ones, then stride further out.
+    const players = this.standing();
+    for (let i = 0, k = 0; i < cand.length && k < 40; i += k < 20 ? 1 : 3, k++) {
+      const p = this.cellPos(cand[i]);
+      if (this.hidden(p.x, p.z, players, MIN_SPAWN_DIST)) return cand[i];
+    }
+    return -1;
+  }
+
+  /** A second source on another side of the team from `main` (a flanking split), or -1. */
+  private flankSource(main: number): number {
+    const stand = this.standing();
+    let cx = 0, cz = 0;
+    for (const p of stand) { cx += p.x / stand.length; cz += p.z / stand.length; }
+    const m = this.cellPos(main), ax = m.x - cx, az = m.z - cz, al = Math.hypot(ax, az) || 1;
+    for (let i = 0; i < 4; i++) {
+      const f = this.trySpawnCell(8, 22, false);
+      if (f === null) return -1;
+      const q = this.cellPos(f), bx = q.x - cx, bz = q.z - cz;
+      // At least ~80 degrees round from the main source (as seen from the team) and well apart.
+      if ((ax * bx + az * bz) / (al * (Math.hypot(bx, bz) || 1)) < 0.2 && Math.hypot(q.x - m.x, q.z - m.z) > 14) return f;
+    }
+    return -1;
+  }
+
+  /**
+   * A hidden spawnable cell within CLUSTER tiles of source `src` and about as far from the team by
+   * path (so not across a wall from it); -1 if the source is lost (seen, crowded, or left far behind).
+   */
+  private clusterCell(src: number, players: Player[]): number {
+    const { W } = this.L, f = this.flow, fs = f[src];
+    if (fs > 30) return -1;
+    const sx = src % W, sz = (src / W) | 0, span = 2 * CLUSTER + 1;
+    for (let i = 0; i < 10; i++) {
+      const x = sx + ((Math.random() * span) | 0) - CLUSTER, z = sz + ((Math.random() * span) | 0) - CLUSTER;
+      if (!this.L.inBounds(x, z)) continue;
+      const c = z * W + x;
+      if (!this.cd.spawnable[c] || f[c] < 5 || Math.abs(f[c] - fs) > CLUSTER + 1) continue;
+      const p = this.cellPos(c);
+      if (this.hidden(p.x, p.z, players, MIN_SPAWN_DIST)) return c;
+    }
+    return -1;
+  }
+
+  /** Spawn one member of wave `w` near one of its sources, moving a lost source (twice per wave at most) before falling back to a lone pick. */
+  private spawnWaveMember(w: Wave): boolean {
+    const players = this.standing();
+    let c = -1;
+    if (w.srcs.length) {
+      const i = w.srcs.length > 1 && Math.random() < 0.35 ? 1 : 0;
+      c = this.clusterCell(w.srcs[i], players);
+      if (c < 0 && w.repicks < 2) {
+        w.repicks++;
+        const s = i ? this.flankSource(w.srcs[0]) : this.waveSource(w);
+        if (s >= 0) { w.srcs[i] = s; c = this.clusterCell(s, players); }
+      }
+    }
+    let zb: Zombie | null = null;
+    if (c >= 0) {
+      const p = this.cellPos(c);
+      zb = this.spawnZombie(ZT.WALKER, p.x + rand(-0.5, 0.5), p.z + rand(-0.5, 0.5));
+    } else zb = this.spawnAt(ZT.WALKER, 7, 18, 0.75);
+    if (zb) zb.hunt = w.hunt;
+    return !!zb;
+  }
+
+  /** Drop worn-off marks and rebuild the field toward the marked survivors (shared by all hunters). */
+  private recomputeMarks(): void {
+    if (!this.marks.size) return;
+    const src: number[] = [];
+    for (const [id, until] of this.marks) {
+      const p = this.players.get(id);
+      if (!p || p.st !== PSTATE.ALIVE || until <= this.time) { this.marks.delete(id); continue; }
+      const tx = cellOf(p.x), tz = cellOf(p.z);
+      if (!this.L.solidAt(tx, tz, this.doors)) src.push(tz * this.L.W + tx);
+    }
+    if (!this.marks.size) return;
+    if (this.markFlow.length !== this.flow.length) this.markFlow = new Int16Array(this.flow.length);
+    this.L.distanceField(src, this.doors, this.markFlow);
+  }
 
   private director(dt: number): void {
     const n = this.players.size;
@@ -888,12 +1042,14 @@ export class Room {
 
     if (this.pendingBrute && this.spawnAt(ZT.BRUTE, 12, 24)) { this.pendingBrute = false; this.events.push(['brute']); }
 
-    // Drain queued horde spawns a few at a time.
-    if (t.hordeLeft > 0) {
+    // Drain queued hordes a walker at a time (oldest wave first), each from its wave's source.
+    const wave = this.waves[0];
+    if (wave) {
       t.hordeTick -= dt;
       if (t.hordeTick <= 0) {
         t.hordeTick = 0.22;
-        if (commons < cap && this.spawnAt(ZT.WALKER, 7, 18, 0.75)) t.hordeLeft--;
+        if (commons < cap && this.spawnWaveMember(wave)) wave.left--;
+        if (wave.left <= 0) this.waves.shift();
       }
     }
 
@@ -920,8 +1076,7 @@ export class Room {
     t.horde -= dt;
     if (t.horde <= 0) {
       t.horde = rand(90, 150);
-      this.spawnWave(12 + 4 * n);
-      this.events.push(['horde']);
+      this.horde();
     }
     t.special -= dt;
     if (t.special <= 0) {
@@ -990,6 +1145,17 @@ export class Room {
         if (p.st === PSTATE.ALIVE) { if (pd < d) { d = pd; tgt = p; } } else if (pd < dDown) { dDown = pd; tgtDown = p; }
       }
       if (tgtDown && (!tgt || (dDown < T.range && d > T.range + 1))) { tgt = tgtDown; d = dDown; }
+      // Goo wave members go for the nearest marked survivor while the mark lasts (they path on markFlow).
+      let field = this.flow;
+      if (z.hunt > this.time && this.marks.size && this.markFlow[cellOf(z.z) * W + cellOf(z.x)] < INF) {
+        let mt: Player | null = null, md = Infinity;
+        for (const p of players) {
+          if (p.st !== PSTATE.ALIVE || !this.marks.has(p.id)) continue;
+          const pd = Math.hypot(p.x - z.x, p.z - z.z);
+          if (pd < md) { md = pd; mt = p; }
+        }
+        if (mt) { tgt = mt; d = md; field = this.markFlow; }
+      }
 
       if (z.dormant) {
         if (tgt && (d < 5 || (d < 15 && L.hasLOS(z.x, z.z, tgt.x, tgt.z, go)))) { z.dormant = false; this.alertNear(z.x, z.z, 7); }
@@ -1093,8 +1259,9 @@ export class Room {
       if (z.st === ZSTATE.RING) {
         z.t -= dt; face();
         if (z.t <= 0) {
-          // Rang out: sleepers for streets around shuffle toward the noise.
-          this.spawnWave(5 + 3 * this.players.size);
+          // Rang out: sleepers for streets around wake, and a mini-horde comes from round the clock.
+          this.alertNear(z.x, z.z, 25);
+          this.spawnWave(5 + 3 * this.players.size, { noise: cellOf(z.z) * W + cellOf(z.x) });
           this.events.push(['alarm', z.id, r2(z.x), r2(z.z)]);
           z.st = ZSTATE.RUN; z.flee = ALARM.flee; z.sp = ALARM.cooldown;
         }
@@ -1160,13 +1327,13 @@ export class Room {
       if (d < 6 && L.hasLOS(z.x, z.z, target.x, target.z, go)) { dx = target.x - z.x; dz = target.z - z.z; }
       else {
         const cx = cellOf(z.x), cz = cellOf(z.z);
-        let best = this.flow[cz * W + cx], bx = cx, bz = cz;
+        let best = field[cz * W + cx], bx = cx, bz = cz;
         if (best >= INF) { z.st = ZSTATE.IDLE; continue; }
         for (const [ox, oz] of DIRS8) {
           const nx = cx + ox, nz = cz + oz;
           if (L.solidAt(nx, nz, go)) continue;
           if (ox && oz && (L.solidAt(cx + ox, cz, go) || L.solidAt(cx, cz + oz, go))) continue;
-          const v = this.flow[nz * W + nx];
+          const v = field[nz * W + nx];
           if (v < best) { best = v; bx = nx; bz = nz; }
         }
         dx = (bx + 0.5) * TILE + z.offX - z.x; dz = (bz + 0.5) * TILE + z.offZ - z.z;
@@ -1255,7 +1422,7 @@ export class Room {
       this.updatePlayers(dt);
       this.updateHazards(dt);
       this.t.flow -= dt;
-      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); }
+      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeMarks(); }
       this.director(dt);
       this.updateZombies(dt);
       if (this.state === 'play') this.updateQuest(dt);
