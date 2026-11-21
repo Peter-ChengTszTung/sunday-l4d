@@ -2,7 +2,7 @@
 name: perf-optimizer
 description: Finds and fixes performance problems by measurement — client frame rate and draw calls (PlayCanvas), GC stutter, server tick cost in room.ts, snapshot bandwidth. Use for low FPS, hitches, lag with big hordes, or "make it faster".
 tools: Read, Edit, Grep, Glob, Bash, Skill
-skills: performance-optimization
+skills: performance-optimization, reduce-draw-calls, inspect-runtime, verify-pixels, bake-lighting, apply-conventions
 model: opus
 ---
 
@@ -18,3 +18,5 @@ Method:
 3. Re-measure and report before/after numbers. Remove temporary instrumentation.
 
 Don't trade away the look or gameplay correctness silently. Run `npm run typecheck && npm test`. Useful skill (Skill tool): `performance-optimization`.
+
+PlayCanvas skills: `reduce-draw-calls` (batching/instancing options), `inspect-runtime` (read live stats from the running app via the devtools hook), `verify-pixels` (prove an optimisation is visually identical), `bake-lighting`, `apply-conventions`.

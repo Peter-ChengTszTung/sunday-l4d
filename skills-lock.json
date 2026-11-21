@@ -1,113 +1,225 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "add-effects": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/add-effects/SKILL.md",
+      "computedHash": "70c7bf47bf973aed29434a0de929586cc3dddace00f5ca1f9ad81ae8b77d52f0"
+    },
     "ai-behavior-trees-utility-ai": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/ai-behavior-trees-utility-ai/SKILL.md",
-      "computedHash": "92a273b58bfd45fa8af61d58ccfff35f9dc60ad11ab4436d791a57459ae667f4"
+      "computedHash": "cf907aa8e339ca034ebd30a868148f7fa678dd3058f17636002772835612724a"
+    },
+    "apply-conventions": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/apply-conventions/SKILL.md",
+      "computedHash": "bdcacc39b7ca2b488c94ab3eacd868e3340b150d0ccecb4ecd75b7b5db143491"
+    },
+    "assemble-scene": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/assemble-scene/SKILL.md",
+      "computedHash": "8924ffffbdf65e84941a0bb8f8d14adab61b88b01cce3b9f349c960b94970804"
     },
     "audio-design": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/audio-design/SKILL.md",
-      "computedHash": "56f061fb5df27a02914929b19cfc5f2b18b7e246b9ab2218b12db008e4eb2d9e"
+      "computedHash": "9cc7466f3e608710f6d6c56337f9ace788fb7569038c4dc26c8b30b2200c511d"
+    },
+    "bake-lighting": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/bake-lighting/SKILL.md",
+      "computedHash": "10604300c4f062e2f598aca2a9b9d520212e4ab5194b183b6f599d38b3857d17"
+    },
+    "build-app": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/build-app/SKILL.md",
+      "computedHash": "abba09f3f0a6b24900746a4fe20280ade025d2abf64252225e80b802fc8481ba"
+    },
+    "calibrate-model": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/calibrate-model/SKILL.md",
+      "computedHash": "db5b7e3ce17d822fbf27c34ad37e4846ef55d798a620ac791ab7e564d5f06c7e"
     },
     "camera-systems": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/camera-systems/SKILL.md",
-      "computedHash": "530f518842d86984e176866f00c4e0ce8e251e3b9246ddbdcce73f36e9536c44"
+      "computedHash": "eee6290a3ef6c74f2e0a4d4aac8545801201ac24fe01daf1684d46b6434fcfd7"
+    },
+    "configure-animation": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/configure-animation/SKILL.md",
+      "computedHash": "bad32ff62a127ca3a4cde219d77549166e0784d44a91d1be7ba3fa413ed2b985"
     },
     "create-game-assets": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/create-game-assets/SKILL.md",
-      "computedHash": "b73a497e3061b762ba39ec56553f19853d41971584eecfe994ea576ec60a7a15"
+      "computedHash": "9fa157004c040ab3de38ac8cc3a7a49238821fcde7e384e0b94b10657c6e6a53"
     },
     "dialogue-systems": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/dialogue-systems/SKILL.md",
-      "computedHash": "3ce34ac552d5f554f78deb62c970a68b3c85bc9d31058e82646bbe335b3bee0a"
+      "computedHash": "6faa9c0781da4739e4273864a820a969c03c10f293845cca2431ecade3b94060"
+    },
+    "find-examples": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/find-examples/SKILL.md",
+      "computedHash": "8a53d91f116a40e998fd3c1740a701641f506fcc9e979e86e681d3701d805f65"
     },
     "fps-shooter": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/genres/fps-shooter/SKILL.md",
-      "computedHash": "e7ef191a3fc30b57e68cc1b1651b515ed0cddd16205bd35be4e1464a54eccad3"
+      "computedHash": "b3e440060bbbeb1a3b0a6fc3b9db8e12acdeaaab99d436427ba1a9d93bc826e1"
     },
     "game-ai": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/game-ai/SKILL.md",
-      "computedHash": "9b31235f35dc5fe0a02e4fa1bcd1f9f3ac397d0c357097b241d6812a80685ade"
+      "computedHash": "f8e19076e9f79447fc94b553c656d15e8461e21d896e7d22b53c45a18c6e6bc6"
     },
     "game-docs": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/workflows/game-docs/SKILL.md",
-      "computedHash": "1d9691526a150c7ed99b2d132fde96d70ad2bd2a48f5f7ebd820be869f32228f"
+      "computedHash": "d1bbdebee0ecef2ef564f5de012ba747be3f4ec3ea15b5fa80d64f85a06003dd"
     },
     "game-feel": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/game-feel/SKILL.md",
-      "computedHash": "4633da6ccb3525604abfd55f696ab63bdc0b7d7d696326e1e88960c25cf41777"
+      "computedHash": "f0a2becd199feabc7e8720f8f5626c84571ef763a0a5edefcdae8a039ce64338"
     },
     "game-ui-ux": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/game-ui-ux/SKILL.md",
-      "computedHash": "6958134b7409a6b3a52d61df537c903496354e7244c46a1236b2e228fa10f6f5"
+      "computedHash": "8bf85f22ef57c78fd2a5b14c086e6cb4a1a0f6b729111abeed29be96cf615610"
     },
     "input-systems": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/input-systems/SKILL.md",
-      "computedHash": "23d1f2ea6d63e038037f96cfaa4ae2f8d18dfe788c980777b5e4174c8323e29e"
+      "computedHash": "c155987a41e88c82d0126dbf0959114cae1e0892695777aa58501f31fd363090"
+    },
+    "inspect-glb": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/inspect-glb/SKILL.md",
+      "computedHash": "61f033bc504b390fa538af36af61f2731a38213bc776e817fc2ebdb1c9da58d8"
+    },
+    "inspect-runtime": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/inspect-runtime/SKILL.md",
+      "computedHash": "5e387507a6a7eaea16d57c7195ffc2c1251b38377f095e8419532a054e8e078b"
     },
     "itch-publish": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/workflows/itch-publish/SKILL.md",
-      "computedHash": "66190ff3149e1a0bd27979188f1ae92f3912ce75a055c8a5b1f2f7d4408a1bc2"
+      "computedHash": "0c16d4088649214584a37b73c78a03f99cf4d68744beee86923fea6f6a1239a8"
     },
     "level-design": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/level-design/SKILL.md",
-      "computedHash": "5d9468cf675344c454e97cb961fac3482c1630997e524679ddfa77898428a04b"
+      "computedHash": "f150b2062dff70863a6efcbf51e2b574acee303aac7f7676e384980db5947b82"
+    },
+    "light-scene": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/light-scene/SKILL.md",
+      "computedHash": "8d583699f938d601103106565b340c17eaccb1ca3c6dea96229b549d14e26add"
+    },
+    "load-assets": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/load-assets/SKILL.md",
+      "computedHash": "ae4e663f83519e144b7c23506dc98ba0eb987f8741e88043b293197a5ca5fa28"
+    },
+    "override-shader-chunks": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/override-shader-chunks/SKILL.md",
+      "computedHash": "7e6840ad529cc44c7b50095531be8941fcdb168ec640f93f46f3a29d11da48e2"
     },
     "performance-optimization": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/performance-optimization/SKILL.md",
-      "computedHash": "3c0b4ab48d71bc2be1e602c82e477ba5928fb421c7b659731e3a50a449058a2c"
+      "computedHash": "a73d59038c278242bef4e1d80c9b1657ac472de3d68db88164e93d5c00f80197"
     },
     "physics-tuning": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/physics-tuning/SKILL.md",
-      "computedHash": "29661c3a96a57419934b2f1b8c07cdc6076d1f68e6bafcc60ef442f9d190b829"
+      "computedHash": "f77d7a97e3d2acad3310ac23ad7cf1cbe1e6e189f41a8c2cfe88bce07dd0bd93"
     },
     "procedural-gen": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/procedural-gen/SKILL.md",
-      "computedHash": "a625c35cc816f6a29d197b846495dd419bf24f3ca8ef32b653d77aec932cf884"
+      "computedHash": "a9dde927adcc87ebd61119413b7316b881b31ef21896d823088d461a0874b4fe"
     },
     "prototype-fast": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/workflows/prototype-fast/SKILL.md",
-      "computedHash": "d7fb1852dc737f96160a50ab1402d4146ff36a7467cf5933949ff51beb51fa87"
+      "computedHash": "c1ccc257ef0f9b1a3c84d7cee01965fcbe51ecc338c0bb3ef20299888aff57ce"
+    },
+    "reduce-draw-calls": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/reduce-draw-calls/SKILL.md",
+      "computedHash": "9028692e0768da8275999f1fedad2e2b1e0212cc8b744ad642bb50d7f4ad83bf"
+    },
+    "reuse-scripts": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/reuse-scripts/SKILL.md",
+      "computedHash": "12584072dbbb4e84a531ae968d974c8c7f0c5b6194b94ea54ff2cae912ebb3a6"
     },
     "shader-programming": {
       "source": "gamedev-skills/awesome-gamedev-agent-skills",
       "sourceType": "github",
       "skillPath": "skills/disciplines/shader-programming/SKILL.md",
-      "computedHash": "4c446cfdcd14b4bf41de4d9581d58fbf25bd27863032d0b493d5a96a38943271"
+      "computedHash": "f5722dbca5e9fa6a8954f79e7735ff244c22702f59b0b7c3f9f6bdd5beabba18"
+    },
+    "verify-pixels": {
+      "source": "playcanvas/skills",
+      "commit": "65f6241bc413c2adb78af5890317a8177dd518f0",
+      "sourceType": "github",
+      "skillPath": "plugins/playcanvas/skills/verify-pixels/SKILL.md",
+      "computedHash": "c41884f91d109c96e45c5e249c906e10659b5b6352533251ba8f9914661d96b6"
     }
   }
 }

@@ -2,6 +2,7 @@
 name: verifier
 description: Runs the project's checks (typecheck + headless smoke test) and reports pass/fail with the exact failing output. Use after any code change, before committing, or when asked "does it still work?". Does not fix code.
 tools: Bash, Read, Grep, Glob, Skill
+skills: inspect-runtime
 model: opus
 ---
 
@@ -18,3 +19,5 @@ Report, in this shape:
 - **likely cause:** one or two sentences with `file:line`, or "unclear"
 
 Keep it short. If both pass, say so in one line.
+
+PlayCanvas skill: `inspect-runtime` for reading live app state when a check needs it.

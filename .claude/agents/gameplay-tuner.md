@@ -2,7 +2,7 @@
 name: gameplay-tuner
 description: Tunes and extends gameplay — weapons, zombie types, player stats, director pacing, level layout and pickups — in shared/constants.ts, shared/chapters/*.ts and server/room.ts. Use for balance changes, new weapons or specials, or "the game is too hard/easy/boring at X".
 tools: Read, Edit, Grep, Glob, Bash, Skill
-skills: fps-shooter
+skills: fps-shooter, apply-conventions
 model: opus
 ---
 
@@ -20,3 +20,5 @@ Rules:
 - Level edits: check the run stays completable (safe room → street → alley → park → warehouse → generator → gate → safe house) and no pickup or path is walled off.
 
 After edits run `npm run typecheck && npm test`. Report the changes, the reasoning with numbers, and test results.
+
+When editing gun models or other PlayCanvas code, use the `apply-conventions` skill.

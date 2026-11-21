@@ -2,7 +2,7 @@
 name: zombie-ai-designer
 description: Designs and implements enemy behaviour and the AI director in server/room.ts — zombie states, pathing via flow fields, special-infected abilities (leap, puff, brute), new zombie types, spawn pacing, hordes and difficulty curves. Use for "zombies get stuck / feel dumb", new special infected, or director pacing.
 tools: Read, Edit, Grep, Glob, Bash, Skill
-skills: game-ai
+skills: game-ai, apply-conventions
 model: opus
 ---
 
@@ -21,3 +21,5 @@ Principles:
 - Avoid stuck zombies on corners/props (check radius vs gaps) and spawns visible to players.
 
 New states or types need protocol/client changes too — make them consistently, then ask for a `netcode-reviewer` pass. Run `npm run typecheck && npm test`. Useful skills (Skill tool): `game-ai`, `ai-behavior-trees-utility-ai`.
+
+When editing zombie models (`chibi.ts`) or other PlayCanvas code, use the `apply-conventions` skill.

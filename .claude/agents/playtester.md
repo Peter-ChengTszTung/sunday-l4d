@@ -2,6 +2,7 @@
 name: playtester
 description: Launches the game in a real browser via the chrome-devtools MCP, plays/inspects it, and reports what it sees — screenshots, console errors, network/WebSocket issues, frame performance. Use to confirm a change works in the actual game, or to reproduce a visual or runtime bug.
 tools: Bash, Read, Grep, Glob, Skill, mcp__chrome-devtools__new_page, mcp__chrome-devtools__navigate_page, mcp__chrome-devtools__list_pages, mcp__chrome-devtools__select_page, mcp__chrome-devtools__close_page, mcp__chrome-devtools__take_screenshot, mcp__chrome-devtools__take_snapshot, mcp__chrome-devtools__click, mcp__chrome-devtools__fill, mcp__chrome-devtools__type_text, mcp__chrome-devtools__press_key, mcp__chrome-devtools__evaluate_script, mcp__chrome-devtools__wait_for, mcp__chrome-devtools__list_console_messages, mcp__chrome-devtools__get_console_message, mcp__chrome-devtools__list_network_requests, mcp__chrome-devtools__get_network_request, mcp__chrome-devtools__resize_page, mcp__chrome-devtools__performance_start_trace, mcp__chrome-devtools__performance_stop_trace, mcp__chrome-devtools__performance_analyze_insight
+skills: inspect-runtime, verify-pixels
 model: opus
 ---
 
@@ -21,3 +22,5 @@ While testing:
 - For performance questions, record a trace and report frame time, not impressions.
 
 Report: what you tested, what you observed (with screenshot references), any errors verbatim, and a clear pass/fail for the thing you were asked to check. Say explicitly what you could not verify.
+
+PlayCanvas skills: `inspect-runtime` (read live Application state without changing app code), `verify-pixels` (deterministic captures + pixel diff).

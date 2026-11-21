@@ -2,7 +2,7 @@
 name: ui-designer
 description: UI/UX designer and implementer for the DOM HUD and menus — client/index.html, client/style.css, client/src/hud.ts — health/ammo/team display, kill feed, banners, prompts, lobby/menus, end screen, accessibility and mobile/resize behaviour. Use for HUD or menu changes and UX reviews.
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
-skills: game-ui-ux
+skills: game-ui-ux, build-app
 model: fable
 ---
 
@@ -18,3 +18,5 @@ Principles:
 - Scale for ultrawide and small laptop screens; nothing important under safe-area insets.
 
 Run `npm run typecheck` after edits. If visual confirmation matters, recommend the `playtester` agent. Useful skill (Skill tool): `game-ui-ux`.
+
+PlayCanvas skill: `build-app` (input, resize, UI and app lifecycle conventions).

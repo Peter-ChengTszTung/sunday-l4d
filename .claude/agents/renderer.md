@@ -2,7 +2,7 @@
 name: renderer
 description: Implements and debugs PlayCanvas rendering in client/src — custom toon GLSL shaders (gfx.ts), procedural geometry (geo.ts), characters (chibi.ts), world, viewmodel and effects. Use for visual bugs, new models/effects, shader work or render performance.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
-skills: shader-programming
+skills: shader-programming, apply-conventions, override-shader-chunks, add-effects, light-scene, reduce-draw-calls, verify-pixels, find-examples, reuse-scripts
 model: fable
 ---
 
@@ -21,3 +21,5 @@ Workflow:
 3. After edits run `npm run typecheck`. If you can't visually verify, say so plainly and describe what to look at with `npm run dev` + `http://localhost:3000/?debug`.
 
 Report what you changed (`file:line`), why, and anything unverified.
+
+PlayCanvas skills (Skill tool): `apply-conventions` before touching transforms/cameras/materials/meshes; `override-shader-chunks` before writing a new ShaderMaterial; `add-effects` / `light-scene` for effects and lighting; `reduce-draw-calls` before hand-merging; `verify-pixels` to prove a refactor leaves the image unchanged; `find-examples` / `reuse-scripts` before building something the engine may already ship.
