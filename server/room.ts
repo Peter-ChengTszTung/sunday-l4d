@@ -85,9 +85,14 @@ export class Room {
   private pendingBrute = false;
   private t = { flow: 0, ambient: 3, horde: 90, special: 25, hordeLeft: 0, hordeTick: 0, holdSpecial: 8, belt: 0 };
 
-  constructor(public code: string, chapter = 0, private allowDebug = false) {
+  /**
+   * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
+   * or -1 for the chapter start. `listed`: shown in the lobby's room list.
+   */
+  constructor(public code: string, chapter = 0, private allowDebug = false, startAt = -1, readonly listed = true) {
     this.loadChapter(chapter);
-    this.reset(false);
+    const cp = this.checkpointFor(startAt);
+    if (cp) { this.checkpoint = cp; this.reset(true, true); } else this.reset(false);
     this.interval = setInterval(() => this.tick(1 / TICK_HZ), 1000 / TICK_HZ);
   }
 
@@ -106,8 +111,41 @@ export class Room {
   }
 
   // ------------------------------------------------------------------ setup
-  /** Start the chapter, or (fromCheckpoint) restart at the last checkpoint. */
-  reset(fromCheckpoint: boolean): void {
+  /**
+   * Checkpoint state as if the team had just completed checkpoint step `step` (objective
+   * machines and quest items before it count as done). Null if `step` isn't a checkpoint.
+   */
+  private checkpointFor(step: number): Checkpoint | null {
+    const s = this.def.steps[step];
+    if (!s || s.kind !== 'gather' || !s.checkpoint) return null;
+    const taken: number[] = [];
+    for (let i = 0; i <= step; i++) {
+      const t = this.def.steps[i];
+      if (t.kind === 'use' && t.target !== undefined) taken.push(t.target);
+      if (t.kind === 'collect') for (const p of this.def.pickups) if (p.kind === 'item' && p.group === t.group) taken.push(p.id);
+    }
+    return { step, doors: this.L.doorsAfter(step + 1), taken };
+  }
+
+  /** Where a player (re)spawns when there's no teammate to join: the active checkpoint's safe room or the start. */
+  private spawnPoints(): Vec2[] {
+    return (this.checkpoint && this.def.checkpointSpawns[this.checkpoint.step]) || this.def.spawns;
+  }
+
+  /** Lobby room-list entry. */
+  info() {
+    const s = this.cur;
+    return {
+      code: this.code, ch: this.ch, title: this.def.title, step: this.step + 1, steps: this.def.steps.length,
+      objective: s ? s.objective : '', players: [...this.players.values()].map((p) => p.name), max: MAX_PLAYERS, state: this.state,
+    };
+  }
+
+  /**
+   * Start the chapter, or (fromCheckpoint) restart at the last checkpoint. `freshStart`: a new run
+   * that begins at the checkpoint (picked in the lobby) rather than a restart after a wipe.
+   */
+  reset(fromCheckpoint: boolean, freshStart = false): void {
     const cp = fromCheckpoint ? this.checkpoint : null;
     this.zombies = new Map();
     this.nextZid = 1;
@@ -115,18 +153,19 @@ export class Room {
     this.endTimer = 0;
     this.holdout = -1;
     this.collected = 0;
-    this.time = cp ? this.time : 0;
-    if (!cp) { this.kills = 0; this.checkpoint = null; }
+    this.time = cp && !freshStart ? this.time : 0;
+    if (!cp || freshStart) this.kills = 0;
+    if (!cp) this.checkpoint = null;
     this.pendingBrute = false;
     this.t = { flow: 0, ambient: 3, horde: rand(80, 110), special: rand(20, 30), hordeLeft: 0, hordeTick: 0, holdSpecial: 8, belt: 0 };
     this.doors = cp ? cp.doors : 0;
     this.taken = new Set(cp ? cp.taken : []);
     this.step = cp ? cp.step + 1 : 0;
     this.started = !!cp;
-    this.events = [['reset', this.ch, this.step, this.doors, [...this.taken], cp ? 1 : 0]];
-    const spawns = cp ? this.def.checkpointSpawns[cp.step] ?? this.def.spawns : this.def.spawns;
+    this.events = [['reset', this.ch, this.step, this.doors, [...this.taken], cp && !freshStart ? 1 : 0]];
+    const spawns = this.spawnPoints();
     let slot = 0;
-    for (const p of this.players.values()) this.spawnPlayer(p, spawns[slot++ % spawns.length], !cp);
+    for (const p of this.players.values()) this.spawnPlayer(p, spawns[slot++ % spawns.length], !cp || freshStart);
     const sp = spawns[0];
     this.best = this.progressAt(sp.x, sp.z);
     this.beginStep(true);
@@ -148,7 +187,8 @@ export class Room {
     const p = { id: this.nextPid++, ws, name: name || SURVIVORS[look].name, look, medkits: 0, kills: 0 } as Player;
     const mate = this.standing()[0];
     this.players.set(p.id, p);
-    this.spawnPlayer(p, this.def.spawns[look % this.def.spawns.length], true);
+    const spawns = this.spawnPoints();
+    this.spawnPlayer(p, spawns[look % spawns.length], true);
     // Late joiners start beside the team if the run is already under way.
     if (mate && (this.started || this.step > 0)) {
       p.x = mate.x; p.z = mate.z;

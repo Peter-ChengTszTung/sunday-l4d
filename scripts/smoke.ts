@@ -151,6 +151,27 @@ const end = a.events.find((e) => e[0] === 'end' && e[1] === 1)!;
 if (end[5] !== 1 % 1 && end[5] === undefined) fail('win did not name the next chapter');
 console.log(`ok: all ${MAP.steps.length} quest steps of "${MAP.title}" completed, chapter won`);
 
+// Lobby: listed rooms, and creating a room that starts in a chapter's first checkpoint safe room.
+const cpStep = MAP.steps.findIndex((s) => s.kind === 'gather' && s.checkpoint);
+const c = await new Promise<Bot>((resolve, reject) => {
+  const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
+  const bt: Bot = { ws, id: 0, room: '', snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
+  ws.on('open', () => bt.send({ t: 'j', name: 'Gamma', room: '', create: true, ch: 0, cp: cpStep }));
+  ws.on('error', reject);
+  ws.on('message', (raw) => {
+    const m = JSON.parse(raw.toString()) as ServerMsg;
+    if (m.t === 'w') { bt.id = m.id; bt.room = m.room; if (m.step !== cpStep + 1) fail(`safe-room start began at step ${m.step}, expected ${cpStep + 1}`); resolve(bt); }
+    else if (m.t === 's') { bt.snap = m; bt.events.push(...m.ev); }
+  });
+});
+await sleep(300);
+const me3 = c.snap!.p.find((p) => p[0] === c.id)!;
+if (!L.inRect(me3[1], me3[3], MAP.steps[cpStep].area!)) fail('safe-room start did not spawn the player inside the safe room');
+const listed = await fetch(`http://localhost:${PORT}/api/rooms`).then((r) => r.json()) as { code: string; step: number }[];
+if (!listed.some((r) => r.code === c.room && r.step === cpStep + 2)) fail(`room list does not show the new room: ${JSON.stringify(listed)}`);
+console.log(`ok: room list works; new room ${c.room} started in safe room (step ${cpStep + 1})`);
+c.ws.close();
+
 a.ws.close(); b.ws.close();
 await sleep(200);
 server.kill();

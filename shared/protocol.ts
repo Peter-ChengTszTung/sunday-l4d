@@ -32,6 +32,9 @@ export type GameEvent =
   | ['brute']
   | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number];
 
+/** GET /api/rooms entry (listed rooms only). */
+export interface RoomInfo { code: string; ch: number; title: string; step: number; steps: number; objective: string; players: string[]; max: number; state: string }
+
 export interface RosterEntry { id: number; name: string; look: number }
 
 export type ServerMsg =
@@ -42,7 +45,8 @@ export type ServerMsg =
   | { t: 's'; st: 'play' | 'won' | 'lost'; g: number; ho: number; q: number; qc: number; p: PlayerSnap[]; z: ZombieSnap[]; ev: GameEvent[] };
 
 export type ClientMsg =
-  | { t: 'j'; name: string; room: string; ch?: number }
+  // room '' = quick play; create = open a new room on chapter `ch` starting at checkpoint step `cp` (-1 = chapter start).
+  | { t: 'j'; name: string; room: string; ch?: number; create?: boolean; cp?: number; priv?: boolean }
   | { t: 'p'; x: number; y: number; z: number; ry: number; rx: number; w: number; a: number }
   | { t: 'f'; w: number; h: [number, number, number][]; e: [number, number, number] }
   | { t: 'v' }

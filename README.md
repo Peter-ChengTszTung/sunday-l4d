@@ -24,9 +24,11 @@ Everything (pages, assets, `/ws`) is on one port, so any host that supports WebS
 
 ## Playing together
 
-Enter a name and press **PLAY**. Leave the room code blank for quick play (joins any room
-with a free seat) or type a code to create/join a private room. In game, the top-right
-button copies an invite link — the room code is the URL hash.
+Enter a name. The lobby lists open rooms (chapter, current objective, who's in): click **JOIN**,
+or **QUICK PLAY** to drop into any room with a free seat. **New room** picks the chapter and
+where to start: the chapter start or any of its checkpoint safe rooms. Tick *Private* to keep
+the room off the list. In game, the top-right button copies an invite link (the room code is
+the URL hash), and opening it shows a one-click join.
 
 | Key | Action |
 | --- | --- |

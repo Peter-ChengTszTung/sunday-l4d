@@ -4,7 +4,7 @@ import * as pc from 'playcanvas';
 import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS } from '../../shared/constants';
 import { F, isIndoor, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
-import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
+import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
 import { ViewModel, buildGun, type Gun } from './viewmodel';
@@ -13,7 +13,7 @@ import { quatYXZ } from './geo';
 import { FX } from './fx';
 import { Sfx } from './audio';
 import { Hud, type MateView } from './hud';
-import { Net } from './net';
+import { Net, type JoinOpts } from './net';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -483,32 +483,67 @@ net.onMessage = (m: ServerMsg) => {
   }
 };
 net.onClose = () => {
-  if (!inGame) { ($('play') as HTMLButtonElement).disabled = false; return; }
+  if (!inGame) { for (const b of lobbyButtons()) b.disabled = false; return; }
   inGame = false;
   document.exitPointerLock();
   hud.show(false); hud.pause(false);
   $('lobby').hidden = false;
   $('lobbymsg').textContent = 'Disconnected from the server.';
-  ($('play') as HTMLButtonElement).disabled = false;
+  for (const b of lobbyButtons()) b.disabled = false;
+  void refreshRooms();
 };
 
 // --------------------------------------------------------------------- lobby
-const nameInput = $<HTMLInputElement>('name'), codeInput = $<HTMLInputElement>('code');
+const nameInput = $<HTMLInputElement>('name');
 nameInput.value = params.get('name') ?? localStorage.getItem('chibi.name') ?? '';
-codeInput.value = (params.get('room') ?? location.hash.slice(1)).toUpperCase();
+const inviteCode = (params.get('room') ?? location.hash.slice(1)).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-async function join(): Promise<void> {
-  const btn = $<HTMLButtonElement>('play');
-  btn.disabled = true;
+const lobbyButtons = () => [...document.querySelectorAll<HTMLButtonElement>('#lobby button')];
+async function join(opts: Omit<JoinOpts, 'name'>): Promise<void> {
+  for (const b of lobbyButtons()) b.disabled = true;
   $('lobbymsg').textContent = '';
   sfx.unlock();
-  try { localStorage.setItem('chibi.name', nameInput.value.trim()); } catch { /* private mode */ }
-  try { localStorage.setItem('chibi.ch', String(chapter)); } catch { /* private mode */ }
-  try { await net.connect(nameInput.value.trim(), codeInput.value.trim(), chapter); }
-  catch (e) { $('lobbymsg').textContent = (e as Error).message; btn.disabled = false; }
+  try { localStorage.setItem('chibi.name', nameInput.value.trim()); localStorage.setItem('chibi.ch', String(chapter)); } catch { /* private mode */ }
+  try { await net.connect({ name: nameInput.value.trim(), ...opts }); }
+  catch (e) { $('lobbymsg').textContent = (e as Error).message; for (const b of lobbyButtons()) b.disabled = false; }
 }
-$('join').addEventListener('submit', (e) => { e.preventDefault(); void join(); });
+$('create').addEventListener('submit', (e) => {
+  e.preventDefault();
+  void join({ room: '', create: true, ch: chapter, cp: Number($<HTMLSelectElement>('startat').value), priv: $<HTMLInputElement>('priv').checked });
+});
+$('quick').addEventListener('click', () => { void join({ room: '' }); });
 $('pause').addEventListener('mousedown', () => { void canvas.requestPointerLock(); });
+if (inviteCode) {
+  $('invite').hidden = false;
+  $('invitecode').textContent = inviteCode;
+  $('joininvite').addEventListener('click', () => { void join({ room: inviteCode }); });
+}
+
+/** Open rooms, polled while the lobby is showing. */
+async function refreshRooms(): Promise<void> {
+  if (inGame || $('lobby').hidden) return;
+  let list: RoomInfo[];
+  try { list = await (await fetch('/api/rooms', { cache: 'no-store' })).json(); } catch { return; }
+  const ul = $('rooms');
+  $('roomcount').textContent = list.length ? `(${list.length})` : '';
+  if (!list.length) { const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No open rooms yet. Create one!'; ul.replaceChildren(li); return; }
+  ul.replaceChildren(...list.map((r) => {
+    const li = document.createElement('li');
+    const t = document.createElement('div'); t.className = 'rt';
+    const code = document.createElement('b'); code.textContent = r.code;
+    t.append(code, `Ch ${r.ch + 1} · ${r.title}`);
+    const st = document.createElement('div'); st.className = 'rs';
+    st.textContent = `${r.state === 'play' ? `Step ${r.step}/${r.steps}: ${r.objective}` : r.state === 'won' ? 'Chapter complete' : 'Regrouping'} · ${r.players.length}/${r.max} ${r.players.join(', ')}`;
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn';
+    btn.textContent = r.players.length >= r.max ? 'FULL' : 'JOIN';
+    btn.disabled = r.players.length >= r.max;
+    btn.addEventListener('click', () => { void join({ room: r.code }); });
+    li.append(t, btn, st);
+    return li;
+  }));
+}
+setInterval(() => { void refreshRooms(); }, 3000);
+void refreshRooms();
 
 function enterGame(): void {
   inGame = true; ended = false; vm.visible = me.st === PSTATE.ALIVE;
@@ -518,13 +553,21 @@ function enterGame(): void {
   if (!DEBUG) void canvas.requestPointerLock();
 }
 // `?room=X&step=N` (from the map viewer) joins straight away and jumps to that quest step on a dev server.
-if ((DEBUG || params.has('step')) && params.has('room')) void join();
+if ((DEBUG || params.has('step')) && params.has('room')) void join({ room: inviteCode, ch: chapter });
 
 // Chapter picker (also swaps the lobby backdrop).
 const chapterSelect = $<HTMLSelectElement>('chapter');
 chapterSelect.replaceChildren(...CHAPTERS.map((c, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = `${i + 1}. ${c.title}`; return o; }));
 chapterSelect.value = String(chapter);
-chapterSelect.addEventListener('change', () => { loadChapter(Number(chapterSelect.value)); });
+const startSelect = $<HTMLSelectElement>('startat');
+/** "Start at" choices: the chapter start or any of its checkpoint safe rooms. */
+function fillStarts(): void {
+  const opts: [number, string][] = [[-1, 'Chapter start']];
+  L.def.steps.forEach((s, i) => { if (s.kind === 'gather' && s.checkpoint) opts.push([i, `Safe room ${opts.length}: ${s.objective.replace(/^(Get everyone into|Regroup in|Shelter in|Hole up in|Rest up in|Lock yourselves in)\s+/i, '')}`]); });
+  startSelect.replaceChildren(...opts.map(([v, t]) => { const o = document.createElement('option'); o.value = String(v); o.textContent = t; return o; }));
+}
+fillStarts();
+chapterSelect.addEventListener('change', () => { loadChapter(Number(chapterSelect.value)); fillStarts(); });
 
 function showIntro(): void {
   const d = L.def;
@@ -748,7 +791,8 @@ app.on('update', (rawDt: number) => {
   } else {
     // Lobby backdrop: a slow drift down the main street.
     orbit += dt * 0.12;
-    const look = L.def.steps[0]?.at ?? L.def.spawns[0];
+    const cpSel = Number($<HTMLSelectElement>('startat').value);
+    const look = (cpSel >= 0 ? L.def.steps[cpSel]?.at : L.def.steps[0]?.at) ?? L.def.spawns[0];
     cam.x = look.x + Math.sin(orbit) * 4; cam.y = 3.2; cam.z = look.z + Math.cos(orbit * 0.7) * 4;
     quatYXZ(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0, cam.rot);
     camera.setPosition(cam.x, cam.y, cam.z);

@@ -47,12 +47,24 @@
     <div class="card">
       <h1><span>CHIBI</span> OUTBREAK</h1>
       <p class="tag">4-player co-op zombie survival. Tiny heroes, big hordes.</p>
-      <form id="join">
-        <label>Name <input id="name" maxlength="14" autocomplete="off" placeholder="Mochi" /></label>
-        <label>Room code <input id="code" maxlength="6" autocomplete="off" placeholder="blank = quick play" /></label>
-        <label>Chapter <select id="chapter"></select></label>
-        <button type="submit" id="play">PLAY</button>
-      </form>
+      <label class="namefield">Name <input id="name" maxlength="14" autocomplete="off" placeholder="Mochi" /></label>
+      <div id="invite" hidden>Invited to room <b id="invitecode"></b> <button type="button" id="joininvite" class="btn pink">JOIN</button></div>
+      <div class="lobbycols">
+        <section>
+          <h3>Open rooms <small id="roomcount"></small></h3>
+          <ul id="rooms"><li class="empty">Looking for rooms…</li></ul>
+          <button type="button" id="quick" class="btn">QUICK PLAY</button>
+        </section>
+        <section>
+          <h3>New room</h3>
+          <form id="create">
+            <label>Chapter <select id="chapter"></select></label>
+            <label>Start at <select id="startat"></select></label>
+            <label class="check"><input type="checkbox" id="priv" /> Private (invite link only)</label>
+            <button type="submit" id="play" class="btn pink">CREATE ROOM</button>
+          </form>
+        </section>
+      </div>
       <p id="lobbymsg"></p>
       <div class="keys">
         <span><kbd>WASD</kbd> move</span><span><kbd>Mouse</kbd> aim</span><span><kbd>LMB</kbd> shoot</span><span><kbd>RMB</kbd> shove</span>
