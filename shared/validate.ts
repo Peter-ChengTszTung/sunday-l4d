@@ -38,6 +38,11 @@ function checkHoldScript(s: Step, where: string, errors: string[], warnings: str
     if (g.msg !== undefined && g.msg.length > 48) warnings.push(`${at}: msg longer than 48 chars`);
   });
   if (Math.abs(sum - hold) > 0.5) errors.push(`${where}: holdScript stages add up to ${sum} s but hold is ${hold} s`);
+  // The client skips its own horde roar on a `horde: true` lever step, trusting the server's opening
+  // 'horde' event, which only fires if the first stage brings a horde ('wave'/'final' do by default).
+  const g0 = sc[0];
+  if (s.horde && !(g0.horde !== undefined ? g0.horde > 0 : g0.kind === 'wave' || g0.kind === 'final'))
+    errors.push(`${where}: step has horde: true, so holdScript[0] must bring a horde (a 'wave'/'final' stage, or horde > 0)`);
   if (sc[sc.length - 1].kind !== 'final') warnings.push(`${where}: holdScript should end with a 'final' stage (the climax)`);
 }
 

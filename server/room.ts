@@ -121,13 +121,14 @@ const DIRECTOR = {
   },
   /**
    * Straggler cull (every `every` ticks): an active common or special (never the Brute or a sleeper)
-   * more than `tiles` path tiles from the nearest standing survivor is removed, unless a standing
-   * survivor could see it (line of sight within the chapter's fog distance, at most `seeR` m), so
-   * nobody watches one vanish. A culled horde member goes back in the queue (see cullStragglers).
+   * more than `tiles` path tiles from the nearest standing survivor is removed, unless a standing or
+   * downed survivor could see it (line of sight within the chapter's fog distance, at most `seeR` m),
+   * so nobody watches one vanish, or it is within `downGuard` m of a downed survivor (whoever is
+   * chewing on a teammate left behind keeps at it). A culled horde member goes back in the queue (see cullStragglers).
    * Specials just free their slot (no cooldown). Holders lurk holdNear..holdFar tiles from their
    * target, well inside `tiles`, so only one that has truly been left behind is culled.
    */
-  cull: { every: 60, tiles: 34, seeR: 110 },
+  cull: { every: 60, tiles: 34, seeR: 110, downGuard: 20 },
   /**
    * Staged holdouts (L4D2 finale/crescendo style): a holdout plays a script of stages (shared/level.ts
    * HoldStage) over its timer. A step's `holdScript` is used as written; otherwise defaultHoldScript
@@ -549,6 +550,8 @@ export class Room {
   }
 
   private standing(): Player[] { return [...this.players.values()].filter((p) => p.st === PSTATE.ALIVE); }
+  /** Survivors whose camera is in the world (standing or downed): nothing may vanish in front of them. */
+  private watchers(): Player[] { return [...this.players.values()].filter((p) => p.st !== PSTATE.DEAD); }
   private progressAt(x: number, z: number): number {
     const tx = cellOf(x), tz = cellOf(z);
     if (!this.L.inBounds(tx, tz)) return 0;
@@ -896,7 +899,7 @@ export class Room {
    */
   private placeWanderers(): void {
     const Wd = WANDERERS, { W } = this.L, R = this.cd.regions, st = this.wander;
-    const stand = this.standing();
+    const stand = this.standing(), watch = this.watchers();
     let doors = this.doors;
     for (const d of this.cur?.opens ?? []) doors |= 1 << d;
     const src: number[] = [];
@@ -915,7 +918,7 @@ export class Room {
     for (const z of [...this.zombies.values()]) {
       if (!z.dormant) continue;
       const d = reach[cellOf(z.z) * W + cellOf(z.x)];
-      if (d > Wd.cull && !this.inSight(z.x, z.z, stand)) {
+      if (d > Wd.cull && !this.inSight(z.x, z.z, watch)) {
         this.zombies.delete(z.id);
         if (z.region >= 0 && !st.spent[z.region]) st.placed[z.region]--;
         continue;
@@ -937,7 +940,7 @@ export class Room {
       evictable.sort((a, b) => b.d - a.d);
       for (const e of evictable) {
         if (live + need <= Wd.max) break;
-        if (this.inSight(e.z.x, e.z.z, stand)) continue;
+        if (this.inSight(e.z.x, e.z.z, watch)) continue;
         this.zombies.delete(e.z.id); live--;
       }
     }
@@ -2204,7 +2207,7 @@ export class Room {
     if (this.tickN % DIRECTOR.cull.every === 0) this.cullStragglers(zs);
   }
 
-  /** True if a standing survivor has line of sight to (x, z) within fog range. */
+  /** True if one of `stand` (standing or downed survivors) has line of sight to (x, z) within fog range. */
   private inSight(x: number, z: number, stand: Player[]): boolean {
     const r = Math.min(DIRECTOR.cull.seeR, this.def.theme.fogFar);
     for (const p of stand) {
@@ -2226,12 +2229,15 @@ export class Room {
    * team to outrun them again. Cost: at most one sight test per standing survivor per far zombie.
    */
   private cullStragglers(zs: Zombie[]): void {
-    const W = this.L.W, C = DIRECTOR.cull, stand = this.standing();
+    const W = this.L.W, C = DIRECTOR.cull, stand = this.standing(), watch = this.watchers();
     if (!stand.length) return;
+    const downed = watch.filter((p) => p.st === PSTATE.DOWN), g2 = C.downGuard * C.downGuard;
     let owed = 0, culled = 0;
     for (const z of zs) {
       if (z.dormant || z.type === ZT.BRUTE || z.hp <= 0) continue;
-      if (this.flow[cellOf(z.z) * W + cellOf(z.x)] <= C.tiles || this.inSight(z.x, z.z, stand)) continue;
+      if (this.flow[cellOf(z.z) * W + cellOf(z.x)] <= C.tiles || this.inSight(z.x, z.z, watch)) continue;
+      // Zombies near a downed survivor left behind stay: they are that survivor's problem, not stragglers.
+      if (downed.some((p) => (p.x - z.x) ** 2 + (p.z - z.z) ** 2 < g2)) continue;
       this.zombies.delete(z.id);
       culled++;
       if (!z.wave) continue;
