@@ -2,60 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Chapter Map Viewer</title>
-  <style>
-    :root { --ink: #1a1226; --panel: #241b36; --line: #3a2f52; --text: #f3ecff; --dim: #a99cc4; --yellow: #ffd43b; --pink: #ff5d8f; --teal: #39c5bb; --green: #7ddc6a; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; }
-    body { display: grid; grid-template-columns: 380px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
-    header { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-    header h1 { font-size: 15px; margin: 0 12px 0 0; }
-    header button, header label { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font: inherit; cursor: pointer; }
-    header button.on { background: var(--yellow); color: var(--ink); border-color: var(--yellow); font-weight: 700; }
-    header label { display: inline-flex; gap: 4px; align-items: center; }
-    aside { overflow: auto; border-right: 1px solid var(--line); padding: 12px; background: var(--panel); }
-    aside h2 { margin: 0; font-size: 20px; color: var(--yellow); }
-    aside h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
-    .sub { color: var(--pink); margin: 2px 0 8px; }
-    .intro { color: var(--dim); font-style: italic; }
-    .stats { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
-    .stats b { color: var(--dim); font-weight: 400; }
-    .err { color: #ff8080; } .warn { color: #ffc46b; }
-    .issues div { padding: 2px 0; }
-    ol { padding: 0; margin: 0; list-style: none; }
-    li.step { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
-    li.step:hover { border-color: var(--dim); }
-    li.step.sel { border-color: var(--yellow); background: #2f2446; }
-    li.step .hd { display: flex; gap: 6px; align-items: baseline; }
-    li.step .n { font-weight: 700; color: var(--yellow); min-width: 20px; }
-    li.step .k { font-size: 11px; padding: 0 5px; border-radius: 4px; background: var(--line); }
-    li.step .m { margin-left: auto; color: var(--dim); font-size: 11px; white-space: nowrap; }
-    li.step .flags { font-size: 11px; color: var(--teal); }
-    li.step .radio { display: none; margin-top: 4px; color: var(--dim); }
-    li.step.sel .radio { display: block; }
-    li.step .radio b { color: var(--text); }
-    li.step a { color: var(--yellow); font-size: 11px; }
-    .notes div { margin-bottom: 6px; } .notes b { color: var(--text); }
-    main { position: relative; overflow: hidden; }
-    canvas { display: block; width: 100%; height: 100%; cursor: grab; }
-    canvas.drag { cursor: grabbing; }
-    #tip { position: absolute; pointer-events: none; background: rgba(20, 14, 32, 0.92); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; white-space: pre; font: 12px ui-monospace, monospace; display: none; }
-    #legend { position: absolute; right: 10px; bottom: 10px; background: rgba(20, 14, 32, 0.88); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 11px; display: grid; grid-template-columns: repeat(2, auto); gap: 2px 12px; }
-    #legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; background: var(--c); border: 1px solid #0006; border-radius: 2px; }
-    @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 45vh 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
-  </style>
+  <!-- The map viewer is now the Maps tab of the guide. Old links (with ?ch=N) land there. -->
+  <script>location.replace('./guide.html' + location.search + '#maps');</script>
 </head>
-<body>
-  <header>
-    <h1>🗺️ Chapter Map Viewer</h1>
-    <span id="tabs"></span>
-    <span style="flex:1"></span>
-    <span id="layers"></span>
-    <button id="fit">Fit</button>
-  </header>
-  <aside id="side"></aside>
-  <main><canvas id="cv"></canvas><div id="tip"></div><div id="legend"></div></main>
-  <script type="module" src="./maps.ts"></script>
-</body>
+<body><a href="./guide.html#maps">Map viewer</a></body>
 </html>

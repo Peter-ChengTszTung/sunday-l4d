@@ -1,10 +1,12 @@
-// Internal tool: top-down view of every chapter's layout and quest, with the
-// validator's report. Dev server: http://localhost:3000/tools/maps.html
+// Internal tool: top-down view of every chapter's layout and quest, with the validator's report.
+// It is the "Maps" tab of the guide (guide.ts loads this module into guide.html's #mapview).
+// Dev server: http://localhost:3000/tools/guide.html#maps
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import { F, FLOOR_NAMES, WALL, ALL_OPEN, cellOf, type Level, type Step } from '../../shared/level';
 import { validateChapter, type ChapterReport } from '../../shared/validate';
 import { TILE } from '../../shared/constants';
 import { wandererRegions, type Regions } from '../../shared/regions';
+import { t } from '../src/i18n';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const cv = $<HTMLCanvasElement>('cv'), g = cv.getContext('2d')!;
@@ -17,8 +19,10 @@ const FLOOR_COL: Record<number, string> = {
   [F.DIRT]: '#a47e5e', [F.CONCRETE]: '#8b8a9c', [F.TILES]: '#c9d3dc', [F.WOOD]: '#b07f52', [F.WATER]: '#3f78b8',
 };
 const WALL_COL: Record<number, string> = { [WALL.BUILDING]: '#2a2140', [WALL.ROCK]: '#3d3236', [WALL.HEDGE]: '#1f3d2a', [WALL.FENCE]: '#3a3d4f' };
-const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', smg: '#74c0fc', shotgun: '#74c0fc', rifle: '#74c0fc', obj: '#ffd43b', item: '#ff922b' };
-const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', obj: '!', item: '★' };
+const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', obj: '#ffd43b', item: '#ff922b', armor: '#b9a4ff', firebomb: '#ff7a3a', rattle: '#ff7a3a' };
+/** Any other pickup kind is a weapon. */
+const WEAPON_COL = '#74c0fc';
+const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', autoshotgun: 'D', sniper: 'K', launcher: 'L', magnum: 'M', bat: 'b', machete: 'm', axe: 'x', firebomb: 'F', rattle: 'R', armor: 'V', obj: '!', item: '★' };
 const KIND_COL: Record<string, string> = { reach: '#74c0fc', gather: '#7ddc6a', use: '#ffd43b', collect: '#ff922b', holdout: '#ff5d8f' };
 
 const LAYERS = { grid: false, props: true, loot: true, lamps: true, paint: true, quest: true, route: true, heat: false, items: true, regions: false };
@@ -197,14 +201,14 @@ function draw(): void {
   // Paint: labels + arrows
   if (LAYERS.paint) {
     for (const a of def.arrows) {
-      g.save(); g.translate(a.x, a.z); g.rotate(a.rot);
+      g.save(); g.translate(a.x, a.z); g.rotate(-a.rot); // rot is a yaw (PI/2 points +X); canvas rotation turns the other way
       g.fillStyle = 'rgba(255,231,163,0.9)'; g.beginPath(); g.moveTo(0, 0.8); g.lineTo(-0.55, 0.05); g.lineTo(-0.22, 0.05); g.lineTo(-0.22, -0.75); g.lineTo(0.22, -0.75); g.lineTo(0.22, 0.05); g.lineTo(0.55, 0.05); g.closePath(); g.fill();
       g.restore();
     }
     for (const l of def.labels) {
       g.save(); g.translate(l.x, l.z);
       g.font = `900 ${l.size / 40}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.lineWidth = 0.15; g.strokeStyle = '#1a1226'; g.strokeText(l.text, 0, 0); g.fillStyle = l.color; g.fillText(l.text, 0, 0);
+      g.lineWidth = 0.15; g.strokeStyle = '#1a1226'; g.strokeText(t(l.text), 0, 0); g.fillStyle = l.color; g.fillText(t(l.text), 0, 0);
       g.restore();
     }
   }
@@ -223,9 +227,9 @@ function draw(): void {
     if (p.kind === 'item' ? !LAYERS.items : p.kind === 'obj' ? !LAYERS.quest : !LAYERS.loot) continue;
     const x = p.x / TILE, z = p.z / TILE, dim = p.kind === 'item' && stepItems && p.group !== stepItems;
     g.globalAlpha = dim ? 0.35 : 1;
-    g.fillStyle = PICK_COL[p.kind]; g.beginPath(); g.arc(x, z, 0.36, 0, 7); g.fill();
+    g.fillStyle = PICK_COL[p.kind] ?? WEAPON_COL; g.beginPath(); g.arc(x, z, 0.36, 0, 7); g.fill();
     g.strokeStyle = '#1a1226'; g.lineWidth = 1.5 * px; g.stroke();
-    g.fillStyle = '#1a1226'; g.font = `bold 0.5px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(PICK_LETTER[p.kind], x, z + 0.02);
+    g.fillStyle = '#1a1226'; g.font = `bold 0.5px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(PICK_LETTER[p.kind] ?? '?', x, z + 0.02);
     g.globalAlpha = 1;
   }
   for (const n of def.notes) {
@@ -268,33 +272,34 @@ function draw(): void {
 // --------------------------------------------------------------------- side
 function renderSide(): void {
   const def = L.def, s = report.stats;
-  const radio = (st: Step) => st.radio.map(([who, line]) => `<div><b>${esc(who)}:</b> ${esc(line)}</div>`).join('');
-  const flags = (st: Step) => [st.checkpoint && '✔ checkpoint', st.horde && 'horde', st.brute && 'BRUTE', st.hold && `hold ${st.hold}s`, st.opens.length && `opens D${st.opens.join(', D')}`].filter(Boolean).join(' · ');
+  const radio = (st: Step) => st.radio.map(([who, line]) => `<div><b>${esc(t(who))}:</b> ${esc(t(line))}</div>`).join('');
+  const flags = (st: Step) => [st.checkpoint && `✔ ${t('checkpoint')}`, st.horde && t('horde'), st.brute && t('BRUTE'), st.hold && t('hold {s}s', { s: st.hold }), st.opens.length && t('opens {doors}', { doors: `D${st.opens.join(', D')}` })].filter(Boolean).join(' · ');
+  const many = def.density.length ? ` · ${t('{n} density overrides', { n: def.density.length })}` : '';
   $('side').innerHTML = `
-    <h2>${chIndex + 1}. ${esc(def.title)}</h2><div class="sub">${esc(def.subtitle)}</div>
-    <div class="intro">${esc(def.intro)}</div>
-    <h3>Stats</h3>
+    <h2>${chIndex + 1}. ${esc(t(def.title))}</h2><div class="sub">${esc(t(def.subtitle))}</div>
+    <div class="intro">${esc(t(def.intro))}</div>
+    <h3>${esc(t('Stats'))}</h3>
     <div class="stats">
-      <b>Size</b><span>${s.size} tiles (${L.W * TILE}×${L.H * TILE} m), ${s.walkable} walkable</span>
-      <b>Critical path</b><span>${s.pathMetres} m</span>
-      <b>Holdouts</b><span>${s.holdSeconds} s</span>
-      <b>Est. play time</b><span><b style="color:${s.estMinutes[1] >= 30 && s.estMinutes[0] <= 60 ? 'var(--green)' : 'var(--pink)'}">${s.estMinutes[0]}–${s.estMinutes[1]} min</b> (target 30–60)</span>
-      <b>Steps</b><span>${def.steps.length} · ${s.checkpoints} checkpoints · ${s.doors} doors</span>
-      <b>Pickups</b><span>${Object.entries(s.pickups).map(([k, v]) => `${k} ${v}`).join(', ')}</span>
-      <b>Props / lamps</b><span>${def.props.length} / ${def.lamps.length}</span>
-      <b>Wanderers</b><span>${s.wanderers.regions} regions, ~${s.wanderers.budget} sleepers if all stocked${def.density.length ? ` · ${def.density.length} density override${def.density.length > 1 ? 's' : ''}` : ''} (layer: regions)</span>
+      <b>${esc(t('Size'))}</b><span>${esc(t('{n} tiles ({w}×{h} m), {walk} walkable', { n: s.size, w: L.W * TILE, h: L.H * TILE, walk: s.walkable }))}</span>
+      <b>${esc(t('Critical path'))}</b><span>${s.pathMetres} m</span>
+      <b>${esc(t('Holdouts'))}</b><span>${s.holdSeconds} s</span>
+      <b>${esc(t('Est. play time'))}</b><span><b style="color:${s.estMinutes[1] >= 30 && s.estMinutes[0] <= 60 ? 'var(--green)' : 'var(--pink)'}">${esc(t('{a}–{b} min', { a: s.estMinutes[0], b: s.estMinutes[1] }))}</b> ${esc(t('(target 30–60)'))}</span>
+      <b>${esc(t('Steps'))}</b><span>${esc(t('{n} · {cp} checkpoints · {doors} doors', { n: def.steps.length, cp: s.checkpoints, doors: s.doors }))}</span>
+      <b>${esc(t('Pickups'))}</b><span>${Object.entries(s.pickups).map(([k, v]) => `${esc(t(`pickup: ${k}`).replace(/^pickup: /, ''))} ${v}`).join(', ')}</span>
+      <b>${esc(t('Props / lamps'))}</b><span>${def.props.length} / ${def.lamps.length}</span>
+      <b>${esc(t('Wanderers'))}</b><span>${esc(t('{n} regions, ~{k} sleepers if all stocked', { n: s.wanderers.regions, k: s.wanderers.budget }))}${esc(many)}</span>
     </div>
-    <div class="issues">${report.errors.map((e) => `<div class="err">✖ ${esc(e)}</div>`).join('')}${report.warnings.map((e) => `<div class="warn">⚠ ${esc(e)}</div>`).join('')}${!report.errors.length && !report.warnings.length ? '<div style="color:var(--green)">✔ No issues</div>' : ''}</div>
-    <h3>Quest (${def.steps.length} steps) — click to focus</h3>
+    <div class="issues">${report.errors.map((e) => `<div class="err">✖ ${esc(e)}</div>`).join('')}${report.warnings.map((e) => `<div class="warn">⚠ ${esc(e)}</div>`).join('')}${!report.errors.length && !report.warnings.length ? `<div style="color:var(--green)">✔ ${esc(t('No issues'))}</div>` : ''}</div>
+    <h3>${esc(t('Quest ({n} steps) — click to focus', { n: def.steps.length }))}</h3>
     <ol>${def.steps.map((st, i) => `
       <li class="step ${i === sel ? 'sel' : ''}" data-i="${i}">
-        <div class="hd"><span class="n">${i + 1}</span><span class="k" style="background:${KIND_COL[st.kind]};color:#1a1226">${st.kind}</span><span>${esc(st.objective)}${st.kind === 'collect' ? ` (${st.count})` : ''}</span><span class="m">${report.steps[i]?.pathTiles >= 0 ? report.steps[i].pathTiles * TILE + ' m' : '✖'}</span></div>
+        <div class="hd"><span class="n">${i + 1}</span><span class="k" style="background:${KIND_COL[st.kind]};color:#1a1226">${esc(t(`step: ${st.kind}`).replace(/^step: /, ''))}</span><span>${esc(t(st.objective))}${st.kind === 'collect' ? ` (${st.count})` : ''}</span><span class="m">${report.steps[i]?.pathTiles >= 0 ? report.steps[i].pathTiles * TILE + ' m' : '✖'}</span></div>
         <div class="flags">${flags(st)}</div>
-        <div class="radio">${radio(st)}<a href="/?room=MAP${chIndex + 1}${i}&ch=${chIndex}&step=${i}&name=Tester" target="_blank">▶ play from this step (dev server)</a></div>
+        <div class="radio">${radio(st)}<a href="/?room=MAP${chIndex + 1}${i}&ch=${chIndex}&step=${i}&name=Tester" target="_blank">▶ ${esc(t('play from this step (dev server)'))}</a></div>
       </li>`).join('')}</ol>
-    <h3>Lore notes (${def.notes.length})</h3>
-    <div class="notes">${def.notes.map((n) => `<div><b>✎ ${esc(n.title)}</b> <span style="color:var(--dim)">@ ${cellOf(n.x)},${cellOf(n.z)}</span><br>${esc(n.text)}</div>`).join('')}</div>
-    <h3>Theme</h3>
+    <h3>${esc(t('Lore notes ({n})', { n: def.notes.length }))}</h3>
+    <div class="notes">${def.notes.map((n) => `<div><b>✎ ${esc(t(n.title))}</b> <span style="color:var(--dim)">@ ${cellOf(n.x)},${cellOf(n.z)}</span><br>${esc(t(n.text))}</div>`).join('')}</div>
+    <h3>${esc(t('Theme'))}</h3>
     <div>${[...def.theme.sky, def.theme.fog, ...def.theme.buildings].map((c) => `<span style="display:inline-block;width:18px;height:18px;border-radius:4px;background:${hex(c)};margin-right:3px"></span>`).join('')}</div>`;
   for (const li of $('side').querySelectorAll<HTMLElement>('li.step')) li.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).tagName === 'A') return;
@@ -320,7 +325,7 @@ function centerOn(x: number, z: number): void {
 }
 function load(i: number): void {
   chIndex = i;
-  history.replaceState(null, '', `?ch=${i}`);
+  history.replaceState(null, '', `?ch=${i}${location.hash}`);
   L = getLevel(i);
   tileKey = '';
   report = validateChapter(L);
@@ -328,17 +333,17 @@ function load(i: number): void {
   sel = -1;
   computeRoutes();
   buildRegions();
-  $('tabs').innerHTML = CHAPTERS.map((c, k) => `<button class="${k === i ? 'on' : ''}" data-ch="${k}">${k + 1}. ${esc(c.title)}</button>`).join(' ');
-  for (const b of $('tabs').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => load(Number(b.dataset.ch));
+  $('chtabs').innerHTML = CHAPTERS.map((c, k) => `<button class="${k === i ? 'on' : ''}" data-ch="${k}">${k + 1}. ${esc(t(c.title))}</button>`).join(' ');
+  for (const b of $('chtabs').querySelectorAll<HTMLButtonElement>('button')) b.onclick = () => load(Number(b.dataset.ch));
   renderSide(); fit();
 }
 
-$('layers').innerHTML = (Object.keys(LAYERS) as LayerKey[]).map((k) => `<label><input type="checkbox" data-l="${k}" ${LAYERS[k] ? 'checked' : ''}/>${k}</label>`).join(' ');
+$('layers').innerHTML = (Object.keys(LAYERS) as LayerKey[]).map((k) => `<label><input type="checkbox" data-l="${k}" ${LAYERS[k] ? 'checked' : ''}/>${esc(t(`layer: ${k}`).replace(/^layer: /, ''))}</label>`).join(' ');
 for (const inp of $('layers').querySelectorAll<HTMLInputElement>('input')) inp.onchange = () => { LAYERS[inp.dataset.l as LayerKey] = inp.checked; draw(); };
 $('fit').onclick = fit;
 $('legend').innerHTML = [
-  ...Object.entries(KIND_COL).map(([k, c]) => `<span style="--c:${c}">${k} step</span>`),
-  ...Object.entries({ medkit: '#ff6b8a', ammo: '#a9e34b', weapon: '#74c0fc', 'quest item': '#ff922b', 'closed door': '#ffd43b', 'open door': '#7ddc6a', spawn: '#39c5bb', note: '#fff6e0' }).map(([k, c]) => `<span style="--c:${c}">${k}</span>`),
+  ...Object.entries(KIND_COL).map(([k, c]) => `<span style="--c:${c}">${esc(t(`step: ${k}`).replace(/^step: /, ''))}</span>`),
+  ...Object.entries({ medkit: '#ff6b8a', ammo: '#a9e34b', weapon: '#74c0fc', armour: '#b9a4ff', throwable: '#ff7a3a', 'quest item': '#ff922b', 'closed door': '#ffd43b', 'open door': '#7ddc6a', spawn: '#39c5bb', note: '#fff6e0' }).map(([k, c]) => `<span style="--c:${c}">${esc(t(`legend: ${k}`).replace(/^legend: /, ''))}</span>`),
 ].join('');
 
 let drag: { x: number; y: number } | null = null;
@@ -350,19 +355,19 @@ cv.addEventListener('mousemove', (e) => {
   const tx = Math.floor((e.clientX - r.left - ox) / scale), tz = Math.floor((e.clientY - r.top - oy) / scale);
   if (!L.inBounds(tx, tz)) { tip.style.display = 'none'; return; }
   const def = L.def, i = tz * L.W + tx;
-  const lines = [`tile ${tx}, ${tz}   (${tx * TILE}–${tx * TILE + TILE} m, ${tz * TILE} m)`, `floor: ${FLOOR_NAMES[def.floor[i]]}${def.floor[i] === F.NONE ? ` (${['building', 'rock', 'hedge', 'fence'][def.wallKind[i]]} ${def.wallH[i].toFixed(1)} m)` : ''}`];
-  if (progress[i] < 32767) lines.push(`progress from start: ${progress[i]} tiles`);
+  const lines = [`${t('tile')} ${tx}, ${tz}   (${tx * TILE}–${tx * TILE + TILE} m, ${tz * TILE} m)`, `${t('floor')}: ${FLOOR_NAMES[def.floor[i]]}${def.floor[i] === F.NONE ? ` (${['building', 'rock', 'hedge', 'fence'][def.wallKind[i]]} ${def.wallH[i].toFixed(1)} m)` : ''}`];
+  if (progress[i] < 32767) lines.push(t('progress from start: {n} tiles', { n: progress[i] }));
   const rid = regs.regionOf[i];
   if (rid >= 0) {
     const r = regs.list[rid];
-    lines.push(`wander region R${rid}: ${r.cells.length} cells, ~${r.weight.toFixed(1)} sleepers${regs.mult[i] !== 1 ? `, density ×${regs.mult[i]}` : ''}`);
+    lines.push(t('wander region R{id}: {cells} cells, ~{n} sleepers', { id: rid, cells: r.cells.length, n: r.weight.toFixed(1) }) + (regs.mult[i] !== 1 ? `, ×${regs.mult[i]}` : ''));
   }
   const prop = def.props.find((p) => tx >= p.x && tx < p.x + p.w && tz >= p.z && tz < p.z + p.d);
-  if (prop) lines.push(`prop: ${prop.type} ${prop.w}x${prop.d}`);
-  if (def.doorCell[i] >= 0) { const d = def.doors[def.doorCell[i]]; lines.push(`door D${d.id} (${d.kind})${d.label ? ' ' + d.label : ''}, opened by step ${def.steps.findIndex((s) => s.opens.includes(d.id)) + 1 || '—'}`); }
-  for (const p of def.pickups) if (cellOf(p.x) === tx && cellOf(p.z) === tz) lines.push(`pickup #${p.id}: ${p.kind}${p.look ? ' ' + p.look : ''}${p.label ? ` "${p.label}"` : ''}${p.group ? ` [${p.group}]` : ''}`);
-  for (const n of def.notes) if (cellOf(n.x) === tx && cellOf(n.z) === tz) lines.push(`note: ${n.title}`);
-  def.steps.forEach((s, k) => { if (s.area && tx >= s.area.x0 && tx <= s.area.x1 && tz >= s.area.z0 && tz <= s.area.z1) lines.push(`step ${k + 1} area (${s.kind})`); });
+  if (prop) lines.push(`${t('prop')}: ${prop.type} ${prop.w}x${prop.d}`);
+  if (def.doorCell[i] >= 0) { const d = def.doors[def.doorCell[i]]; lines.push(t('door D{id} ({kind}) {label}, opened by step {n}', { id: d.id, kind: d.kind, label: d.label ? t(d.label) : '', n: def.steps.findIndex((s) => s.opens.includes(d.id)) + 1 || '—' })); }
+  for (const p of def.pickups) if (cellOf(p.x) === tx && cellOf(p.z) === tz) lines.push(`${t('pickup')} #${p.id}: ${t(`pickup: ${p.kind}`).replace(/^pickup: /, '')}${p.look ? ' ' + p.look : ''}${p.label ? ` "${t(p.label)}"` : ''}${p.group ? ` [${p.group}]` : ''}`);
+  for (const n of def.notes) if (cellOf(n.x) === tx && cellOf(n.z) === tz) lines.push(`${t('note')}: ${t(n.title)}`);
+  def.steps.forEach((s, k) => { if (s.area && tx >= s.area.x0 && tx <= s.area.x1 && tz >= s.area.z0 && tz <= s.area.z1) lines.push(t('step {n} area ({kind})', { n: k + 1, kind: t(`step: ${s.kind}`).replace(/^step: /, '') })); });
   tip.textContent = lines.join('\n');
   tip.style.display = 'block';
   tip.style.left = `${Math.min(e.clientX - r.left + 14, r.width - 300)}px`; tip.style.top = `${e.clientY - r.top + 14}px`;
@@ -377,3 +382,6 @@ cv.addEventListener('wheel', (e) => {
 }, { passive: false });
 addEventListener('resize', draw);
 load(Math.min(chIndex, CHAPTERS.length - 1));
+
+/** The Maps tab was opened: the canvas has a size now, so fit the chapter to it. */
+export function showMaps(): void { fit(); }
