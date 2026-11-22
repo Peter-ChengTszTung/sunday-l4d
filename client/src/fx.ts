@@ -54,6 +54,9 @@ const SCORCH_MESH = toMesh(device, merge([
 const FLAME_COLORS = [0xff5a1f, 0xff922b, 0xffd43b, 0xfff1a8];
 const ROPE_COLORS = [0xff8fab, 0xfff5f5];
 const ropeMats = ROPE_COLORS.map((color) => makeUnlit({ color, fog: false }));
+// Throw preview: pale dashes and a ring where it lands.
+const arcMat = makeUnlit({ color: 0xfff1a8, fog: false });
+const ARC_RING = toMesh(device, make(ring(0.78, 1, 28), 0xffd43b));
 
 export class FX {
   private stars: Pool = { items: [], free: [], mesh: STAR_MESH, mat: starMat, star: true };
@@ -71,6 +74,11 @@ export class FX {
   /** Snatcher scarves drawn this frame (see `rope`); `ropeN` of them are in use. */
   private ropes: pc.Entity[] = [];
   private ropeN = 0;
+  /** Throw preview drawn this frame (see `aimArc`): dash entities in use, and the landing ring. */
+  private dashes: pc.Entity[] = [];
+  private dashN = 0;
+  private arcRing: pc.Entity | null = null;
+  private arcOn = false;
   /** A burning patch wants its next crackle: returns seconds until the one after. */
   onCrackle: ((x: number, z: number) => number) | null = null;
   /** A Rattle Bomb shakes (several times a second until it blows). */
@@ -161,6 +169,29 @@ export class FX {
     }
   }
 
+  /** Draw a throw's path for this frame only: `pts` is x, y, z triples along it; the last one is where it lands. */
+  aimArc(pts: number[]): void {
+    const n = pts.length / 3;
+    if (n < 2) return;
+    // Every other step is a dash.
+    for (let i = 0; i + 1 < n; i += 2) {
+      let e = this.dashes[this.dashN];
+      if (!e) { e = meshEntity(TRACER_MESH, arcMat); app.root.addChild(e); this.dashes.push(e); }
+      this.dashN++;
+      const a = i * 3, b = a + 3, len = Math.hypot(pts[b] - pts[a], pts[b + 1] - pts[a + 1], pts[b + 2] - pts[a + 2]);
+      e.enabled = len > 0.02;
+      if (!e.enabled) continue;
+      e.setPosition(pts[a], pts[a + 1], pts[a + 2]);
+      e.lookAt(pts[b], pts[b + 1], pts[b + 2]);
+      e.setLocalScale(0.035, 0.035, len);
+    }
+    if (!this.arcRing) { this.arcRing = meshEntity(ARC_RING, puddleMat); app.root.addChild(this.arcRing); }
+    const l = (n - 1) * 3;
+    this.arcRing.enabled = true; this.arcOn = true;
+    this.arcRing.setPosition(pts[l], Math.max(0.05, pts[l + 1] - 0.02), pts[l + 2]);
+    this.arcRing.setLocalScale(0.55, 1, 0.55);
+  }
+
   private updateFire(dt: number): void {
     for (let i = this.flames.length - 1; i >= 0; i--) {
       const f = this.flames[i];
@@ -194,6 +225,10 @@ export class FX {
     // Scarves not redrawn this frame disappear.
     for (let i = this.ropeN; i < this.ropes.length; i++) this.ropes[i].enabled = false;
     this.ropeN = 0;
+    for (let i = this.dashN; i < this.dashes.length; i++) this.dashes[i].enabled = false;
+    this.dashN = 0;
+    if (this.arcRing && !this.arcOn) this.arcRing.enabled = false;
+    this.arcOn = false;
   }
 
   private updateGoo(dt: number): void {

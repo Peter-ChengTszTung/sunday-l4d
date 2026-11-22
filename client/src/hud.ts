@@ -66,17 +66,18 @@ export class Hud {
 
   /**
    * `primary` / `sidearm` / `melee` name the slots ('' = empty); `slot` is the one in hand (1-3).
-   * A close-in weapon has no ammo: pass `mag` = Infinity.
+   * A close-in weapon has no ammo: pass `mag` = Infinity. `reserve` < 0 shows none (a throwable: `mag` is how many).
+   * `throws[k]`: label of throwable slot 4 + k ('' = none carried).
    */
-  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = t('sidearm'), melee = ''): void {
+  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = t('sidearm'), melee = '', throws: string[] = []): void {
     const endless = !Number.isFinite(mag);
     this.set('wn', name + reloading, () => { this.el.wname.textContent = reloading ? `${name} · ${t('reloading…')}` : name; });
     this.set('mag', endless ? '∞' : String(mag), (v) => { this.el.mag.textContent = v; });
-    this.set('res', endless ? '' : String(reserve), (v) => { this.el.reserve.textContent = endless ? '' : Number.isFinite(reserve) ? `/ ${v}` : '/ ∞'; });
+    this.set('res', endless || reserve < 0 ? '' : String(reserve), (v) => { this.el.reserve.textContent = !v ? '' : Number.isFinite(reserve) ? `/ ${v}` : '/ ∞'; });
     this.set('low', String(!endless && mag <= magSize * 0.25), (v) => { this.el.acount.classList.toggle('low', v === 'true'); });
-    this.set('slots', `${primary}|${sidearm}|${melee}|${slot}`, () => {
+    this.set('slots', `${primary}|${sidearm}|${melee}|${throws.join('|')}|${slot}`, () => {
       const cell = (n: number, label: string) => { const s = document.createElement('span'); if (slot === n) s.className = 'on'; s.textContent = `${n} ${label || '—'}`; return s; };
-      this.el.slots.replaceChildren(cell(1, primary), cell(2, sidearm), ...(melee ? [cell(3, melee)] : []));
+      this.el.slots.replaceChildren(cell(1, primary), cell(2, sidearm), ...(melee ? [cell(3, melee)] : []), ...throws.flatMap((label, k) => (label ? [cell(4 + k, label)] : [])));
     });
   }
 

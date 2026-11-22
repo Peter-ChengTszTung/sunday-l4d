@@ -252,6 +252,11 @@ export class ViewModel {
   private swingT = 0;
   private tossT = 0;
   private melee: boolean[];
+  /** Throwables: held loosely at the right; `aim` (0..1) is the arm drawn back for a throw, `held` whether there is one in the hand. */
+  private thrown: boolean[];
+  private aim = 0;
+  private aimWant = false;
+  private held = true;
   private ids: GunId[];
   /** Swings made so far (alternating styles use it). */
   private swings = 0;
@@ -264,6 +269,7 @@ export class ViewModel {
   constructor(ids: GunId[]) {
     this.ids = ids;
     this.melee = ids.map((id) => !!WEAPONS.find((w) => w.id === id)?.melee);
+    this.thrown = ids.map((id) => !!WEAPONS.find((w) => w.id === id)?.thrown);
     // Parked far below the level so nothing in the world layer is ever near it.
     this.root.setPosition(0, -500, 0);
     const cam = this.cam;
@@ -336,7 +342,9 @@ export class ViewModel {
   setReload(progress: number): void { this.reload = progress; }
   shove(): void { this.shoveT = 1; }
   /** Throwing the carried throwable: the free hand flicks forward. */
-  toss(): void { this.tossT = 1; }
+  toss(): void { this.tossT = 1; this.aim = 0; }
+  /** A throwable in hand: `aiming` draws the arm back; `held` false shows an empty hand (just thrown). */
+  setAim(aiming: boolean, held: boolean): void { this.aimWant = aiming; this.held = held; }
 
   update(dt: number, moving: number, lookDX: number, lookDY: number): void {
     this.root.enabled = this.visible;
@@ -365,7 +373,15 @@ export class ViewModel {
       const lp = this.rig.getLocalPosition();
       this.rig.setLocalPosition(lp.x + p[1], lp.y + p[2], lp.z + p[3]);
       setRot(this.rig, p[4] - this.swap * 0.8, p[5] + this.swayX * 2, p[6]);
+    } else if (this.thrown[this.current]) {
+      // Cradled low at the right; aiming, it comes up and back beside the head, cocked to throw.
+      this.aim += ((this.aimWant ? 1 : 0) - this.aim) * Math.min(1, dt * 12);
+      const a = this.aim, lp = this.rig.getLocalPosition();
+      // (Kept at arm's length: nearer the eye it fills the corner of the screen.)
+      this.rig.setLocalPosition(lp.x + a * 0.06, lp.y + a * 0.09 + Math.sin(this.bob * 3) * 0.004 * a, lp.z - a * 0.04);
+      setRot(this.rig, 0.45 + a * 0.65 - this.swap * 0.8, 0.2 + this.swayX * 2, -0.25 - a * 0.2);
     } else setRot(this.rig, this.kick * 0.16 - r * 0.9 - this.swap * 0.8, 0.04 + this.swayX * 2, r * 0.5);
+    this.guns[this.current].ent.enabled = !this.thrown[this.current] || this.held;
     const pump = this.guns[this.current].pump;
     if (pump) pump.setLocalPosition(0, 0.01, -0.36 + Math.sin(Math.min(1, this.kick * 1.4) * Math.PI) * 0.09);
     // Shove: an open palm sweeps across the screen.

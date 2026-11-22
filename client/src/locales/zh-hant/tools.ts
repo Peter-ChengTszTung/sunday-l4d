@@ -12,7 +12,7 @@ export default {
   "next look": "換個造型",
   // Groups
   "Commons": "普通感染者", "Specials": "特殊感染者", "Hazard": "環境威脅", "Boss": "頭目",
-  "Primary (1)": "主武器（1）", "Sidearm (2)": "副武器（2）", "Close-in (3)": "近戰（3）", "Throwables (G)": "投擲物（G）", "Gear": "裝備",
+  "Primary (1)": "主武器（1）", "Sidearm (2)": "副武器（2）", "Close-in (3)": "近戰（3）", "Throwables (4, 5)": "投擲物（4、5）", "Gear": "裝備",
   // Poses
   "pose: idle": "待機", "pose: run": "奔跑", "pose: attack": "攻擊", "pose: stagger": "踉蹌", "pose: windup": "蓄力",
   "pose: leap": "飛撲", "pose: charge": "衝鋒", "pose: pin": "壓制", "pose: ring": "響鈴", "pose: sit": "坐著",
@@ -66,7 +66,7 @@ export default {
   "{dps} dmg/s (Raincoat: none)": "每秒 {dps} 傷害（雨衣怪：無效）",
   "{dps} dmg/s while standing in it": "站在裡面每秒 {dps} 傷害",
   "{n} patches": "{n} 處",
-  "up to {n} throwables, any mix (T switches)": "最多 {n} 個投擲物，種類不限（T 切換）",
+  "up to {n} throwables, any mix": "最多 {n} 個投擲物，種類不限",
   "commons within {m} m of path flock to it for {s} s": "路程 {m} 公尺內的普通感染者會圍過來，持續 {s} 秒",
   "sleepers within {m} m": "{m} 公尺內的夢遊者",
   "ignore it": "不受影響",
@@ -139,8 +139,8 @@ export default {
   "Wide flat swing. One-hits commons, three at a time, and sends survivors of it flying.": "大範圍橫掃。一次三個、一擊解決普通感染者，沒死的也會被打飛。",
   "Quick alternating cuts. The fastest way to clear a doorway by hand.": "快速的交替斬擊。徒手清門口最快的方法。",
   "Slow overhead chop that hurts. The close-in answer to specials.": "緩慢但很痛的過頭劈砍。近戰對付特殊感染者的答案。",
-  "Throw (G). A burning patch: zombies run through it and die. It burns you too; Raincoats ignore it.": "投擲（G）。一片燃燒區域：殭屍衝過去就會燒死。也會燒到你；雨衣怪不受影響。",
-  "Throw (G). Every common nearby drops everything and crowds the rattle, then it explodes.": "投擲（G）。附近所有普通感染者都會放下一切圍著搖鈴，然後它就爆炸。",
+  "Hold left mouse to aim, release to throw. A burning patch: zombies run through it and die. It burns you too; Raincoats ignore it.": "按住左鍵瞄準，放開投出。一片燃燒區域：殭屍衝過去就會燒死。也會燒到你；雨衣怪不受影響。",
+  "Hold left mouse to aim, release to throw. Every common nearby drops everything and crowds the rattle, then it explodes.": "按住左鍵瞄準，放開投出。附近所有普通感染者都會放下一切圍著搖鈴，然後它就爆炸。",
   // Map viewer
   "checkpoint": "存檔點", "horde": "屍群", "BRUTE": "巨漢", "hold {s}s": "固守 {s} 秒", "opens {doors}": "開啟 {doors}",
   "{n} density overrides": "{n} 處密度調整",

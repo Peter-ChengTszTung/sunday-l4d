@@ -38,8 +38,9 @@ the URL hash), and opening it shows a one-click join.
 | `R` | reload |
 | `E` | pick up / use, hold to help up a downed teammate |
 | `Q` (hold) | use medkit |
-| `1` `2` `3` / wheel | primary / sidearm / close-in weapon |
-| `G` / `T` | throw a throwable / switch which kind |
+| `1` `2` `3` / wheel | primary / sidearm / close-in weapon (wheel also cycles throwables) |
+| `4` `5` | take a throwable in hand: hold `LMB` to aim, release to throw |
+| `G` | quick throw |
 | `Space` `F` `M` | jump / flashlight / mute |
 
 **The campaign:** four chapters (*The Long Lullaby*, briefed in `docs/campaign.md`), each a
@@ -67,7 +68,8 @@ attempt and scale with the squad's size. Loot comes back on a checkpoint restart
 
 **Close-in weapons** go on your belt (key `3`) beside your guns: the *Bonk Bat* (wide swing,
 one-hits commons), the *Snip-Snap* (fast) and the *Big Chop* (slow, heavy, good on specials). They
-never run out and they are silent, so a swing wakes nobody. **Throwables** (up to three carried in any mix; `G` throws, `T` switches kind): the
+never run out and they are silent, so a swing wakes nobody. **Throwables** (up to three carried in any mix; `4` / `5` take one in hand, hold left mouse to aim along the
+shown arc and release to throw; `G` throws one straight away): the
 *Hot Sauce* firebomb leaves a burning patch for 9 s (it burns you too) and the *Rattle Bomb* draws
 every common nearby for 5 s, then explodes. A **Pillow Vest** gives 50 armour that soaks up half of
 each bite or hit until it is used up (goo and fire go straight through).

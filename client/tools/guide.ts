@@ -5,7 +5,7 @@
 import * as pc from 'playcanvas';
 import {
   WEAPONS, ZTYPES, ZT, INTRO, ARMOR, FIRE, LURE, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, PLAYER, TINPOT_FRONT, HEAL_MIN,
-  SURVIVOR_RULES, DIFFICULTIES, THROW_MAX, headMult, isCommon, meleeDamage, type WeaponDef,
+  SURVIVOR_RULES, DIFFICULTIES, THROW_MAX, THROWABLES, headMult, isCommon, meleeDamage, type WeaponDef,
 } from '../../shared/constants';
 import { CHAPTERS } from '../../shared/chapters';
 import { app, meshEntity, makeUnlit, inkBox, device } from '../src/gfx';
@@ -86,8 +86,8 @@ const WNOTES: Record<string, string> = {
   bat: 'Wide flat swing. One-hits commons, three at a time, and sends survivors of it flying.',
   machete: 'Quick alternating cuts. The fastest way to clear a doorway by hand.',
   axe: 'Slow overhead chop that hurts. The close-in answer to specials.',
-  firebomb: 'Throw (G). A burning patch: zombies run through it and die. It burns you too; Raincoats ignore it.',
-  rattle: 'Throw (G). Every common nearby drops everything and crowds the rattle, then it explodes.',
+  firebomb: 'Hold left mouse to aim, release to throw. A burning patch: zombies run through it and die. It burns you too; Raincoats ignore it.',
+  rattle: 'Hold left mouse to aim, release to throw. Every common nearby drops everything and crowds the rattle, then it explodes.',
 };
 
 /** When a type first appears: "Chapter 2, 35%". */
@@ -152,12 +152,12 @@ interface Item { tab: Tab; key: string; label: string; group: string; note: stri
 const items: Item[] = [
   ...ZTYPES.map((T, i): Item => ({ tab: 'zombies', key: `z-${T.id}`, label: ZNOTES[i]?.name ?? T.id, z: i, note: t('{hp} hp', { hp: T.hp }),
     group: i === ZT.BRUTE ? 'Boss' : i === ZT.WEEPER ? 'Hazard' : isCommon(i) ? 'Commons' : 'Specials' })),
-  ...WEAPONS.map((w, i): Item => ({ tab: 'weapons', key: `w-${w.id}`, label: w.name, w: i, note: w.melee ? t('{dmg} dmg', { dmg: w.dmg }) : w.thrown ? 'G' : t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }),
-    group: w.slot === 'primary' ? 'Primary (1)' : w.slot === 'sidearm' ? 'Sidearm (2)' : w.slot === 'melee' ? 'Close-in (3)' : 'Throwables (G)' })),
+  ...WEAPONS.map((w, i): Item => ({ tab: 'weapons', key: `w-${w.id}`, label: w.name, w: i, note: w.melee ? t('{dmg} dmg', { dmg: w.dmg }) : w.thrown ? String(4 + THROWABLES.indexOf(i)) : t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }),
+    group: w.slot === 'primary' ? 'Primary (1)' : w.slot === 'sidearm' ? 'Sidearm (2)' : w.slot === 'melee' ? 'Close-in (3)' : 'Throwables (4, 5)' })),
   { tab: 'weapons', key: 'g-armor', label: 'Pillow Vest', group: 'Gear', note: t('{n} armour', { n: ARMOR.max }), gear: 'armor' },
   { tab: 'weapons', key: 'g-medkit', label: 'Medkit', group: 'Gear', note: 'Q', gear: 'medkit' },
 ];
-const GROUP_ORDER = ['Commons', 'Specials', 'Hazard', 'Boss', 'Primary (1)', 'Sidearm (2)', 'Close-in (3)', 'Throwables (G)', 'Gear'];
+const GROUP_ORDER = ['Commons', 'Specials', 'Hazard', 'Boss', 'Primary (1)', 'Sidearm (2)', 'Close-in (3)', 'Throwables (4, 5)', 'Gear'];
 let cur: Item = items.find((it) => it.key === location.hash.slice(1)) ?? items[0];
 let tab: Tab = location.hash === '#maps' ? 'maps' : cur.tab;
 /** The map viewer module, loaded the first time its tab is opened. */
@@ -234,10 +234,10 @@ function weaponInfo(w: WeaponDef): string {
       row('Stagger', t('{s} s, shoved back', { s: w.melee.stun })), row('Noise', t('silent: wakes nobody')), row('Ammo', t('never runs out')), row('Move speed', `${pct(w.move)}%`));
   } else if (w.thrown === 'fire') {
     rows.push(row('Effect', t('burning patch, {r} m radius for {s} s', { r: FIRE.r, s: FIRE.life })), row('Zombies', t('{dps} dmg/s (Raincoat: none)', { dps: FIRE.dps })),
-      row('Survivors', t('{dps} dmg/s while standing in it', { dps: FIRE.ff })), row('At once', t('{n} patches', { n: FIRE.max })), row('Carry', t('up to {n} throwables, any mix (T switches)', { n: THROW_MAX })));
+      row('Survivors', t('{dps} dmg/s while standing in it', { dps: FIRE.ff })), row('At once', t('{n} patches', { n: FIRE.max })), row('Carry', t('up to {n} throwables, any mix', { n: THROW_MAX })));
   } else if (w.thrown === 'lure') {
     rows.push(row('Effect', t('commons within {m} m of path flock to it for {s} s', { m: LURE.tiles * 2, s: LURE.time })), row('Then', t('{dmg} blast dmg · {r} m radius', { dmg: w.blast!.dmg, r: w.blast!.radius })),
-      row('Wakes', t('sleepers within {m} m', { m: LURE.wake })), row('Specials', t('ignore it')), row('Carry', t('up to {n} throwables, any mix (T switches)', { n: THROW_MAX })));
+      row('Wakes', t('sleepers within {m} m', { m: LURE.wake })), row('Specials', t('ignore it')), row('Carry', t('up to {n} throwables, any mix', { n: THROW_MAX })));
   } else {
     rows.push(row('Damage', w.blast ? t('{dmg} blast, {r} m radius ({pct}% at the rim)', { dmg: w.blast.dmg, r: w.blast.radius, pct: pct(w.blast.edge) }) : w.pellets > 1 ? t('{dmg} × {n} pellets', { dmg: w.dmg, n: w.pellets }) : String(w.dmg)));
     if (!w.blast) rows.push(row('Fire rate', t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }) + (w.auto ? ` · ${t('auto')}` : '')), row('Damage / second', t('{a} ({b} with reloads)', { a: num(dps), b: num(sustained) })));

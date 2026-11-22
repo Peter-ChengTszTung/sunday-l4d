@@ -99,6 +99,10 @@ const me = {
    * `thrAt[k]`: when you last threw kind k: until the server's count catches up (or 3 s pass) its higher count is ignored.
    */
   thr: THROWABLES.map(() => 0), thrSel: 0, thrAt: THROWABLES.map(() => -99),
+  /** Left mouse held with a throwable in hand: the arm is back and the arc is showing; letting go throws. */
+  aiming: false,
+  /** Left mouse has to be let go before it can wind up a throw (a shove cancelled one, or it was held while switching to the throwable). */
+  aimBlock: false,
   /** Snap to the server's position on the next snapshot (a hold just ended). */
   snapPos: false,
   fireCd: 0, reloadT: 0, /** Seconds since the last shove, and shove fatigue (PLAYER.shoveMax). */ shoveRest: 99, shoveFat: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
@@ -159,8 +163,9 @@ document.addEventListener('keydown', (e) => {
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
     case 'Digit2': switchWeapon(me.sidearm); break;
     case 'Digit3': if (me.melee >= 0) switchWeapon(me.melee); break;
+    // 4 / 5: take a throwable in hand (hold left mouse to aim, release to throw). G throws one straight away.
+    case 'Digit4': case 'Digit5': { const k = Number(e.code.slice(5)) - 4; if (me.thr[k] > 0) { me.thrSel = k; switchWeapon(THROWABLES[k]); } break; }
     case 'KeyG': throwIt(); break;
-    case 'KeyT': nextThrowable(); break;
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
@@ -189,8 +194,8 @@ document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = f
 document.addEventListener('contextmenu', (e) => { if (inGame) e.preventDefault(); });
 document.addEventListener('wheel', (e) => {
   if (!active()) return;
-  // Cycle through what you carry: primary, sidearm, close-in.
-  const have = [me.primary, me.sidearm, me.melee].filter((w) => w >= 0), i = have.indexOf(me.weapon);
+  // Cycle through what you carry: primary, sidearm, close-in, throwables.
+  const have = [me.primary, me.sidearm, me.melee, ...THROWABLES.filter((_, k) => me.thr[k] > 0)].filter((w) => w >= 0), i = have.indexOf(me.weapon);
   if (have.length > 1) switchWeapon(have[(i + (e.deltaY > 0 ? 1 : have.length - 1)) % have.length]);
 }, { passive: true });
 /** Shooting range: these keys hand you weapon 0, 1, 2… (every gun, close-in weapon and throwable). */
@@ -204,7 +209,7 @@ document.addEventListener('pointerlockchange', () => {
 // ------------------------------------------------------------------- weapons
 function switchWeapon(i: number): void {
   if (i === me.weapon || me.st !== PSTATE.ALIVE) return;
-  me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0;
+  me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0; me.aiming = false; me.aimBlock = mouse.left;
   vm.setWeapon(i);
   sfx.cancelReload(); sfx.draw(i);
   range?.resetStats(); // each weapon's numbers start clean
@@ -341,28 +346,68 @@ function throwSel(): number {
   for (let i = 0; i < me.thr.length; i++) { const k = (me.thrSel + i) % me.thr.length; if (me.thr[k] > 0) { me.thrSel = k; return k; } }
   return -1;
 }
-/** T: switch which kind G throws. */
-function nextThrowable(): void {
-  if (throwSel() < 0) return;
-  me.thrSel = (me.thrSel + 1) % me.thr.length;
-  const k = throwSel();
-  if (me.thr.filter((n) => n > 0).length > 1) { hud.feed(t('G now throws the {w}', { w: t(WEAPONS[THROWABLES[k]].name) })); sfx.draw(THROWABLES[k]); }
-}
 /** Empty your pockets (a fresh start, a new room). */
-function clearThrowables(): void { me.thr.fill(0); me.thrAt.fill(-99); me.thrSel = 0; }
-/** G: lob the carried throwable where you are looking. It flies like a launcher shell and claims its landing with 'g'. */
-function throwIt(): void {
-  const k = throwSel(), wi = THROWABLES[k];
-  if (k < 0 || me.throwCd > 0 || me.st !== PSTATE.ALIVE || me.pinned || me.healT > 0 || !active()) return;
-  const b = aimBasis();
-  spreadDir(b, 0);
-  // A little loft so a level throw still carries.
+function clearThrowables(): void { me.thr.fill(0); me.thrAt.fill(-99); me.thrSel = 0; me.aiming = false; }
+/** The kind of throwable in your hand (index into THROWABLES), or -1 if you are holding something else. */
+const heldThrowable = (): number => (WEAPONS[me.weapon].thrown ? THROWABLES.indexOf(me.weapon) : -1);
+/** The direction a throw leaves the hand, into `_d`: where you look, with a little loft so a level throw still carries. */
+function throwDir(): void {
+  spreadDir(aimBasis(), 0);
   _d.y += 0.16;
   const dl = Math.hypot(_d.x, _d.y, _d.z); _d.x /= dl; _d.y /= dl; _d.z /= dl;
+}
+/** Throw one of kind `k`. It flies like a launcher shell and claims its landing with 'g'. */
+function doThrow(k: number): void {
+  const wi = THROWABLES[k];
+  throwDir();
   const first = launchNade(wi);
   net.send({ t: 'f', w: wi, h: [], e: first, n: nadeSeq });
   me.thr[k]--; me.thrAt[k] = time; me.throwCd = 0.9;
   vm.toss(); sfx.shoot(wi);
+}
+/** G: quick throw, without taking it in hand first (the kind in your hand if there is one, else the last one selected). */
+function throwIt(): void {
+  const k = heldThrowable() >= 0 ? heldThrowable() : throwSel();
+  if (k < 0 || me.thr[k] <= 0 || me.throwCd > 0 || me.st !== PSTATE.ALIVE || me.pinned || me.healT > 0 || !active()) return;
+  me.aiming = false;
+  doThrow(k);
+}
+/** The last one in your hand is gone: take out the other kind if you have it, else go back to a gun. */
+function holster(): void {
+  const k = throwSel();
+  switchWeapon(k >= 0 ? THROWABLES[k] : me.primary >= 0 ? me.primary : me.sidearm);
+}
+const _arc: number[] = [];
+/** While aiming: the path the throw will take (walls and floor only), dashed, with a ring where it lands. */
+function drawAimArc(k: number): void {
+  const wi = THROWABLES[k], B = WEAPONS[wi].blast!;
+  throwDir();
+  const ghost = { x: cam.x, y: cam.y, z: cam.z, vx: _d.x * B.speed, vy: _d.y * B.speed, vz: _d.z * B.speed, t: 0, w: wi } as Nade;
+  _arc.length = 0;
+  for (let i = 0; i < 160; i++) {
+    const done = flyNade(ghost, 1 / 40, false);
+    if (ghost.t > 0.12) _arc.push(ghost.x, ghost.y, ghost.z); // starts a little way out, about where the hand lets go
+    if (done) break;
+  }
+  fx.aimArc(_arc);
+}
+/**
+ * A throwable in hand: holding left mouse winds up and shows the arc, letting go throws it. Being
+ * grabbed, downed or shoving while aiming just lowers the arm. Returns false if you hold something else.
+ */
+function updateThrowAim(on: boolean): boolean {
+  const k = heldThrowable();
+  if (k < 0) { me.aiming = false; vm.setAim(false, true); return false; }
+  if (!mouse.left) me.aimBlock = false;
+  const ready = on && !me.aimBlock && me.thr[k] > 0 && me.fireCd <= 0 && me.throwCd <= 0 && me.healT <= 0;
+  if (ready && mouse.left) me.aiming = true;
+  else if (me.aiming) { me.aiming = false; if (ready) doThrow(k); }
+  // Out of this kind (and the throw has left the hand): put the empty hand away.
+  if (me.thr[k] <= 0 && me.throwCd <= 0.5 && me.st === PSTATE.ALIVE) holster();
+  // The hand is empty for a moment after a throw.
+  vm.setAim(me.aiming, me.thr[k] > 0 && me.throwCd <= 0.5);
+  if (me.aiming) drawAimArc(k);
+  return true;
 }
 
 function fire(): void {
@@ -519,7 +564,7 @@ function updateNades(dt: number): void {
 function debugGive(wi: number): void {
   const w = WEAPONS[wi];
   if (!w) return;
-  if (w.slot === 'throw') { const k = THROWABLES.indexOf(wi); if (throwCount() < THROW_MAX) me.thr[k]++; me.thrSel = k; me.throwCd = 0; return; }
+  if (w.slot === 'throw') { const k = THROWABLES.indexOf(wi); if (throwCount() < THROW_MAX) me.thr[k]++; me.thrSel = k; me.throwCd = 0; switchWeapon(wi); return; }
   if (w.slot === 'sidearm') me.sidearm = wi; else if (w.slot === 'melee') me.melee = wi; else me.primary = wi;
   me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
   switchWeapon(wi);
@@ -532,6 +577,7 @@ function clearNades(): void {
 
 function shove(): void {
   if (me.st !== PSTATE.ALIVE || me.pinned || !active()) return;
+  if (me.aiming) { me.aiming = false; me.aimBlock = true; } // a shove lowers a wound-up throw: let go and press again to aim
   // Same fatigue rule as the server (onShove), so a tired shove isn't shown and then ignored.
   const fat = shoveFatigue(me.shoveFat, me.shoveRest);
   if (me.shoveRest < shoveCooldown(fat)) return;
@@ -616,8 +662,7 @@ function onGot(pickupId: number): void {
       if (throwCount() < THROW_MAX) me.thr[tk]++;
       if (throwCount() === 1) me.thrSel = tk;
       me.thrAt[tk] = -99; me.throwCd = 0;
-      hud.feed(t(w.thrown === 'fire' ? 'Picked up the {w} — G to throw: sets the ground alight' : 'Picked up the {w} — G to throw: lures sleepers, then goes bang', { w: t(w.name) }));
-      if (me.thr.filter((n) => n > 0).length === 2 && me.thr[tk] === 1) hud.feed(t('Two kinds of throwable: T switches which one G throws'));
+      hud.feed(t('Picked up the {w} — press {key} to hold it, hold left mouse to aim, release to throw', { w: t(w.name), key: 4 + tk }));
     } else {
       // A close-in weapon goes on your belt (3): it doesn't take your gun out of your hands.
       const had = w.slot === 'melee' && me.melee < 0 ? false : true;
@@ -1122,7 +1167,7 @@ function enterRange(): void {
   $('rangepanel').hidden = false;
   $('leaverange').hidden = false;
   hud.banner(t('Shooting range'));
-  hud.feed(t('1-8: guns · 9 0 -: close-in · = Backspace: throwables (G) · X: clear stats'));
+  hud.feed(t('1-8: guns · 9 0 -: close-in · = Backspace: throwables (hold LMB to aim) · X: clear stats'));
   hud.feed(t('Sniper (7): hold right mouse to scope · V: shove'));
   enterGame();
 }
@@ -1158,7 +1203,7 @@ function updateRangePanel(): void {
   if (!range) return;
   const w = WEAPONS[me.weapon], s = range.stats;
   const spec = w.melee ? t('{dmg} dmg · hits {n} · reach {r} m · silent', { dmg: w.dmg, n: w.melee.cleave, r: w.melee.reach })
-    : w.thrown === 'fire' ? t('throwable (G): burning patch')
+    : w.thrown === 'fire' ? t('throwable: burning patch')
     : w.blast
     ? t('{dmg} blast dmg · {r} m radius', { dmg: w.blast.dmg, r: w.blast.radius })
     : t('{dmg} dmg', { dmg: w.pellets > 1 ? `${w.dmg}×${w.pellets}` : w.dmg }) + (w.pierce > 1 ? ` · ${t('pierces {n}', { n: w.pierce })}` : '');
@@ -1319,7 +1364,7 @@ function updateMe(dt: number): void {
       vm.setReload(0); sfx.reloadDone(me.weapon);
     }
   }
-  if (on && mouse.left) fire();
+  if (!updateThrowAim(on) && on && mouse.left) fire();
   updateNades(dt);
 
   // Medkit channel.
@@ -1490,11 +1535,12 @@ function listen(dt: number): void {
 const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
-  // Throwable chip: what G throws first, then anything else in your pockets (T switches).
-  const tk = throwSel(), others = me.thr.map((n, k) => (n > 0 && k !== tk ? `${t(WEAPONS[THROWABLES[k]].name)} ×${n}` : '')).filter(Boolean);
-  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max, tk < 0 ? '' : `${t(WEAPONS[THROWABLES[tk]].name)} ×${me.thr[tk]}${others.length ? ` · ${others.join(' · ')}` : ''}`, others.length ? 'G · T' : 'G');
-  hud.setAmmo(t(w.name), w.melee ? Infinity : me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
-    me.weapon === me.primary ? 1 : me.weapon === me.melee ? 3 : 2, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '');
+  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max);
+  // In hand: a gun shows its magazine, a close-in weapon nothing, a throwable how many you have left.
+  const held = heldThrowable();
+  hud.setAmmo(t(w.name), w.melee ? Infinity : held >= 0 ? me.thr[held] : me.mag[me.weapon], held >= 0 ? -1 : me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
+    held >= 0 ? 4 + held : me.weapon === me.primary ? 1 : me.weapon === me.melee ? 3 : 2, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '',
+    me.thr.map((n, k) => (n > 0 ? `${t(WEAPONS[THROWABLES[k]].name)} ×${n}` : '')));
   let n = 0;
   for (const m of mates.values()) {
     const v = team[n] ?? (team[n] = { id: 0, name: '', color: '', hp: 0, st: 0, respawn: 0 });
