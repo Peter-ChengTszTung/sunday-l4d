@@ -19,10 +19,10 @@ const FLOOR_COL: Record<number, string> = {
   [F.DIRT]: '#a47e5e', [F.CONCRETE]: '#8b8a9c', [F.TILES]: '#c9d3dc', [F.WOOD]: '#b07f52', [F.WATER]: '#3f78b8',
 };
 const WALL_COL: Record<number, string> = { [WALL.BUILDING]: '#2a2140', [WALL.ROCK]: '#3d3236', [WALL.HEDGE]: '#1f3d2a', [WALL.FENCE]: '#3a3d4f' };
-const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', obj: '#ffd43b', item: '#ff922b', armor: '#b9a4ff', firebomb: '#ff7a3a', rattle: '#ff7a3a' };
+const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', obj: '#ffd43b', item: '#ff922b', armor: '#b9a4ff', firebomb: '#ff7a3a', rattle: '#ff7a3a', plaster: '#63e6be', vitamins: '#63e6be', cocoa: '#63e6be' };
 /** Any other pickup kind is a weapon. */
 const WEAPON_COL = '#74c0fc';
-const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', autoshotgun: 'D', sniper: 'K', launcher: 'L', magnum: 'M', bat: 'b', machete: 'm', axe: 'x', firebomb: 'F', rattle: 'R', armor: 'V', obj: '!', item: '★' };
+const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', autoshotgun: 'D', sniper: 'K', launcher: 'L', magnum: 'M', bat: 'b', machete: 'm', axe: 'x', firebomb: 'F', rattle: 'R', armor: 'V', obj: '!', item: '★', plaster: 'p', vitamins: 'v', cocoa: 'c' };
 const KIND_COL: Record<string, string> = { reach: '#74c0fc', gather: '#7ddc6a', use: '#ffd43b', collect: '#ff922b', holdout: '#ff5d8f' };
 
 const LAYERS = { grid: false, props: true, loot: true, lamps: true, paint: true, quest: true, route: true, heat: false, items: true, regions: false };
@@ -343,7 +343,7 @@ for (const inp of $('layers').querySelectorAll<HTMLInputElement>('input')) inp.o
 $('fit').onclick = fit;
 $('legend').innerHTML = [
   ...Object.entries(KIND_COL).map(([k, c]) => `<span style="--c:${c}">${esc(t(`step: ${k}`).replace(/^step: /, ''))}</span>`),
-  ...Object.entries({ medkit: '#ff6b8a', ammo: '#a9e34b', weapon: '#74c0fc', armour: '#b9a4ff', throwable: '#ff7a3a', 'quest item': '#ff922b', 'closed door': '#ffd43b', 'open door': '#7ddc6a', spawn: '#39c5bb', note: '#fff6e0' }).map(([k, c]) => `<span style="--c:${c}">${esc(t(`legend: ${k}`).replace(/^legend: /, ''))}</span>`),
+  ...Object.entries({ medkit: '#ff6b8a', 'small medical item': '#63e6be', ammo: '#a9e34b', weapon: '#74c0fc', armour: '#b9a4ff', throwable: '#ff7a3a', 'quest item': '#ff922b', 'closed door': '#ffd43b', 'open door': '#7ddc6a', spawn: '#39c5bb', note: '#fff6e0' }).map(([k, c]) => `<span style="--c:${c}">${esc(t(`legend: ${k}`).replace(/^legend: /, ''))}</span>`),
 ].join('');
 
 let drag: { x: number; y: number } | null = null;

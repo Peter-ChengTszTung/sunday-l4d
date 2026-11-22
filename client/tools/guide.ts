@@ -4,11 +4,12 @@
 // Dev server: http://localhost:3000/tools/guide.html
 import * as pc from 'playcanvas';
 import {
-  WEAPONS, ZTYPES, ZT, INTRO, ARMOR, FIRE, LURE, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, PLAYER, TINPOT_FRONT, HEAL_MIN,
+  WEAPONS, ZTYPES, ZT, INTRO, ARMOR, FIRE, LURE, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, PLAYER, TINPOT_FRONT, HEAL_MIN, MEDS,
   SURVIVOR_RULES, DIFFICULTIES, THROW_MAX, THROWABLES, headMult, isCommon, meleeDamage, type WeaponDef,
 } from '../../shared/constants';
 import { CHAPTERS } from '../../shared/chapters';
-import { app, meshEntity, makeUnlit, inkBox, device } from '../src/gfx';
+import { app, meshEntity, makeUnlit, toonMat, device } from '../src/gfx';
+import { pickupGeo } from '../src/pickups';
 import { ring, make, toMesh } from '../src/geo';
 import { Chibi, zombieLook, type Pose } from '../src/chibi';
 import { worldGun } from '../src/viewmodel';
@@ -148,21 +149,30 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.dist = Math.m
 
 // ---------------------------------------------------------------- selection
 type Tab = 'zombies' | 'weapons' | 'maps';
-interface Item { tab: Tab; key: string; label: string; group: string; note: string; z?: number; w?: number; gear?: 'armor' | 'medkit' }
+interface Item { tab: Tab; key: string; label: string; group: string; note: string; z?: number; w?: number; /** Gear: 'armor', or a medical item id (MEDS). */ gear?: string }
 const items: Item[] = [
   ...ZTYPES.map((T, i): Item => ({ tab: 'zombies', key: `z-${T.id}`, label: ZNOTES[i]?.name ?? T.id, z: i, note: t('{hp} hp', { hp: T.hp }),
     group: i === ZT.BRUTE ? 'Boss' : i === ZT.WEEPER ? 'Hazard' : isCommon(i) ? 'Commons' : 'Specials' })),
   ...WEAPONS.map((w, i): Item => ({ tab: 'weapons', key: `w-${w.id}`, label: w.name, w: i, note: w.melee ? t('{dmg} dmg', { dmg: w.dmg }) : w.thrown ? String(4 + THROWABLES.indexOf(i)) : t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }),
     group: w.slot === 'primary' ? 'Primary (1)' : w.slot === 'sidearm' ? 'Sidearm (2)' : w.slot === 'melee' ? 'Close-in (3)' : 'Throwables (4, 5)' })),
   { tab: 'weapons', key: 'g-armor', label: 'Pillow Vest', group: 'Gear', note: t('{n} armour', { n: ARMOR.max }), gear: 'armor' },
-  { tab: 'weapons', key: 'g-medkit', label: 'Medkit', group: 'Gear', note: 'Q', gear: 'medkit' },
+  // Medical items: Q uses the selected one, Z picks the next.
+  ...MEDS.map((m): Item => ({ tab: 'weapons', key: `g-${m.id}`, label: m.name, group: 'Medical (Q, Z)', note: m.id === 'medkit' ? t('{s} s', { s: m.time }) : `+${m.heal + m.regen}`, gear: m.id })),
 ];
-const GROUP_ORDER = ['Commons', 'Specials', 'Hazard', 'Boss', 'Primary (1)', 'Sidearm (2)', 'Close-in (3)', 'Throwables (4, 5)', 'Gear'];
+const GROUP_ORDER = ['Commons', 'Specials', 'Hazard', 'Boss', 'Primary (1)', 'Sidearm (2)', 'Close-in (3)', 'Throwables (4, 5)', 'Medical (Q, Z)', 'Gear'];
 let cur: Item = items.find((it) => it.key === location.hash.slice(1)) ?? items[0];
 let tab: Tab = location.hash === '#maps' ? 'maps' : cur.tab;
 /** The map viewer module, loaded the first time its tab is opened. */
 let maps: Promise<typeof import('./maps')> | null = null;
 let chibi: Chibi | null = null, pose: Pose = 'idle', variant = 0;
+
+const gearMeshes = new Map<string, pc.Mesh>();
+/** Pickup model of a piece of gear, built once. */
+function gearMesh(key: string): pc.Mesh {
+  let m = gearMeshes.get(key);
+  if (!m) { m = toMesh(device, pickupGeo(key)); gearMeshes.set(key, m); }
+  return m;
+}
 
 function showModel(): void {
   for (const c of [...holder.children]) c.destroy();
@@ -185,9 +195,11 @@ function showModel(): void {
     holder.addChild(gun);
     view.y = 1.1; view.dist = 4.4;
   } else {
+    // The very model that floats over the pickup in the game (pickups.ts), scaled up.
     const g = new pc.Entity();
-    if (cur.gear === 'armor') { g.addChild(inkBox(0.9, 1, 0.36, 0xf6f2ff)); for (const x of [-0.25, 0.25]) { const s = inkBox(0.14, 1.06, 0.4, 0x74c0fc, 0); s.setLocalPosition(x, 0, 0); g.addChild(s); } }
-    else { g.addChild(inkBox(1, 0.7, 0.5, 0xfff5f5)); const a = inkBox(0.55, 0.16, 0.54, 0xff4d6d, 0), b = inkBox(0.16, 0.55, 0.54, 0xff4d6d, 0); g.addChild(a); g.addChild(b); }
+    const m = meshEntity(gearMesh(cur.gear!), toonMat);
+    m.setLocalScale(2.2, 2.2, 2.2);
+    g.addChild(m);
     g.setLocalPosition(0, 1, 0);
     holder.addChild(g);
     view.y = 1; view.dist = 4.4;
@@ -260,14 +272,28 @@ function weaponInfo(w: WeaponDef): string {
     <h3>${esc(t('Stats'))}</h3><div class="stats">${rows.join('')}</div>${table}`;
 }
 
-function gearInfo(g: 'armor' | 'medkit'): string {
+/** What each small medical item is for (the numbers come from MEDS). */
+const MED_NOTES: Record<string, string> = {
+  plaster: 'A quick patch for scratches. Fast enough to slap on between swings, and you can carry three.',
+  vitamins: 'Chew and keep fighting: a little health now and the rest trickling back over the next few seconds. Going down wastes what is left.',
+  cocoa: 'A small heal, but it steadies your legs: your count of downs is cleared, as a medkit would. Worth drinking on your last legs even at full health.',
+};
+function gearInfo(g: string): string {
   if (g === 'armor') return `<h2>${esc(t('Pillow Vest'))}</h2><div class="sub"><span class="tag">armor</span>${esc(t('Gear'))}</div>
     <p>${esc(t('A pillow strapped on front and back. It soaks up part of every bite or hit until the stuffing runs out.'))}</p>
     <h3>${esc(t('Stats'))}</h3><div class="stats">${row('Armour', t('{n} points', { n: ARMOR.max }))}${row('Soaks up', t('{pct}% of each hit while any is left', { pct: pct(ARMOR.absorb) }))}
     ${row('Worth', t('{n} damage of hits', { n: Math.round(ARMOR.max / ARMOR.absorb) }))}${row('No help against', t('goo, fire, bleeding out'))}${row('Pick up', t('one vest refills it; lost on a restart'))}</div>`;
-  return `<h2>${esc(t('Medkit'))}</h2><div class="sub"><span class="tag">medkit</span>${esc(t('Gear'))}</div>
+  const k = MEDS.findIndex((m) => m.id === g), m = MEDS[k];
+  const keys = `<h3>${esc(t('Keys'))}</h3><div class="stats">${row('Q (hold)', t('use the selected medical item'))}${row('Z', t('pick the next one you carry'))}${row('Picked first', t('small items, so a stray press never burns the medkit'))}</div>`;
+  if (k === 0) return `<h2>${esc(t('Medkit'))}</h2><div class="sub"><span class="tag">medkit</span>${esc(t('Medical'))}</div>
     <p>${esc(t('Hold Q for {s} s. Also clears your count of downs.', { s: PLAYER.healTime }))}</p>
-    <h3>${esc(t('Stats'))}</h3><div class="stats">${row('Carry', t('one'))}${DIFFICULTIES.map((d) => `<b>${esc(t('Heals ({diff})', { diff: t(d.label) }))}</b><span>${esc(t('{pct}% of missing health, at least {min}', { pct: pct(SURVIVOR_RULES[d.id].heal), min: HEAL_MIN }))}</span>`).join('')}</div>`;
+    <h3>${esc(t('Stats'))}</h3><div class="stats">${row('Carry', t('one'))}${DIFFICULTIES.map((d) => `<b>${esc(t('Heals ({diff})', { diff: t(d.label) }))}</b><span>${esc(t('{pct}% of missing health, at least {min}', { pct: pct(SURVIVOR_RULES[d.id].heal), min: HEAL_MIN }))}</span>`).join('')}
+    ${row('Moving while using', `${pct(m.move)}%`)}${row('Find it', t('safe rooms and side rooms; fewer with a small squad'))}</div>${keys}`;
+  return `<h2>${esc(t(m.name))}</h2><div class="sub"><span class="tag">${esc(m.id)}</span>${esc(t('Medical'))}</div>
+    <p>${esc(t(MED_NOTES[m.id] ?? ''))}</p>
+    <h3>${esc(t('Stats'))}</h3><div class="stats">${row('Heals at once', t('{n} health', { n: m.heal }))}${m.regen > 0 ? row('Then', t('{n} more over {s} s', { n: m.regen, s: m.over })) : ''}
+    ${row('Use time', t('{s} s', { s: m.time }))}${row('Moving while using', `${pct(m.move)}%`)}${row('Carry', String(m.max))}${row('Clears your downs', t(m.steady ? 'yes' : 'no'))}
+    ${row('Find it', t('beside ammo piles, under a green cross'))}</div>${keys}`;
 }
 
 function render(): void {
