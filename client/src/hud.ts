@@ -9,7 +9,7 @@ export interface MateView { id: number; name: string; color: string; hp: number;
 
 export class Hud {
   private el = {
-    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), medkit: $('medkit'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
+    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), medkit: $('medkit'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), throwkey: $('throwkey'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
     acount: $('acount'), slots: $('slots'), team: $('team'), feed: $('feed'), banner: $('banner'), prompt: $('prompt'), ring: $('ring'),
     ringfg: document.getElementById('ringfg') as unknown as SVGCircleElement, ringlabel: $('ringlabel'), hitmark: $('hitmark'), vignette: $('vignette'),
     goo: $('goo'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
@@ -47,8 +47,8 @@ export class Hud {
     };
   }
 
-  /** `armor` of `armorMax` vest points left; `throwable`: name of the carried throwable ('' = none). */
-  setHealth(hp: number, st: number, medkits: number, armor = 0, armorMax = 1, throwable = ''): void {
+  /** `armor` of `armorMax` vest points left; `throwable`: what G throws and what else is carried ('' = nothing); `throwKey`: the key hint on its chip. */
+  setHealth(hp: number, st: number, medkits: number, armor = 0, armorMax = 1, throwable = '', throwKey = 'G'): void {
     const shown = Math.max(0, Math.min(PLAYER.hp, hp));
     this.set('hp', `${shown}|${st}`, () => {
       this.el.hpbar.style.width = `${shown}%`;
@@ -58,7 +58,7 @@ export class Hud {
     this.set('mk', String(medkits), () => { this.el.medkit.hidden = medkits < 1; });
     const ar = Math.max(0, Math.min(armorMax, armor));
     this.set('ar', String(ar), () => { this.el.armor.hidden = ar <= 0; this.el.armorbar.style.width = `${(ar / armorMax) * 100}%`; });
-    this.set('th', throwable, (v) => { this.el.throwable.hidden = !v; this.el.throwname.textContent = v; });
+    this.set('th', `${throwable}|${throwKey}`, () => { this.el.throwable.hidden = !throwable; this.el.throwname.textContent = throwable; this.el.throwkey.textContent = throwKey; });
     // Low health keeps a faint red edge on screen.
     const base = st === PSTATE.ALIVE && shown < 35 ? 0.35 : st === PSTATE.DOWN ? 0.5 : 0;
     this.set('vig', (Math.max(base, this.hurtT > 0 ? 0.9 : 0)).toFixed(2), (v) => { this.el.vignette.style.opacity = v; });

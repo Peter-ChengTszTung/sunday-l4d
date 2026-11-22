@@ -5,7 +5,7 @@
 import * as pc from 'playcanvas';
 import {
   WEAPONS, ZTYPES, ZT, INTRO, ARMOR, FIRE, LURE, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, PLAYER, TINPOT_FRONT, HEAL_MIN,
-  SURVIVOR_RULES, DIFFICULTIES, headMult, isCommon, meleeDamage, type WeaponDef,
+  SURVIVOR_RULES, DIFFICULTIES, THROW_MAX, headMult, isCommon, meleeDamage, type WeaponDef,
 } from '../../shared/constants';
 import { CHAPTERS } from '../../shared/chapters';
 import { app, meshEntity, makeUnlit, inkBox, device } from '../src/gfx';
@@ -234,10 +234,10 @@ function weaponInfo(w: WeaponDef): string {
       row('Stagger', t('{s} s, shoved back', { s: w.melee.stun })), row('Noise', t('silent: wakes nobody')), row('Ammo', t('never runs out')), row('Move speed', `${pct(w.move)}%`));
   } else if (w.thrown === 'fire') {
     rows.push(row('Effect', t('burning patch, {r} m radius for {s} s', { r: FIRE.r, s: FIRE.life })), row('Zombies', t('{dps} dmg/s (Raincoat: none)', { dps: FIRE.dps })),
-      row('Survivors', t('{dps} dmg/s while standing in it', { dps: FIRE.ff })), row('At once', t('{n} patches', { n: FIRE.max })), row('Carry', t('one throwable')));
+      row('Survivors', t('{dps} dmg/s while standing in it', { dps: FIRE.ff })), row('At once', t('{n} patches', { n: FIRE.max })), row('Carry', t('up to {n} throwables, any mix (T switches)', { n: THROW_MAX })));
   } else if (w.thrown === 'lure') {
     rows.push(row('Effect', t('commons within {m} m of path flock to it for {s} s', { m: LURE.tiles * 2, s: LURE.time })), row('Then', t('{dmg} blast dmg · {r} m radius', { dmg: w.blast!.dmg, r: w.blast!.radius })),
-      row('Wakes', t('sleepers within {m} m', { m: LURE.wake })), row('Specials', t('ignore it')), row('Carry', t('one throwable')));
+      row('Wakes', t('sleepers within {m} m', { m: LURE.wake })), row('Specials', t('ignore it')), row('Carry', t('up to {n} throwables, any mix (T switches)', { n: THROW_MAX })));
   } else {
     rows.push(row('Damage', w.blast ? t('{dmg} blast, {r} m radius ({pct}% at the rim)', { dmg: w.blast.dmg, r: w.blast.radius, pct: pct(w.blast.edge) }) : w.pellets > 1 ? t('{dmg} × {n} pellets', { dmg: w.dmg, n: w.pellets }) : String(w.dmg)));
     if (!w.blast) rows.push(row('Fire rate', t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }) + (w.auto ? ` · ${t('auto')}` : '')), row('Damage / second', t('{a} ({b} with reloads)', { a: num(dps), b: num(sustained) })));

@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, meleeDamage, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
+import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -270,8 +270,8 @@ export interface Player {
   nades: { x: number; z: number; t: number; w: number; seq: number; ex: number; ez: number }[];
   /** Weapons the server has seen this player pick up (-1 = none). Fire claims must use one of these or the pistol. */
   primary: number; sidearm: number;
-  /** Close-in weapon and throwable carried (weapon index, -1 = none), and armour points left (ARMOR). */
-  melee: number; throwable: number; armor: number;
+  /** Close-in weapon carried (weapon index, -1 = none), throwables carried (weapon index -> how many; THROW_MAX in all), and armour points left (ARMOR). */
+  melee: number; thr: Record<number, number>; armor: number;
   /** Room time until which position updates are still ignored after a hold ends (the client is catching up to where it was dragged). */
   freeAt: number;
   /** Shot clock per weapon index, so alternating weapons can't beat each weapon's own rate. */
@@ -605,7 +605,7 @@ export class Room {
     Object.assign(p, { x: s.x, y: 0, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
       revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, freeAt: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0,
       downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0 });
-    if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; p.melee = -1; p.throwable = -1; }
+    if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; p.melee = -1; p.thr = {}; }
     if (fresh) { p.medkits = 0; p.kills = 0; }
     this.events.push(['tp', p.id, s.x, s.z, Math.PI]);
   }
@@ -805,11 +805,11 @@ export class Room {
     const wi = m.w | 0, wp = WEAPONS[wi];
     if (!wp || p.st !== PSTATE.ALIVE || p.pinned || this.state !== 'play') return; // pinned by a Charger: can't shoot
     // Only the pistol and weapons this player actually picked up (dev servers allow debug gives).
-    if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && wi !== p.throwable && !this.allowDebug) return;
+    if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && !(p.thr[wi] > 0) && !this.allowDebug) return;
     const e = Array.isArray(m.e) && m.e.length === 3 && m.e.every(Number.isFinite) ? m.e : null;
     if (wp.slot === 'throw') {
-      // A throw is its own action (no shot clock): the carried throwable is spent; what it does waits for the landing claim ('g').
-      if (p.throwable === wi) p.throwable = -1;
+      // A throw is its own action (no shot clock): one of that kind is spent; what it does waits for the landing claim ('g').
+      if (p.thr[wi] > 0) p.thr[wi]--;
       if (e) this.events.push(['shot', p.id, wi, r2(e[0]), r2(e[1]), r2(e[2])]);
       p.nades.push({ x: p.x, z: p.z, t: this.time, w: wi, seq: (m.n ?? 0) | 0, ex: e ? e[0] : p.x, ez: e ? e[2] : p.z });
       if (p.nades.length > 6) p.nades.shift();
@@ -1078,10 +1078,10 @@ export class Room {
       return;
     }
     const wi = WEAPONS.findIndex((w) => w.id === pk.kind), slot = WEAPONS[wi]?.slot;
-    // One throwable at a time: a second one of the same kind stays on the shelf for a teammate.
-    if (slot === 'throw' && p.throwable === wi) return;
+    // Pockets full: it stays on the shelf for a teammate.
+    if (slot === 'throw' && Object.values(p.thr).reduce((a, b) => a + b, 0) >= THROW_MAX) return;
     this.taken.add(id);
-    if (slot === 'sidearm') p.sidearm = wi; else if (slot === 'melee') p.melee = wi; else if (slot === 'throw') p.throwable = wi; else if (slot) p.primary = wi;
+    if (slot === 'sidearm') p.sidearm = wi; else if (slot === 'melee') p.melee = wi; else if (slot === 'throw') p.thr[wi] = (p.thr[wi] ?? 0) + 1; else if (slot) p.primary = wi;
     this.events.push(['pk', id], ['got', p.id, id]);
   }
 
@@ -2804,7 +2804,7 @@ export class Room {
     const p: PlayerSnap[] = [];
     for (const q of this.players.values()) {
       p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, q.medkits,
-        r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), q.throwable]);
+        r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), packThrowables((wi) => q.thr[wi] ?? 0)]);
     }
     const z: ZombieSnap[] = [];
     for (const q of this.zombies.values()) z.push([q.id, q.type, r2(q.x), r2(q.z), r2(q.ry), q.st]);

@@ -1,6 +1,6 @@
 // Wire protocol (JSON over WebSocket). Tuples keep snapshots compact.
 
-// [id, x, y, z, yaw, pitch, hp, state, weapon, medkits, reviveFrac, anim, respawnIn, armor, throwable (weapon index, -1 = none)]
+// [id, x, y, z, yaw, pitch, hp, state, weapon, medkits, reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables)]
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 // [id, type, x, z, yaw, state]
 export type ZombieSnap = [number, number, number, number, number, number];

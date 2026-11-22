@@ -208,5 +208,9 @@ export default {
   "{dmg} dmg · hits {n} · reach {r} m · silent": "{dmg} 傷害 · 命中 {n} 個 · 距離 {r} 公尺 · 無聲",
   "throwable (G): burning patch": "投擲物（G）：燃燒區域",
   "gun / sidearm / close-in": "主武器／副武器／近戰",
+  "next throwable": "切換投擲物",
+  "G now throws the {w}": "G 現在投擲{w}",
+  "Pockets full ({n} throwables)": "口袋滿了（{n} 個投擲物）",
+  "Two kinds of throwable: T switches which one G throws": "有兩種投擲物：按 T 切換 G 要丟哪一種",
   "throw": "投擲",
 } satisfies Record<string, string>;

@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
+import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
 import { F, isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -92,10 +92,15 @@ const me = {
   id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
   hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, medkits: 0, respawn: 0, rev: 0,
   weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve),
-  /** Close-in weapon (slot 3) and carried throwable (G): weapon indices, -1 = none. Armour points left; seconds until you can throw again. */
-  melee: -1, throwable: -1, armor: 0, throwCd: 0,
-  /** A throw the server has not confirmed yet (its snapshots still show the throwable); and: snap to the server's position on the next snapshot (a hold just ended). */
-  throwPending: false, snapPos: false,
+  /** Close-in weapon (slot 3): weapon index, -1 = none. Armour points left; seconds until you can throw again. */
+  melee: -1, armor: 0, throwCd: 0,
+  /**
+   * Throwables carried, how many of each kind in THROWABLES order (THROW_MAX in all), and which kind G throws (T switches).
+   * `thrAt[k]`: when you last threw kind k: until the server's count catches up (or 3 s pass) its higher count is ignored.
+   */
+  thr: THROWABLES.map(() => 0), thrSel: 0, thrAt: THROWABLES.map(() => -99),
+  /** Snap to the server's position on the next snapshot (a hold just ended). */
+  snapPos: false,
   fireCd: 0, reloadT: 0, /** Seconds since the last shove, and shove fatigue (PLAYER.shoveMax). */ shoveRest: 99, shoveFat: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
   /**
    * Held by a zombie of type `pinType` (Charger pin, Snatcher lasso, Piggyback ride): no moving, shooting or
@@ -155,6 +160,7 @@ document.addEventListener('keydown', (e) => {
     case 'Digit2': switchWeapon(me.sidearm); break;
     case 'Digit3': if (me.melee >= 0) switchWeapon(me.melee); break;
     case 'KeyG': throwIt(); break;
+    case 'KeyT': nextThrowable(); break;
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
@@ -328,10 +334,26 @@ function swing(wi: number): void {
   if (near.length) { hud.hitmark(false, false); sfx.meleeHit(w.dmg > 120); me.trauma = Math.min(1, me.trauma + w.shake); }
 }
 
+/** How many throwables you carry in all. */
+const throwCount = (): number => me.thr.reduce((a, b) => a + b, 0);
+/** The kind G throws (index into THROWABLES): the selected one, or the next kind you still have; -1 with empty pockets. */
+function throwSel(): number {
+  for (let i = 0; i < me.thr.length; i++) { const k = (me.thrSel + i) % me.thr.length; if (me.thr[k] > 0) { me.thrSel = k; return k; } }
+  return -1;
+}
+/** T: switch which kind G throws. */
+function nextThrowable(): void {
+  if (throwSel() < 0) return;
+  me.thrSel = (me.thrSel + 1) % me.thr.length;
+  const k = throwSel();
+  if (me.thr.filter((n) => n > 0).length > 1) { hud.feed(t('G now throws the {w}', { w: t(WEAPONS[THROWABLES[k]].name) })); sfx.draw(THROWABLES[k]); }
+}
+/** Empty your pockets (a fresh start, a new room). */
+function clearThrowables(): void { me.thr.fill(0); me.thrAt.fill(-99); me.thrSel = 0; }
 /** G: lob the carried throwable where you are looking. It flies like a launcher shell and claims its landing with 'g'. */
 function throwIt(): void {
-  const wi = me.throwable;
-  if (wi < 0 || me.throwCd > 0 || me.st !== PSTATE.ALIVE || me.pinned || me.healT > 0 || !active()) return;
+  const k = throwSel(), wi = THROWABLES[k];
+  if (k < 0 || me.throwCd > 0 || me.st !== PSTATE.ALIVE || me.pinned || me.healT > 0 || !active()) return;
   const b = aimBasis();
   spreadDir(b, 0);
   // A little loft so a level throw still carries.
@@ -339,7 +361,7 @@ function throwIt(): void {
   const dl = Math.hypot(_d.x, _d.y, _d.z); _d.x /= dl; _d.y /= dl; _d.z /= dl;
   const first = launchNade(wi);
   net.send({ t: 'f', w: wi, h: [], e: first, n: nadeSeq });
-  me.throwable = -1; me.throwCd = 0.9; me.throwPending = true;
+  me.thr[k]--; me.thrAt[k] = time; me.throwCd = 0.9;
   vm.toss(); sfx.shoot(wi);
 }
 
@@ -497,7 +519,7 @@ function updateNades(dt: number): void {
 function debugGive(wi: number): void {
   const w = WEAPONS[wi];
   if (!w) return;
-  if (w.slot === 'throw') { me.throwable = wi; me.throwCd = 0; return; }
+  if (w.slot === 'throw') { const k = THROWABLES.indexOf(wi); if (throwCount() < THROW_MAX) me.thr[k]++; me.thrSel = k; me.throwCd = 0; return; }
   if (w.slot === 'sidearm') me.sidearm = wi; else if (w.slot === 'melee') me.melee = wi; else me.primary = wi;
   me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
   switchWeapon(wi);
@@ -554,8 +576,9 @@ function findTarget(): Target {
     else if (k === 'item') text = t('Pick up {item}', { item: t(pv.def.label ?? 'item') });
     else if (k === 'armor') { usable = me.armor < ARMOR.max; text = t(usable ? 'Strap on a Pillow Vest' : 'Your Pillow Vest is still plump'); }
     else {
-      const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : w.slot === 'throw' ? me.throwable : me.primary;
-      if (cur === wi) { usable = w.slot === 'primary'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
+      const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : me.primary;
+      if (w.slot === 'throw') { usable = throwCount() < THROW_MAX; text = usable ? t('Take the {w}', { w: t(w.name) }) : t('Pockets full ({n} throwables)', { n: THROW_MAX }); }
+      else if (cur === wi) { usable = w.slot === 'primary'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
       else text = cur >= 0 ? t('Swap your {old} for the {w}', { old: t(WEAPONS[cur].name), w: t(w.name) }) : t('Take the {w}', { w: t(w.name) });
     }
     bestD = d; best = { kind: 'pickup', pv, usable, text };
@@ -589,8 +612,12 @@ function onGot(pickupId: number): void {
   else if (k !== 'obj' && k !== 'item') {
     const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi];
     if (w.slot === 'throw') {
-      me.throwable = wi; me.throwCd = 0;
+      const tk = THROWABLES.indexOf(wi);
+      if (throwCount() < THROW_MAX) me.thr[tk]++;
+      if (throwCount() === 1) me.thrSel = tk;
+      me.thrAt[tk] = -99; me.throwCd = 0;
       hud.feed(t(w.thrown === 'fire' ? 'Picked up the {w} — G to throw: sets the ground alight' : 'Picked up the {w} — G to throw: lures sleepers, then goes bang', { w: t(w.name) }));
+      if (me.thr.filter((n) => n > 0).length === 2 && me.thr[tk] === 1) hud.feed(t('Two kinds of throwable: T switches which one G throws'));
     } else {
       // A close-in weapon goes on your belt (3): it doesn't take your gun out of your hands.
       const had = w.slot === 'melee' && me.melee < 0 ? false : true;
@@ -635,11 +662,10 @@ function applyPlayers(list: PlayerSnap[]): void {
       }
       me.hp = hp; me.st = st; me.medkits = medkits; me.rev = rev; me.respawn = respawn;
       me.armor = p[13] ?? 0;
-      // Just after a throw the snapshot may still show it in your pocket: wait until the server agrees it is gone
-      // (or, after a few seconds, accept that the throw never counted and it is still yours).
-      const thr = p[14] ?? -1;
-      if (me.throwPending && (thr < 0 || me.throwCd < -3)) me.throwPending = false;
-      if (!me.throwPending) me.throwable = thr;
+      // Just after a throw the snapshot may still count it: per kind, keep your own lower count until the server
+      // agrees (or, after a few seconds, accept that the throw never counted and it is still yours).
+      const thr = unpackThrowables(p[14] ?? 0);
+      for (let k = 0; k < thr.length; k++) if (!(time - me.thrAt[k] < 3 && thr[k] > me.thr[k])) { me.thr[k] = thr[k]; me.thrAt[k] = -99; }
       if (me.pinned) { me.pinX = x; me.pinZ = z; }
       // A hold just ended: stand exactly where the server dragged you to.
       if (me.snapPos) { me.snapPos = false; me.x = x; me.z = z; }
@@ -761,7 +787,8 @@ function onEvent(ev: GameEvent): void {
         for (let i = 0; i < WEAPONS.length; i++) { me.mag[i] = WEAPONS[i].mag; me.reserve[i] = WEAPONS[i].reserve; }
         Object.assign(me, { reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0 });
       } else {
-        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
+        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
+        clearThrowables();
         vm.setWeapon(0);
       }
       ended = false;
@@ -952,7 +979,8 @@ net.onMessage = (m: ServerMsg) => {
       loadChapter(m.ch);
       me.id = m.id; me.x = m.x; me.z = m.z;
       // A new room starts you with the pistol only, whatever you carried in the last one.
-      Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, armor: 0, pinned: false });
+      Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, pinned: false });
+      clearThrowables();
       vm.setWeapon(0);
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
       for (const id of m.taken) world.setTaken(id, true);
@@ -1079,8 +1107,9 @@ function enterRange(): void {
   const s = L.def.spawns[0];
   Object.assign(me, {
     id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, medkits: 0,
-    weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, armor: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
+    weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
   });
+  clearThrowables();
   vm.setWeapon(0);
   range = new ShootingRange(L, RANGE_PID, (m) => net.onMessage(m));
   net.local = (m) => range?.handle(m);
@@ -1461,7 +1490,9 @@ function listen(dt: number): void {
 const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
-  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max, me.throwable >= 0 ? t(WEAPONS[me.throwable].name) : '');
+  // Throwable chip: what G throws first, then anything else in your pockets (T switches).
+  const tk = throwSel(), others = me.thr.map((n, k) => (n > 0 && k !== tk ? `${t(WEAPONS[THROWABLES[k]].name)} ×${n}` : '')).filter(Boolean);
+  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max, tk < 0 ? '' : `${t(WEAPONS[THROWABLES[tk]].name)} ×${me.thr[tk]}${others.length ? ` · ${others.join(' · ')}` : ''}`, others.length ? 'G · T' : 'G');
   hud.setAmmo(t(w.name), w.melee ? Infinity : me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
     me.weapon === me.primary ? 1 : me.weapon === me.melee ? 3 : 2, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '');
   let n = 0;

@@ -66,7 +66,7 @@ export default {
   "{dps} dmg/s (Raincoat: none)": "每秒 {dps} 傷害（雨衣怪：無效）",
   "{dps} dmg/s while standing in it": "站在裡面每秒 {dps} 傷害",
   "{n} patches": "{n} 處",
-  "one throwable": "一個投擲物",
+  "up to {n} throwables, any mix (T switches)": "最多 {n} 個投擲物，種類不限（T 切換）",
   "commons within {m} m of path flock to it for {s} s": "路程 {m} 公尺內的普通感染者會圍過來，持續 {s} 秒",
   "sleepers within {m} m": "{m} 公尺內的夢遊者",
   "ignore it": "不受影響",

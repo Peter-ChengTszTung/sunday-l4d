@@ -53,7 +53,7 @@ export interface WeaponDef {
   spread: number; pellets: number; range: number; reload: number; auto: boolean;
   /**
    * Which slot it occupies: the sidearm slot keeps infinite reserve; `melee` (key 3) never runs out;
-   * `throw` is the one carried throwable (G), gone once thrown.
+   * `throw` is a throwable (G): up to THROW_MAX carried in any mix, each gone once thrown.
    */
   slot: 'primary' | 'sidearm' | 'melee' | 'throw';
   /** 1 = basic loot, 2 = later, rarer finds. */ tier: 0 | 1 | 2;
@@ -113,6 +113,14 @@ export const WEAPONS: WeaponDef[] = [
   { id: 'rattle', name: 'Rattle Bomb', dmg: 0, rate: 0.8, mag: 1, reserve: 0, spread: 0, pellets: 1, range: 24, reload: 0, auto: false, slot: 'throw', tier: 2, pierce: 1, recoil: 0, shake: 0.1, falloff: [24, 24, 1], move: 1, bloom: [0, 0, 1], moving: 0,
     thrown: 'lure', blast: { dmg: 280, radius: 5.5, edge: 0.4, speed: 17, grav: 14, fuse: 3, arm: 0 } },
 ];
+/** Most throwables a survivor carries at once, of any mix of kinds. */
+export const THROW_MAX = 3;
+/** Weapon indices of the throwables, in the order the wire and the HUD list them. */
+export const THROWABLES: readonly number[] = WEAPONS.flatMap((w, i) => (w.slot === 'throw' ? [i] : []));
+/** Carried throwables as one number for PlayerSnap: 3 bits per kind, in THROWABLES order. `count(wi)`: how many of weapon `wi`. */
+export const packThrowables = (count: (wi: number) => number): number => THROWABLES.reduce((v, wi, k) => v + Math.min(7, Math.max(0, count(wi) | 0)) * 8 ** k, 0);
+/** The counts packed by packThrowables, in THROWABLES order. */
+export const unpackThrowables = (v: number): number[] => THROWABLES.map((_, k) => Math.floor((v || 0) / 8 ** k) % 8);
 export const weaponIndex = (id: WeaponId): number => WEAPONS.findIndex((w) => w.id === id);
 /** Headshot multiplier by zombie type: commons die to one solid headshot, specials and the Brute reward it less. */
 export const headMult = (type: number): number => (isCommon(type) ? 3 : type === ZT.BRUTE ? 1.25 : 1.5);
