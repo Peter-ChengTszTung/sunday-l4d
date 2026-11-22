@@ -64,7 +64,7 @@ function build() {
   RACK.forEach((k, i) => b.pick(k, 12 + i * 2, 2));
   RACK_LEFT.forEach((k, i) => b.pick(k, 4 + i * 2, 2));
   RACK_RIGHT.forEach((k, i) => b.pick(k, 28 + i * 2, 2));
-  b.label('WEAPON RACK — or press 1-8', W / 2, 3.6, 18, '#5ff2e0');
+  b.label('WEAPON RACK', W / 2, 3.6, 18, '#5ff2e0');
   for (let z = 4; z < H - 3; z += 8) { b.lamp(2.5, z); b.lamp(W - 2.5, z); }
   b.start([[W / 2, 4], [W / 2 - 2, 4], [W / 2 + 2, 4], [W / 2, 3]]);
   b.reach({ x0: 2, z0: 2, x1: W - 3, z1: RANGE_LINE }, { objective: 'Shooting range: test any weapon', at: [W / 2, 2.5] });

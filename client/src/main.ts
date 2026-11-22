@@ -155,8 +155,7 @@ document.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!active()) return;
   if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
-  // Range: 1-8 hand you any weapon, X clears the numbers.
-  if (range && RANGE_KEYS.includes(e.code)) { debugGive(RANGE_KEYS.indexOf(e.code)); return; }
+  // Range: X clears the numbers. Weapons come off the rack; the number keys are the same slots as in a room.
   if (range && e.code === 'KeyX') { range.resetStats(); hud.feed(t('Stats cleared')); return; }
   switch (e.code) {
     case 'KeyR': startReload(); break;
@@ -198,8 +197,7 @@ document.addEventListener('wheel', (e) => {
   const have = [me.primary, me.sidearm, me.melee, ...THROWABLES.filter((_, k) => me.thr[k] > 0)].filter((w) => w >= 0), i = have.indexOf(me.weapon);
   if (have.length > 1) switchWeapon(have[(i + (e.deltaY > 0 ? 1 : have.length - 1)) % have.length]);
 }, { passive: true });
-/** Shooting range: these keys hand you weapon 0, 1, 2… (every gun, close-in weapon and throwable). */
-const RANGE_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'Backspace'];
+
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
   if (!locked) { keys.clear(); mouse.left = false; me.scopeHeld = false; }
@@ -1167,8 +1165,8 @@ function enterRange(): void {
   $('rangepanel').hidden = false;
   $('leaverange').hidden = false;
   hud.banner(t('Shooting range'));
-  hud.feed(t('1-8: guns · 9 0 -: close-in · = Backspace: throwables (hold LMB to aim) · X: clear stats'));
-  hud.feed(t('Sniper (7): hold right mouse to scope · V: shove'));
+  hud.feed(t('Take anything off the rack behind you (E): it never runs out'));
+  hud.feed(t('1 2 3: gun / sidearm / close-in · 4 5: throwables · X: clear stats · Esc: leave'));
   enterGame();
 }
 

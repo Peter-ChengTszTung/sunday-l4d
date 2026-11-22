@@ -159,7 +159,7 @@ export default {
   "Alarm Clock": "鬧鐘怪",
   "Zombie": "殭屍",
   "FIRING LINE": "射擊線",
-  "WEAPON RACK — or press 1-8": "武器架——或按 1-8",
+  "WEAPON RACK": "武器架",
   // Weapon reach and handling (range panel), scope and shove keys
   "full damage to {max} m": "{max} 公尺內全傷害",
   "full to {near} m, {pct}% from {far} m, max {max} m": "{near} 公尺內全傷害，{far} 公尺起剩 {pct}%，最遠 {max} 公尺",
@@ -212,7 +212,8 @@ export default {
   "quick throw": "快速投擲",
   "Picked up the {w} — press {key} to hold it, hold left mouse to aim, release to throw": "撿到{w}——按 {key} 拿在手上，按住左鍵瞄準，放開投出",
   "throwable: burning patch": "投擲物：燃燒區域",
-  "1-8: guns · 9 0 -: close-in · = Backspace: throwables (hold LMB to aim) · X: clear stats": "1-8：槍械 · 9 0 -：近戰 · = Backspace：投擲物（按住左鍵瞄準）· X：清除數據",
+  "Take anything off the rack behind you (E): it never runs out": "從身後的武器架拿任何東西（E）：永遠拿不完",
+  "1 2 3: gun / sidearm / close-in · 4 5: throwables · X: clear stats · Esc: leave": "1 2 3：主武器／副武器／近戰 · 4 5：投擲物 · X：清除數據 · Esc：離開",
   "Pockets full ({n} throwables)": "口袋滿了（{n} 個投擲物）",
   "throw": "投擲",
 } satisfies Record<string, string>;
