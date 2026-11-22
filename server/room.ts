@@ -303,7 +303,7 @@ export interface Player {
   /** Times downed since the last medkit, rescue or safe room (SURVIVOR_RULES.downs). */ downs: number;
   /** Solo self-revives left this attempt, and the revive time the current one needs (s). */ selfRev: number; revNeed: number;
   /** Shove fatigue (PLAYER.shoveMax). */ shoveFat: number;
-  /** Ammo piles this survivor has used (each pile serves every survivor once). */ ammoUsed: Set<number>;
+  /** Ammo piles and safe-room weapon stacks this survivor has used (each serves every survivor once). */ ammoUsed: Set<number>;
 }
 
 interface Zombie {
@@ -439,6 +439,8 @@ export class Room {
   /** Loot thinning (thinLoot): this attempt's medkits in reveal order, and those currently held back. */
   private medOrder: number[] = [];
   private smallOrder: number[] = [];
+  /** Each safe room's (start + checkpoints) medkits in reveal order: one per survivor is stocked. */
+  private safeMeds: number[][] = [];
   private thinned = new Set<number>();
   private events: GameEvent[] = [];
   private time = 0;
@@ -606,25 +608,28 @@ export class Room {
 
   /**
    * Roll which loot this attempt leaves out (LOOT): marked taken, so clients never show it. Medkits
-   * outside safe rooms scale with the squad; ammo piles are halved because each one now serves every survivor.
+   * outside safe rooms scale with the squad; each safe room stocks one medkit per survivor; ammo piles
+   * are halved because each one now serves every survivor.
    */
   private thinLoot(): void {
     const shuffle = <T>(a: T[]): T[] => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    // Safe-room medkits (inside a checkpoint's gather area) are always stocked; the rest are rolled.
-    const safe = this.def.steps.filter((s) => s.checkpoint && s.area).map((s) => s.area!);
-    const inSafe = (x: number, y: number, z: number) => safe.some((a) => this.L.inRect(x, y, z, a));
-    this.medOrder = shuffle(this.def.pickups.filter((p) => p.kind === 'medkit' && !this.taken.has(p.id) && !inSafe(p.x, p.y, p.z)).map((p) => p.id));
+    const meds = this.def.pickups.filter((p) => p.kind === 'medkit' && !this.taken.has(p.id));
+    const inSafe = new Set(this.L.safeRooms().flat());
+    this.safeMeds = this.L.safeRooms().map((r) => shuffle(r.filter((id) => this.def.pickups[id].kind === 'medkit' && !this.taken.has(id))));
+    this.medOrder = shuffle(meds.filter((p) => !inSafe.has(p.id)).map((p) => p.id));
     this.smallOrder = shuffle(this.def.pickups.filter((p) => medIndex(p.kind) > 0 && !this.taken.has(p.id)).map((p) => p.id));
-    this.thinned = new Set([...this.medOrder.slice(this.medLimit()), ...this.smallOrder.slice(this.smallLimit())]);
+    const squad = this.squad();
+    this.thinned = new Set([...this.medOrder.slice(this.medLimit()), ...this.smallOrder.slice(this.smallLimit()), ...this.safeMeds.flatMap((r) => r.slice(squad))]);
     for (const id of this.thinned) this.taken.add(id);
     const ammo = shuffle(this.def.pickups.filter((p) => p.kind === 'ammo' && !this.taken.has(p.id)));
     for (const p of ammo.slice(Math.ceil(ammo.length * LOOT.ammo))) this.taken.add(p.id);
   }
-  private medLimit(): number { return LOOT.medBase + LOOT.medPer * Math.max(1, this.players.size); }
-  private smallLimit(): number { return LOOT.smallBase + LOOT.smallPer * Math.max(1, this.players.size); }
-  /** The squad grew: put back thinned medkits up to the new limit (clients get a 'loot' event). */
+  private squad(): number { return Math.max(1, this.players.size); }
+  private medLimit(): number { return LOOT.medBase + LOOT.medPer * this.squad(); }
+  private smallLimit(): number { return LOOT.smallBase + LOOT.smallPer * this.squad(); }
+  /** The squad grew: put back thinned medkits up to the new limits (clients get a 'loot' event). */
   private revealLoot(): void {
-    const back = [...this.medOrder.slice(0, this.medLimit()), ...this.smallOrder.slice(0, this.smallLimit())].filter((id) => this.thinned.has(id));
+    const back = [...this.medOrder.slice(0, this.medLimit()), ...this.smallOrder.slice(0, this.smallLimit()), ...this.safeMeds.flatMap((r) => r.slice(0, this.squad()))].filter((id) => this.thinned.has(id));
     if (!back.length) return;
     for (const id of back) { this.thinned.delete(id); this.taken.delete(id); }
     this.events.push(['loot', back]);
@@ -1165,7 +1170,7 @@ export class Room {
       this.events.push(['got', p.id, id]);
       return;
     }
-    if (this.taken.has(id)) return;
+    if (this.taken.has(id) || p.ammoUsed.has(id)) return;
     if (pk.kind === 'armor') {
       if (p.armor >= ARMOR.max) return;
       this.taken.add(id); p.armor = ARMOR.max;
@@ -1175,9 +1180,11 @@ export class Room {
     const wi = WEAPONS.findIndex((w) => w.id === pk.kind), slot = WEAPONS[wi]?.slot;
     // Pockets full: it stays on the shelf for a teammate.
     if (slot === 'throw' && Object.values(p.thr).reduce((a, b) => a + b, 0) >= THROW_MAX) return;
-    this.taken.add(id);
+    // Safe-room weapons are stacks (Level.stacks): one each, hidden only for whoever took it.
+    const stack = this.L.stacks().has(id);
+    if (stack) p.ammoUsed.add(id); else this.taken.add(id);
     if (slot === 'sidearm') p.sidearm = wi; else if (slot === 'melee') p.melee = wi; else if (slot === 'throw') p.thr[wi] = (p.thr[wi] ?? 0) + 1; else if (slot) p.primary = wi;
-    this.events.push(['pk', id], ['got', p.id, id]);
+    this.events.push(...(stack ? [] : [['pk', id] as GameEvent]), ['got', p.id, id]);
   }
 
   // ---------------------------------------------------------------- zombies

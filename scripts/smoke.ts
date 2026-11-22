@@ -55,12 +55,28 @@ await sleep(100);
 a.send({ t: 'u', id: kit.id });
 await sleep(200);
 if (!a.events.some((e) => e[0] === 'got' && e[1] === a.id)) fail('pickup not granted');
-if (!b.events.some((e) => e[0] === 'pk' && e[1] === gun.id)) fail('weapon pickup did not disappear for teammates');
+// The start room's guns are stacks (Level.stacks): they stay for teammates, and each survivor gets one.
+if (!L.stacks().has(gun.id)) fail('start safe-room gun is not a stack');
+if (b.events.some((e) => e[0] === 'pk' && e[1] === gun.id)) fail('a safe-room stack vanished for teammates');
+a.send({ t: 'u', id: gun.id });
 b.send({ t: 'p', x: gun.x, y: gun.y, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
 await sleep(100);
 b.send({ t: 'u', id: gun.id });
 await sleep(200);
-if (b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === gun.id)) fail('a taken weapon was granted twice');
+if (!b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === gun.id)) fail('a teammate could not take from the stack');
+if (a.events.filter((e) => e[0] === 'got' && e[1] === a.id && e[2] === gun.id).length !== 1) fail('a stack was granted twice to one survivor');
+// A weapon out on the map is single-use: gone for teammates once taken.
+const loose = MAP.pickups.find((p) => WEAPONS.some((w) => w.id === p.kind && w.slot === 'primary') && !L.stacks().has(p.id) && !a.taken.has(p.id))!;
+a.send({ t: 'p', x: loose.x, y: loose.y, z: loose.z, ry: 0, rx: 0, w: 0, a: 0 });
+await sleep(100);
+a.send({ t: 'u', id: loose.id });
+await sleep(200);
+if (!b.events.some((e) => e[0] === 'pk' && e[1] === loose.id)) fail('weapon pickup did not disappear for teammates');
+b.send({ t: 'p', x: loose.x, y: loose.y, z: loose.z, ry: 0, rx: 0, w: 0, a: 0 });
+await sleep(100);
+b.send({ t: 'u', id: loose.id });
+await sleep(200);
+if (b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === loose.id)) fail('a taken weapon was granted twice');
 if (a.snap!.p.find((p) => p[0] === a.id)![9] !== 1) fail('medkit not carried');
 // Ammo piles serve each survivor once and never vanish for teammates.
 const pile = MAP.pickups.find((p) => p.kind === 'ammo' && !a.taken.has(p.id))!;

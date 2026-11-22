@@ -741,6 +741,7 @@ function onGot(pickupId: number): void {
   else if (k === 'armor') { me.armor = ARMOR.max; hud.feed(t('Pillow Vest on — it soaks up half of every bite until it bursts')); }
   else if (k !== 'obj' && k !== 'item' && mk < 0) {
     const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi];
+    if (L.stacks().has(pickupId)) world.setTaken(pickupId, true); // yours is taken; the rest of the stack is for teammates
     if (w.slot === 'throw') {
       const tk = THROWABLES.indexOf(wi);
       if (throwCount() < THROW_MAX) me.thr[tk]++;

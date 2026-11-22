@@ -13,7 +13,7 @@ export interface ChapterReport {
 }
 
 const INF = 32767;
-/** Minimum loot in each start/checkpoint safe room for a 4-player squad. */
+/** Minimum loot in each start/checkpoint safe room: weapons there are stacks (Level.stacks), so this is the choice on offer. */
 export const MIN_ROOM_GUNS = 4, MIN_ROOM_AMMO = 2;
 
 const STAGE_KINDS = new Set(['wave', 'breather', 'specials', 'brute', 'final']);
@@ -199,7 +199,7 @@ export function validateChapter(L: Level): ChapterReport {
     if (!n) warnings.push(`storey ${k} has no walkable floor`);
   }
   void STOREY;
-  // Single-use loot: every safe room must be able to arm a full squad.
+  // Every safe room offers a choice of guns (each spot is a stack: one per survivor) and ammo.
   const PRIMARY = new Set(WEAPONS.filter((w) => w.slot === 'primary').map((w) => w.id as string));
   const stock = (inRoom: (c: number) => boolean, where: string) => {
     let guns = 0, ammo = 0;
@@ -207,7 +207,7 @@ export function validateChapter(L: Level): ChapterReport {
       if (!inRoom(cell(p))) continue;
       if (PRIMARY.has(p.kind)) guns++; else if (p.kind === 'ammo') ammo++;
     }
-    if (guns < MIN_ROOM_GUNS || ammo < MIN_ROOM_AMMO) errors.push(`${where} stocks ${guns} primary guns and ${ammo} ammo piles; pickups are single-use, so it needs at least ${MIN_ROOM_GUNS} guns and ${MIN_ROOM_AMMO} ammo`);
+    if (guns < MIN_ROOM_GUNS || ammo < MIN_ROOM_AMMO) errors.push(`${where} stocks ${guns} primary guns and ${ammo} ammo piles; it needs at least ${MIN_ROOM_GUNS} guns and ${MIN_ROOM_AMMO} ammo`);
   };
   {
     const room = L.distanceField([cell(def.spawns[0])], 0);

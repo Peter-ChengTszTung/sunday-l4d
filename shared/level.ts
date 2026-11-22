@@ -19,7 +19,7 @@
 // Stairs and ladders are ramps: cells on storey k whose floor rises along a direction from
 // storey k to k+1 (stairs over several cells, a ladder over one, climbed slowly). The cells above a
 // ramp are air (the stairwell hole). Walking off a ramp's high end steps onto storey k+1.
-import { TILE, STOREY, STEP_UP, CEIL_H, type WeaponId } from './constants';
+import { TILE, STOREY, STEP_UP, CEIL_H, WEAPONS, type WeaponId } from './constants';
 
 /** Floor types. NONE is solid building/rock (or, upstairs, air); WATER is solid but see-through. */
 export const F = {
@@ -636,6 +636,26 @@ export class Level {
     const tx = cellOf(x), tz = cellOf(z);
     if (!(tx >= r.x0 && tx <= r.x1 && tz >= r.z0 && tz <= r.z1)) return false;
     return this.levels === 1 || this.lvOf(this.nodeAt(x, y, z)) === (r.lv ?? 0);
+  }
+  private safeRoomCache?: number[][];
+  /**
+   * Pickup ids in each safe room: [0] the start room (reachable from the first spawn with every door
+   * shut), then each checkpoint's gather area in step order. A pickup belongs to the first room that holds it.
+   */
+  safeRooms(): number[][] {
+    if (this.safeRoomCache) return this.safeRoomCache;
+    const def = this.def, s0 = def.spawns[0], start = this.distanceField([this.nodeAt(s0.x, s0.y ?? 0, s0.z)], 0);
+    const tests: ((p: Pickup) => boolean)[] = [(p) => start[this.nodeAt(p.x, p.y, p.z)] < 32767];
+    for (const s of def.steps) if (s.checkpoint && s.area) { const a = s.area; tests.push((p) => this.inRect(p.x, p.y, p.z, a)); }
+    const seen = new Set<number>();
+    return (this.safeRoomCache = tests.map((f) => def.pickups.filter((p) => !seen.has(p.id) && f(p)).map((p) => (seen.add(p.id), p.id))));
+  }
+  private stackCache?: Set<number>;
+  /** Safe-room weapons (guns, melee, throwables) are stacks, as in L4D: each survivor can take one from each. */
+  stacks(): Set<number> {
+    if (this.stackCache) return this.stackCache;
+    const weapon = new Set<string>(WEAPONS.map((w) => w.id));
+    return (this.stackCache = new Set(this.safeRooms().flat().filter((id) => weapon.has(this.def.pickups[id].kind))));
   }
 
   /** Height of a surface in tile (tx,tz) a walker at height y can step onto at point (px,pz), or NaN. */
