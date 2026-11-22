@@ -156,6 +156,7 @@ export class Hud {
     e.introch.textContent = t('CHAPTER {n}', { n: chapterNo });
     e.introtitle.textContent = title; e.introsub.textContent = subtitle; e.introtext.textContent = text;
     e.intro.hidden = false;
+    e.intro.style.transition = ''; e.intro.style.opacity = '';
     e.intro.style.animation = 'none'; void e.intro.offsetWidth; e.intro.style.animation = '';
     this.introT = 9;
   }
@@ -178,8 +179,15 @@ export class Hud {
     setTimeout(() => d.remove(), 6000);
   }
 
+  /** Big centre banner. It sits where the chapter card is, so a banner fades a card still up out first (they never overlap). */
   banner(text: string, bad = false): void {
-    const b = this.el.banner;
+    const b = this.el.banner, intro = this.el.intro;
+    if (this.introT > 0.25) {
+      // Hold the card at its current opacity (stop the keyframes), then fade it out quickly; update() hides it.
+      intro.style.opacity = getComputedStyle(intro).opacity; intro.style.animation = 'none';
+      void intro.offsetWidth; intro.style.transition = 'opacity 0.25s'; intro.style.opacity = '0';
+      this.introT = 0.25;
+    }
     b.textContent = text;
     b.classList.toggle('bad', bad);
     b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');

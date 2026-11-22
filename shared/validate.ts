@@ -1,7 +1,7 @@
 // Static checks + stats for a chapter, shared by scripts/check-chapters.ts and
 // the map viewer. Walks the quest in order with each step's door state and
 // verifies every objective is reachable from where the team stands.
-import { TILE, STOREY, WEAPONS } from './constants';
+import { TILE, STOREY, WEAPONS, PLAYER } from './constants';
 import { F, ALL_OPEN, RAMP_DX, RAMP_DZ, cellOf, type Level, type Rect, type Step, type Vec2 } from './level';
 import { wandererRegions } from './regions';
 
@@ -173,6 +173,22 @@ export function validateChapter(L: Level): ChapterReport {
       if (L.inBounds(bx, bz) && !L.solidAt(bx, bz, ALL_OPEN, r.lv)) bottom++;
     }
     if (!top) errors.push(`${what}: nothing to step onto at the top (carve floor on storey ${r.lv + 1} just past its high end)`);
+    // Walk it for real: a Brute-sized body (and a survivor) up every lane, centred and on each seam.
+    if (top && bottom) {
+      const across = dx ? [r.z0, r.z1] : [r.x0, r.x1], len = dx ? r.x1 - r.x0 + 1 : r.z1 - r.z0 + 1;
+      const lanes: number[] = [];
+      for (let a = across[0]; a <= across[1]; a++) { lanes.push((a + 0.5) * TILE); if (a < across[1]) lanes.push((a + 1) * TILE); }
+      for (const rad of [0.8, PLAYER.radius]) for (const lane of lanes) {
+        const clamp = (v: number, lo: number, hi: number) => Math.min(hi - rad - 0.01, Math.max(lo + rad + 0.01, v));
+        const lo = across[0] * TILE, hi = (across[1] + 1) * TILE;
+        const startA = dx ? (dx > 0 ? r.x0 * TILE - TILE * 0.5 : (r.x1 + 1) * TILE + TILE * 0.5) : clamp(lane, lo, hi);
+        const startB = dz ? (dz > 0 ? r.z0 * TILE - TILE * 0.5 : (r.z1 + 1) * TILE + TILE * 0.5) : clamp(lane, lo, hi);
+        const w = { x: dx ? startA : clamp(lane, lo, hi), z: dz ? startB : clamp(lane, lo, hi), y: r.lv * STOREY };
+        if (L.solidAt(cellOf(w.x), cellOf(w.z), ALL_OPEN, r.lv)) continue; // lane starts against a wall
+        for (let i = 0; i < (len + 2) * 20; i++) L.moveSlide(w, dx * 0.1, dz * 0.1, rad, ALL_OPEN);
+        if (w.y < (r.lv + 1) * STOREY - 0.01) { errors.push(`${what}: a walker of radius ${rad} m on lane ${(lane / TILE).toFixed(1)} gets stuck at height ${w.y.toFixed(2)}`); break; }
+      }
+    }
     if (!bottom) warnings.push(`${what}: no floor before its low end`);
     if (all[L.node(r.x0, r.z0, r.lv)] >= INF) warnings.push(`${what} can never be reached`);
   }

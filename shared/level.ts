@@ -639,18 +639,43 @@ export class Level {
   }
 
   /** Height of a surface in tile (tx,tz) a walker at height y can step onto at point (px,pz), or NaN. */
-  private stepOnto(tx: number, tz: number, y: number, px: number, pz: number, open: number): number {
+  private stepOnto(tx: number, tz: number, y: number, px: number, pz: number, open: number, from = -1, yw = y): number {
     if (!this.inBounds(tx, tz)) return NaN;
     const c = tz * this.W + tx;
     for (let k = 0; k < this.levels; k++) {
       const n = k * this.WH + c;
       if (this.blocked(n, open)) continue;
       const h = this.heightAt(n, px, pz);
-      if (Math.abs(h - y) <= STEP_UP) return h;
+      if (Math.abs(h - y) <= STEP_UP && (from < 0 || !this.sideStep(from, n, yw, h))) return h;
     }
     return NaN;
   }
-  boxBlocked(x: number, y: number, z: number, r: number, open: number): boolean {
+  /**
+   * Stepping from node a into a different tile's node b across a ramp's side (not along it): only
+   * alongside the same flight, or at the flight's bottom tile, as in the walk graph. Stops walkers
+   * slipping off the top of a flight onto the floor beside it.
+   */
+  private sideStep(a: number, b: number, ya = NaN, yb = NaN): boolean {
+    if (Math.abs(ya - yb) <= 0.25) return false; // flush (the corner at a flight's very top): fine
+    const d = this.def, ra = d.ramp[a], rb = d.ramp[b];
+    if (!ra && !rb) return false;
+    if ((a % this.WH) === (b % this.WH)) return false;
+    const ax = this.nodeX(a), az = this.nodeZ(a), bx = this.nodeX(b), bz = this.nodeZ(b);
+    if (ax !== bx && az !== bz) return false; // diagonal: the side-by-side probes the box also makes decide
+    const along = (r: number) => (bx - ax === RAMP_DX[r] || bx - ax === -RAMP_DX[r]) && bz === az && RAMP_DX[r] !== 0
+      || (bz - az === RAMP_DZ[r] || bz - az === -RAMP_DZ[r]) && bx === ax && RAMP_DZ[r] !== 0;
+    if (ra && rb && ra === rb && this.lvOf(a) === this.lvOf(b) && Math.abs(d.rampLo[a] - d.rampLo[b]) < 0.01 && !along(ra)) return false; // wide flight
+    const lowEdge = (n: number) => this.lvOf(n) * STOREY + d.rampLo[n];
+    const flat = (n: number) => this.lvOf(n) * STOREY;
+    if (ra && !along(ra) && Math.abs(lowEdge(a) - (rb ? lowEdge(b) : flat(b))) > STEP_UP) return true;
+    if (rb && !along(rb) && Math.abs(lowEdge(b) - (ra ? lowEdge(a) : flat(a))) > STEP_UP) return true;
+    return false;
+  }
+  /**
+   * `from`: the node the walker stands on before this move (moveSlide passes it). When the move takes its
+   * centre into another tile, that step must not cross a ramp's side (see sideStep).
+   */
+  boxBlocked(x: number, y: number, z: number, r: number, open: number, from = -1): boolean {
     const x0 = cellOf(x - r), x1 = cellOf(x + r), z0 = cellOf(z - r), z1 = cellOf(z + r);
     // The surface under the walker's centre, extended to each probe point: on a ladder the floor keeps
     // rising to the tile edge, so the roof beyond is compared with the ladder's top, not the feet.
@@ -663,14 +688,17 @@ export class Level {
       // Height probed at the walker's centre clamped into the tile: a ramp is only entered where its floor is near your feet.
       const px = Math.min((tx + 1) * TILE, Math.max(tx * TILE, x)), pz = Math.min((tz + 1) * TILE, Math.max(tz * TILE, z));
       const ref = own >= 0 ? this.heightAt(own, px, pz) : y;
-      if (Number.isNaN(this.stepOnto(tx, tz, ref, px, pz, open))) return true;
+      const centre = from >= 0 && tx === cellOf(x) && tz === cellOf(z) && (from % this.WH) !== tz * this.W + tx;
+      if (Number.isNaN(this.stepOnto(tx, tz, ref, px, pz, open, centre ? from : -1, y))) return true;
     }
     return false;
   }
   /** Axis-separated slide; `pos.y` is the floor height it stands on and follows stairs. Mutates and returns `pos`. */
   moveSlide<T extends Pos3>(pos: T, dx: number, dz: number, r: number, open: number): T {
-    if (dx !== 0 && !this.boxBlocked(pos.x + dx, pos.y, pos.z, r, open)) pos.x += dx;
-    if (dz !== 0 && !this.boxBlocked(pos.x, pos.y, pos.z + dz, r, open)) pos.z += dz;
+    const multi = this.levels > 1;
+    const from = () => { if (!multi) return -1; const n = this.nodeAt(pos.x, pos.y, pos.z); return this.blocked(n, open) ? -1 : n; };
+    if (dx !== 0 && !this.boxBlocked(pos.x + dx, pos.y, pos.z, r, open, from())) pos.x += dx;
+    if (dz !== 0 && !this.boxBlocked(pos.x, pos.y, pos.z + dz, r, open, from())) pos.z += dz;
     if (this.levels > 1) {
       const h = this.stepOnto(cellOf(pos.x), cellOf(pos.z), pos.y, pos.x, pos.z, open);
       if (!Number.isNaN(h)) pos.y = h;

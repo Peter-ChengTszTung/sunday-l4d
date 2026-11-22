@@ -37,7 +37,7 @@ if (!page.includes('Chibi Outbreak')) fail('index.html not served');
 const a = await bot('Alpha', 'TEST');
 const b = await bot('Beta', 'TEST');
 if (a.room !== 'TEST' || a.id === b.id) fail('room join');
-await sleep(300);
+await sleep(500); // past the server's post-teleport grace (TP_GRACE), so the bots' first moves count
 if (a.snap?.p.length !== 2) fail(`expected 2 players, saw ${a.snap?.p.length}`);
 const dormant = a.snap!.z.length;
 if (dormant < 10) fail(`expected wandering zombies, saw ${dormant}`);

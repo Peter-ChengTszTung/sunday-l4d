@@ -382,9 +382,13 @@ export function build() {
   for (const [x, z] of [[108, 84], [120, 82], [134, 86], [146, 84], [114, 92], [128, 92], [142, 94], [152, 90], [112, 104], [136, 104], [158, 104], [114, 76]]) b.lamp(x, z);
   b.arrow(141.5, 82, E); b.arrow(147, 85.5, E);
   // Dock catwalk access: a ladder at the west end, stairs at the east end (catwalk is storey 1).
-  b.ladder(108, 80, '-z');
+  b.ladder(108, 80, '-z'); b.ladder(130, 80, '-z');                     // west end and mid-span
+  // Returns nook under the catwalk: a hidden pocket the finale horde boils out of, close to the mid-span ladder.
+  b.carve(120, 77, 127, 78, F.CONCRETE); b.carve(120, 79, 121, 79, F.CONCRETE);
+  b.prop('pallet', 124, 77, 2, 1); b.prop('crate', 127, 78);
+  b.label('RETURNS', 120.5, 80.6, 10, CREAM);
   b.stairs(151, 80, 153, 81, '-x'); b.prop('barrier', 151, 82, 3, 1);
-  b.label('CATWALK', 108.5, 81.6, 10, CREAM); b.label('CATWALK', 152, 83.4, 10, CREAM);
+  b.label('CATWALK', 108.5, 81.6, 10, CREAM); b.label('CATWALK', 130.5, 81.6, 10, CREAM); b.label('CATWALK', 152, 83.4, 10, CREAM);
   // Freight lift (end safe room) behind its gate.
   b.carve(156, 84, 163, 92, F.SAFE);
   const liftButton = b.obj('terminal', 154, 85, 'Call the freight lift');
@@ -462,6 +466,7 @@ export function build() {
   wallUp(65, 4, 68, 9, TERRACE);
   b.stairs(66, 7, 67, 9, '-z', F.TILES);
   const hutE = b.door(66, 10, 67, 10, 'shutter', 'ROOF ACCESS E');
+  wallUp(65, 10, 65, 10, TERRACE); wallUp(68, 10, 68, 10, TERRACE);    // the shutter sits in the enclosure wall
   b.prop('counter', 71, 8, 6, 1, { color: 0x9fe3cf }); b.prop('terminal', 76, 6); b.prop('bench', 72, 16, 3, 1);
   gurney(64, 15);
   b.pick('ammo', 77, 17); b.pick('smg', 73, 6);
@@ -496,7 +501,7 @@ export function build() {
   // Ladders up the east wing's south wall to the skybridge terrace (storey 2).
   b.ladder(66, 37, '-z'); b.ladder(92, 37, '-z');
   b.label('LADDER', 66.5, 39, 10, CREAM); b.label('LADDER', 92.5, 39, 10, CREAM);
-  b.lamp(66.5, 38.5); b.lamp(92.5, 38.5);
+  b.lamp(68.5, 39.5); b.lamp(94.5, 39.5);
 
   // ------------------------------------------------------------------
   // 13. Galleria storey 1: Bun Bun Toys, its stockroom (checkpoint), the mezzanine
@@ -649,7 +654,7 @@ export function build() {
   b.pick('rattle', 97, 25);
   b.label('SKYBRIDGE TERRACE', 80, 18, 20, CREAM);
   b.label('SKYBRIDGE', 96.5, 20, 16, GOLD, E);
-  for (const [x, z] of [[64, 4.5], [76, 10], [90, 6], [70, 22], [84, 18], [97, 14], [97, 28], [66, 34], [80, 35], [92, 35]]) b.lamp(x, z);
+  for (const [x, z] of [[64, 4.5], [76, 10], [90, 6], [70, 22], [84, 18], [97, 14], [97, 28], [66, 34], [80, 35], [89, 34]]) b.lamp(x, z);
   b.arrow(68, 26.5, E); b.arrow(82, 22, E); b.arrow(93, 20, E);
   // The skybridge control panel and shutter.
   const skyPanel = b.obj('lever', 98, 17, 'Raise the skybridge shutter (LOUD)');

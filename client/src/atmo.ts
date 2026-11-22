@@ -223,6 +223,7 @@ const weatherVS = /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal;
   uniform mat4 matrix_view; uniform mat4 matrix_projection; uniform vec3 view_position;
   uniform vec3 uBox; uniform vec3 uVel; uniform vec3 uSize; uniform float uTime;
+  uniform sampler2D uLightMap; uniform vec2 uLightScale; uniform vec3 uLightLv; uniform float uCover;
   varying float vFade; varying vec2 vQ;
   void main(void) {
     // Particles live in a box that wraps around the camera, so a few hundred cover the whole map.
@@ -231,7 +232,15 @@ const weatherVS = /* glsl */ `
     vec3 rel = mod(p - view_position, uBox) - 0.5 * uBox;
     vFade = (1.0 - smoothstep(0.32, 0.5, length(rel.xz) / uBox.x)) * smoothstep(0.7, 2.2, length(rel));
     vQ = aNormal.xy;
-    vec4 v = matrix_view * vec4(view_position + rel, 1.0);
+    // Rain (uCover = 1) only falls where the sky is open: the light map's red channel is "open sky" per
+    // storey, so a drop under a slab, a skybridge or a roof fades out, wherever the camera stands.
+    vec3 wp = view_position + rel;
+    float lv = floor(max(wp.y, 0.0) / uLightLv.y);
+    vec2 lp = wp.xz * uLightScale;
+    lp.x = clamp(lp.x, uLightLv.z, 1.0 / uLightLv.x - uLightLv.z) + min(lv, uLightLv.x - 1.0) / uLightLv.x;
+    float sky = max(step(uLightLv.x, lv), smoothstep(0.3, 0.6, texture2D(uLightMap, lp).r));
+    vFade *= mix(1.0, sky, uCover);
+    vec4 v = matrix_view * vec4(wp, 1.0);
     vec3 up = uSize.y > uSize.x * 2.0 ? normalize((matrix_view * vec4(uVel, 0.0)).xyz) : vec3(0.0, 1.0, 0.0);
     v.xyz += vec3(up.y, -up.x, 0.0) * aNormal.x * uSize.x + up * aNormal.y * uSize.y;
     gl_Position = matrix_projection * v;
@@ -240,7 +249,8 @@ const weatherFS = /* glsl */ `
   varying float vFade; varying vec2 vQ; uniform vec3 uTint; uniform float uAlpha;
   void main(void) { gl_FragColor = vec4(uTint, uAlpha * vFade * (1.0 - smoothstep(0.55, 1.0, length(vQ)))); }`;
 
-function particles(ctx: Ctx, count: number, box: V3, vel: V3, size: V3, color: number): pc.Entity {
+/** `cover`: 1 hides particles that are under something (rain); 0 leaves them alone (indoor dust). */
+function particles(ctx: Ctx, count: number, box: V3, vel: V3, size: V3, color: number, cover = 0): pc.Entity {
   const g = newGeo();
   for (let i = 0; i < count; i++) {
     const b = g.pos.length / 3, x = hash2(i, 101), y = hash2(i, 211), z = hash2(i, 307), ph = hash2(i, 401);
@@ -248,7 +258,7 @@ function particles(ctx: Ctx, count: number, box: V3, vel: V3, size: V3, color: n
     g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
   const m = ctx.mat(new pc.ShaderMaterial({ uniqueName: 'Weather', attributes: { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL }, vertexGLSL: weatherVS, fragmentGLSL: weatherFS }));
-  m.setParameter('uBox', box); m.setParameter('uVel', vel); m.setParameter('uSize', size); m.setParameter('uTint', rgb(color)); m.setParameter('uAlpha', 0);
+  m.setParameter('uBox', box); m.setParameter('uVel', vel); m.setParameter('uSize', size); m.setParameter('uTint', rgb(color)); m.setParameter('uAlpha', 0); m.setParameter('uCover', cover);
   m.blendType = pc.BLEND_NORMAL; m.depthWrite = false; m.cull = pc.CULLFACE_NONE;
   m.update();
   const e = meshEntity(ctx.mesh(g), m);
@@ -280,7 +290,7 @@ export function buildAtmosphere(ctx: Ctx, glows: GlowSpot[]): Atmo {
     const e = ctx.add(meshEntity(ctx.mesh(glowGeo(glows)), ctx.mat(makeGlow(0.55 * (0.2 + 0.8 * ctx.night)))));
     for (const mi of e.render!.meshInstances) mi.cull = false;
   }
-  const rain = RAINY[ctx.def.id] ? ctx.add(particles(ctx, 700, [26, 16, 26], [1.2, -19, 0.6], [0.011, 0.3, 0], 0xcfc8ff)) : null;
+  const rain = RAINY[ctx.def.id] ? ctx.add(particles(ctx, 700, [26, 16, 26], [1.2, -19, 0.6], [0.011, 0.3, 0], 0xcfc8ff, 1)) : null;
   const dust = ctx.add(particles(ctx, 110, [11, 5, 11], [0.04, 0.05, 0.03], [0.011, 0.011, 0.35], 0xfff3d6));
   let inside = 0;
   return {

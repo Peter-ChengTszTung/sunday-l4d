@@ -154,7 +154,6 @@ export default {
   "BACK STAIRS UP": "後樓梯上樓",
   "2F: LABORATORIES": "2F：實驗室",
   "MAIN STAIRS": "主樓梯",
-  "LAB A: STABILITY": "A 實驗室：穩定性",
   "LAB B: AEROSOLS": "B 實驗室：氣溶膠",
   "TO WREN, FROM MUM ♥": "給小雀，媽媽 ♥",
   "FORMULATION: DR. W. LOWELL": "配方：羅威爾博士",
@@ -185,4 +184,5 @@ export default {
   "DOCK SHED 3": "3 號碼頭倉庫",
   "No. 9 DIESEL, 1958": "9 號柴油機車，1958",
   "FLATCAR": "平板車",
+  "LAB B": "B 實驗室",
 } satisfies Record<string, string>;

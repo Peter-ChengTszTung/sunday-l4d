@@ -365,6 +365,15 @@ export function buildWorld(L: Level): World {
       const up = d.kind === 'shutter', k = up ? lv + 1 : lv - 1;
       let clear = k >= 0 && k < S.levels;
       for (let cz = d.z0; cz <= d.z1 && clear; cz++) for (let cx = d.x0; cx <= d.x1; cx++) if (!S.wall[k * WH + cz * W + cx]) { clear = false; break; }
+      // A shutter with nothing built over it (the top storey, or open air above) still has headroom where the
+      // walls at both ends of the doorway carry on up past the rolled-up door: it slides up between them.
+      if (!clear && up) {
+        let open = true;
+        if (k < S.levels) for (let cz = d.z0; cz <= d.z1 && open; cz++) for (let cx = d.x0; cx <= d.x1; cx++) if (!def.air[k * WH + cz * W + cx]) { open = false; break; }
+        const tall = (cx: number, cz: number): boolean => { const n = lv * WH + cz * W + cx; return cx >= 0 && cz >= 0 && cx < W && cz < H && S.wall[n] === 1 && S.top[n] >= base + 2 * CEIL_H - 0.35; };
+        const alongX = d.x1 - d.x0 >= d.z1 - d.z0;
+        clear = open && (alongX ? tall(d.x0 - 1, d.z0) && tall(d.x1 + 1, d.z0) : tall(d.x0, d.z0 - 1) && tall(d.x0, d.z1 + 1));
+      }
       if (!clear && !(k < 0)) fold = up ? 1 : -1;
     }
     const v = { d, e, x, z, base, fold, y: CEIL_H / 2, open: false };

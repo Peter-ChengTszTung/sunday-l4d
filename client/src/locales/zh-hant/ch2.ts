@@ -195,4 +195,5 @@ export default {
   "COMPACTOR": "壓縮機",
   "BAYSIDE GALLERIA DELIVERIES": "灣畔購物廊進貨處",
   "TO SERVICE TUNNEL": "往維修隧道",
+  "RETURNS": "退貨處",
 } satisfies Record<string, string>;

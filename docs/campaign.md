@@ -491,7 +491,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** brute
 
 **3.8 · `use` · Crescendo 2**
-- **Where:** Up the main stairs to the second-floor labs (storey 1, over the mixing floor) and Wren's lab. The download runs at terminal four, under walls covered in sound-wave charts. Sleepers come up both stairwells, the main stairs and the back stairs by the lockers.
+- **Where:** Up the main stairs to the second-floor labs (storey 1, over the mixing floor): a short stair hall, then Wren's lab. The download runs at terminal four, under walls covered in sound-wave charts. Both stairwells (main and back) rise from the mixing floor straight into the stair hall beside Wren's lab, and that is where the sleepers come up. Lab B and the sound lab stay shut behind doors until the download is done, then open as loot pockets on the way to the break room.
 - **HUD:** `Download the Morning Bell`
 - **Radio:**
   - Voice: "The file's called MORNING BELL. It won't wake them. But it lets them lie still."

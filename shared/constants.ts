@@ -10,10 +10,14 @@ export const CEIL_H = 4.2;
  * indoor ceiling is the underside of the floor above. STEP_UP: the largest height change a walker
  * takes in stride (stairs and ladders are ramps, so every step along them is small).
  * LADDER_SPEED: horizontal speed multiplier while on a ladder cell (it climbs a whole storey in one tile).
+ * ZOMBIE_LADDER: zombies climb at this fraction of LADDER_SPEED (server only: clients never move
+ * zombies), and only a few at a time per ladder (server/room.ts DIFFICULTY `ladder`), so a ladder top
+ * is a chokepoint a survivor can hold, never a wall.
  */
 export const STOREY = 4.2;
 export const STEP_UP = 0.6;
 export const LADDER_SPEED = 0.32;
+export const ZOMBIE_LADDER = 0.75;
 
 export const PLAYER = {
   radius: 0.35,

@@ -17,6 +17,12 @@ import type { GlowSpot } from './atmo';
 const T = TILE;
 const SAFE_WALL = 0xe0884f;
 const WALL_COLOR: Record<number, number[]> = { [WALL.ROCK]: [0x7d6f73, 0x8a7a72, 0x6f6578], [WALL.HEDGE]: [0x3f8f5a, 0x4a9a62, 0x37804f], [WALL.FENCE]: [0x8f93a8, 0x9a9db0] };
+/** What those walls look like from above: the palette's average, a little lighter (tops catch the sky). */
+const TOP_COLOR: Record<number, V3> = Object.fromEntries(Object.entries(WALL_COLOR).map(([k, pal]) => {
+  const a: V3 = [0, 0, 0];
+  for (const c of pal) { const v = rgb(c); a[0] += v[0] / pal.length; a[1] += v[1] / pal.length; a[2] += v[2] / pal.length; }
+  return [k, mul(a, Number(k) === WALL.HEDGE ? 1.14 : 1.08)];
+}));
 // Room wall colours by floor type; INTERIOR rooms borrow the chapter's building palette.
 const ROOM_WALL: Record<number, number[]> = {
   [F.TILES]: [0xbfe3d6, 0xd9ece6, 0xa9d6cf, 0xcfe0ea],
@@ -165,7 +171,13 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const rect = (c: V3, u0: number, u1: number, y0: number, y1: number, o = 0, c2: V3 = c) => quad(walls, c, n, [...P(u1, y0, o), ...P(u0, y0, o), ...P(u0, y1, o), ...P(u1, y1, o)], c2);
         const lit = (c: V3, u0: number, u1: number, y0: number, y1: number, o = 0.03) => quad(flat, c, null, [...P(u1, y0, o), ...P(u0, y0, o), ...P(u0, y1, o), ...P(u1, y1, o)]);
         const lbox = (c: V3, u0: number, u1: number, y0: number, y1: number, o0: number, o1: number) => { const a = P(u0, y0, o0), b = P(u1, y1, o1); aabb(walls, c, a[0], a[1], a[2], b[0], b[1], b[2]); };
-        const line = (u0: number, y0: number, u1: number, y1: number, o = 0.02, t = 0.016) => { const a = P(u0, y0, o), b = P(u1, y1, o); beam(ink, a[0], a[1], a[2], b[0], b[1], b[2], t); };
+        // Ink strokes are beams with thickness: where this stretch stands on a slab or ends under one, keep them
+        // inside it, or they show as stray lines on the ceiling below and the floor above. (Never on a flat map.)
+        const inkLo = yb > 0 ? 0.003 : -1e9, inkHi = multi && (piece.indoor || !piece.roof) ? h - 0.002 : 1e9;
+        const line = (u0: number, y0: number, u1: number, y1: number, o = 0.02, t = 0.016) => {
+          const a = P(u0, Math.min(Math.max(y0, inkLo + t), inkHi - t), o), b = P(u1, Math.min(Math.max(y1, inkLo + t), inkHi - t), o);
+          beam(ink, a[0], a[1], a[2], b[0], b[1], b[2], t);
+        };
         const frame = (u0: number, u1: number, y0: number, y1: number, o = 0.035, t = 0.018) => { line(u0, y0, u1, y0, o, t); line(u1, y0, u1, y1, o, t); line(u1, y1, u0, y1, o, t); line(u0, y1, u0, y0, o, t); };
         const y0 = nf === F.WATER ? -0.4 : 0;
         const hL = sideHeight(x - tx, z - tz, di, yb), hR = sideHeight(x + tx, z + tz, di, yb);
@@ -310,13 +322,47 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
       if (indoor && !ramp) {
         const c = mix3(rgb(CEILING[f] ?? 0xbcb8d4), rgb(theme.fog), f === F.INTERIOR ? 0.12 : 0.04);
         const b = ceil.pos.length / 3, x0 = x * T, x1 = x0 + T, z0 = z * T, z1 = z0 + T;
-        ceil.pos.push(x0, yc, z0, x1, yc, z0, x1, yc, z1, x0, yc, z1);
+        // Under another storey the ceiling hangs a hair below the slab line: props and clutter upstairs stand
+        // exactly on that line, and their undersides would z-fight with it.
+        const yq = multi && k + 1 < levels ? yc - 0.03 : yc;
+        ceil.pos.push(x0, yq, z0, x1, yq, z0, x1, yq, z1, x0, yq, z1);
         ceil.uv.push(x, z, x + 1, z, x + 1, z + 1, x, z + 1);
         for (let i = 0; i < 4; i++) { ceil.nor.push(0, -1, 0); ceil.col.push(c[0], c[1], c[2]); }
         ceil.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
         // Structural beams: concrete every 4 tiles in plain interiors, timber every 3 in wooden rooms.
         if (f === F.INTERIOR && x % 4 === 0) aabb(walls, mul(c, 0.72), x0 - 0.16, yc - 0.3, z0, x0 + 0.16, yc, z1);
         if (f === F.WOOD && z % 3 === 0) aabb(walls, rgb(0x8a5f3f), x0, yc - 0.22, z0 - 0.1, x1, yc, z0 + 0.1);
+        // An upstairs room with open air beside it (a lookout, a treehouse deck, a covered bridge) is a canopy:
+        // posts along its open edges, at each end of a run and every other tile, or its ceiling hangs in the sky.
+        if (k > 0) {
+          // (Open to the outside, that is: a void over an indoor floor is an atrium, and its galleries need no posts.)
+          const open = (xx: number, zz: number) => {
+            if (!inb(xx, zz)) return true;
+            let n = k * WH + zz * W + xx;
+            if (def.air[n] !== 1) return false;
+            while (n >= WH && def.air[n]) n -= WH;
+            return def.air[n] === 1 || wall[n] === 1 || !isIndoor(look[n]);
+          };
+          const done: number[] = [];
+          for (const [dx, dz] of DIRS) {
+            if (!open(x + dx, z + dz)) continue;
+            const tx = -dz, tz = dx;
+            for (const e of [-1, 1]) {
+              const ax = x + tx * e, az = z + tz * e, an = k * WH + az * W + ax;
+              const goesOn = inb(ax, az) && !wall[an] && isIndoor(look[an]) && !def.ramp[an] && open(ax + dx, az + dz);
+              if (goesOn && !(e < 0 && (x * Math.abs(tx) + z * Math.abs(tz)) % 2 === 0)) continue;
+              // The corner of the tile this post stands at, then 0.2 m of post just inside the edge.
+              const cx = (x + 0.5 + dx * 0.5 + tx * e * 0.5) * T, cz = (z + 0.5 + dz * 0.5 + tz * e * 0.5) * T;
+              const key = Math.round(cx * 2) * 4096 + Math.round(cz * 2);
+              if (done.includes(key)) continue;
+              done.push(key);
+              const t0 = goesOn ? -0.1 : -e * 0.02, t1 = goesOn ? 0.1 : -e * 0.22;
+              const ux0 = cx - dx * 0.02 + tx * t0, uz0 = cz - dz * 0.02 + tz * t0, ux1 = cx - dx * 0.22 + tx * t1, uz1 = cz - dz * 0.22 + tz * t1;
+              aabb(walls, rgb(0x54506e), Math.min(ux0, ux1), yb, Math.min(uz0, uz1), Math.max(ux0, ux1), yc, Math.max(uz0, uz1));
+              for (const [qx, qz] of [[ux0, uz0], [ux1, uz1], [ux0, uz1], [ux1, uz0]]) beam(ink, qx, yb + 0.02, qz, qx, yc - 0.02, qz, 0.011);
+            }
+          }
+        }
         // A roof slab over rooms with nothing built on them, for whoever is a storey higher.
         if (roofed(nd)) {
           const yr = yc + ROOF_T, rc = rgb(ROOF_C);
@@ -339,7 +385,17 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const entrance = indoor !== isIndoor(g);
         const ix = indoor ? x : x + ox, iz = indoor ? z : z + oz; // the indoor side
         const wallC = (() => { const ni = k * WH + iz * W + ix; return room[ni] >= 0 ? roomColor(ni) : rgb(0x8f8aa8); })();
-        const col = entrance ? mix3(rgb(theme.buildings[Math.floor(hash2(Math.floor(ix / 3) + 91, Math.floor(iz / 3) + 17) * theme.buildings.length)]), WHITE, 0.2) : mul(mix3(wallC, WHITE, 0.25), 0.8);
+        // An entrance takes its building's colour. A wide one can straddle two colour blocks, so every tile
+        // of the opening uses the block its first tile is in (one header, one colour).
+        let hx = ix, hz = iz;
+        if (entrance) for (let s = 0; s < 8; s++) {
+          const px = hx - oz, pz = hz - ox, qx = px + (indoor ? ox : -ox), qz = pz + (indoor ? oz : -oz);
+          if (!inb(px, pz) || !inb(qx, qz)) break;
+          const pn = k * WH + pz * W + px, qn = k * WH + qz * W + qx;
+          if (def.floor[pn] === F.NONE || def.ramp[pn] || look[pn] !== look[k * WH + iz * W + ix] || def.floor[qn] === F.NONE || def.ramp[qn] || isIndoor(look[qn])) break;
+          hx = px; hz = pz;
+        }
+        const col = entrance ? mix3(rgb(theme.buildings[Math.floor(hash2(Math.floor(hx / 3) + 91, Math.floor(hz / 3) + 17) * theme.buildings.length)]), WHITE, 0.2) : mul(mix3(wallC, WHITE, 0.25), 0.8);
         const ex = (x + ox) * T, ez = (z + oz) * T; // edge origin
         // An entrance's header stands proud of the ceiling line, unless a floor is laid over either side of it.
         const floored = multi && k + 1 < levels && (def.floor[nd + WH] !== F.NONE || def.floor[md + WH] !== F.NONE);
@@ -349,17 +405,21 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         aabb(walls, col, bx0, ylo, bz0, bx1, yhi, bz1);
         const e = th + 0.005;
         for (const s of [-e, e]) {
-          if (ox) { beam(ink, ex + s, ylo, a0, ex + s, ylo, a1, 0.014); if (entrance) beam(ink, ex + s, yhi, a0, ex + s, yhi, a1, 0.02); }
-          else { beam(ink, a0, ylo, ez + s, a1, ylo, ez + s, 0.014); if (entrance) beam(ink, a0, yhi, ez + s, a1, yhi, ez + s, 0.02); }
+          const yt = floored ? yhi - 0.022 : yhi; // under a floor, the top stroke stays below it
+          if (ox) { beam(ink, ex + s, ylo, a0, ex + s, ylo, a1, 0.014); if (entrance) beam(ink, ex + s, yt, a0, ex + s, yt, a1, 0.02); }
+          else { beam(ink, a0, ylo, ez + s, a1, ylo, ez + s, 0.014); if (entrance) beam(ink, a0, yt, ez + s, a1, yt, ez + s, 0.02); }
         }
         // Jambs where the opening ends at a wall.
         for (const side of [-1, 1]) {
           const sx = ox ? 0 : side, sz = ox ? side : 0;
-          if (!(wallAt(x + sx, z + sz, k) || wallAt(x + ox + sx, z + oz + sz, k))) continue;
+          // ...or, upstairs, at open air (a gate onto a bridge or a deck): posts, so the header is not left floating.
+          const open = (xx: number, zz: number) => k > 0 && inb(xx, zz) && def.air[k * WH + zz * W + xx] === 1;
+          if (!(wallAt(x + sx, z + sz, k) || wallAt(x + ox + sx, z + oz + sz, k) || open(x + sx, z + sz) || open(x + ox + sx, z + oz + sz))) continue;
           const q = side < 0 ? a0 : a1, q0 = side < 0 ? q : q - 0.14, q1 = side < 0 ? q + 0.14 : q;
           if (ox) aabb(walls, col, ex - th, yb, q0, ex + th, ylo, q1); else aabb(walls, col, q0, yb, ez - th, q1, ylo, ez + th);
           const qi = side < 0 ? q1 + 0.005 : q0 - 0.005;
-          for (const s of [-e, e]) { if (ox) beam(ink, ex + s, yb, qi, ex + s, ylo, qi, 0.014); else beam(ink, qi, yb, ez + s, qi, ylo, ez + s, 0.014); }
+          const yf = k ? yb + 0.017 : yb; // upstairs, the stroke's foot stays above the slab
+          for (const s of [-e, e]) { if (ox) beam(ink, ex + s, yf, qi, ex + s, ylo, qi, 0.014); else beam(ink, qi, yf, ez + s, qi, ylo, ez + s, 0.014); }
         }
       }
     }
@@ -372,9 +432,17 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const t = segTop[nd];
         if (t > eyeMax || (k + 1 < levels && !def.air[nd + WH] && t >= (k + 1) * STOREY - 0.01)) continue; // out of sight, or something stands on it
         const kind = def.wallKind[nd], x0 = x * T, z0 = z * T;
-        const pal = kind === WALL.BUILDING ? theme.buildings : WALL_COLOR[kind];
-        const col = rgb(pal[Math.floor(hash2(Math.floor(x / 3) + 91, Math.floor(z / 3) + 17) * pal.length)]);
-        quad(walls, kind === WALL.BUILDING ? mix3(col, rgb(ROOF_C), 0.7) : mul(col, 1.08), [0, 1, 0], [x0, t, z0, x0, t, z0 + T, x0 + T, t, z0 + T, x0 + T, t, z0]);
+        let col: V3;
+        if (kind === WALL.BUILDING) col = mix3(rgb(theme.buildings[Math.floor(hash2(Math.floor(x / 3) + 91, Math.floor(z / 3) + 17) * theme.buildings.length)]), rgb(ROOF_C), 0.88);
+        else {
+          // Rock, hedge and fence tops: one tone for the whole mass (the faces keep their per-block colours),
+          // with broad, faint drifts and a darker rim along the drop so a plateau still has some form.
+          let rim = false;
+          for (const [dx, dz] of DIRS) { const ax = x + dx, az = z + dz; if (inb(ax, az) && !(wall[k * WH + az * W + ax] && segTop[k * WH + az * W + ax] >= t - 0.05)) rim = true; }
+          const drift = hash2(Math.floor((x + z) / 7) + 3, Math.floor((x - z + 4096) / 9) + 11) < 0.35 ? 0.965 : 1;
+          col = mul(TOP_COLOR[kind] ?? rgb(WALL_COLOR[kind][0]), (rim ? 0.9 : 1) * drift);
+        }
+        quad(walls, col, [0, 1, 0], [x0, t, z0, x0, t, z0 + T, x0 + T, t, z0 + T, x0 + T, t, z0]);
       }
     }
 

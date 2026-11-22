@@ -188,6 +188,9 @@ let inGame = false, locked = false, ended = false;
 let doors = 0, step = 0, qc = 0, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play', debugServer = false;
 /** The offline shooting range, while you are in it (it stands in for the server). */
 let range: ShootingRange | null = null;
+/** Seconds a Space press stays buffered: a tap shorter than a frame (between two updates) still jumps, as does one just before landing. */
+const JUMP_BUFFER = 0.15;
+let jumpBuf = 0;
 let torchOn = true, groanT = 2, sendT = 0, lookDX = 0, lookDY = 0, time = 0, lastSwipe = 0;
 const keys = new Set<string>();
 const mouse = { left: false };
@@ -199,6 +202,7 @@ document.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!active()) return;
   if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  if (e.code === 'Space') jumpBuf = JUMP_BUFFER;
   // Range: X clears the numbers. Weapons come off the rack; the number keys are the same slots as in a room.
   if (range && e.code === 'KeyX') { range.resetStats(); hud.feed(t('Stats cleared')); return; }
   switch (e.code) {
@@ -801,7 +805,7 @@ function applyPlayers(list: PlayerSnap[]): void {
     if (!m) continue;
     const fresh = !m.chibi.group.enabled && st !== PSTATE.DEAD;
     m.tx = x; m.ty = y; m.tz = z; m.tr = ry; m.hp = hp; m.st = st; m.rev = rev; m.respawn = respawn;
-    if (fresh || Math.hypot(x - m.x, z - m.z) > 8 || Math.abs(y - m.y) > STOREY) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
+    if (fresh || Math.hypot(x - m.x, z - m.z) > 8 || Math.abs(y - m.y) > 2) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
     m.chibi.group.enabled = st !== PSTATE.DEAD;
     if (m.gunW !== w) {
       // The gun meshes are shared per weapon (see worldGun), so swapping only replaces a small entity.
@@ -1410,6 +1414,7 @@ function updateWaypoint(): void {
 function updateMe(dt: number): void {
   if (me.pinned && me.st !== PSTATE.ALIVE) me.pinned = false;
   const alive = me.st === PSTATE.ALIVE, on = active() && alive && !me.pinned;
+  if (!on) jumpBuf = 0;
   me.fireCd -= dt; me.shoveRest += dt; me.slowT -= dt; me.throwCd -= dt;
   me.bloom = Math.max(0, me.bloom - dt * WEAPONS[me.weapon].bloom[2]);
   me.recoil += (0 - me.recoil) * Math.min(1, dt * 9);
@@ -1421,12 +1426,15 @@ function updateMe(dt: number): void {
   const sc = scopeUp();
   me.zoom += ((sc ? 1 : 0) - me.zoom) * Math.min(1, dt * 14);
   if (me.zoom < 0.01) me.zoom = 0;
-  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1)
-    * L.speedAt(me.x, me.gy, me.z, LADDER_SPEED); // slow on a ladder
+  // Slow on a ladder: the one you're on, or the one this frame's step would put you on.
+  const ladder = Math.min(L.speedAt(me.x, me.gy, me.z, LADDER_SPEED), L.speedAt(me.x + me.vx * dt, me.gy, me.z + me.vz * dt, LADDER_SPEED));
+  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1) * ladder;
   const sin = Math.sin(me.yaw), cos = Math.cos(me.yaw);
   const wx = ((-sin * f + cos * s) / len) * speed, wz = ((-cos * f - sin * s) / len) * speed;
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
   me.vx += (wx - me.vx) * k; me.vz += (wz - me.vz) * k;
+  // On a ladder the limit is hard from the first frame: the run speed you arrive with doesn't ease down onto it.
+  if (ladder < 1) { const v = Math.hypot(me.vx, me.vz); if (v > speed) { me.vx *= speed / v; me.vz *= speed / v; } }
   const gy0 = me.gy, x0 = me.x, z0 = me.z;
   if (alive) {
     // Held: the server moves you (dragged by a Snatcher, steered by a Piggyback); ease toward where it has you.
@@ -1437,7 +1445,9 @@ function updateMe(dt: number): void {
     } else slideMe((me.vx + me.kx) * dt, (me.vz + me.kz) * dt);
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
     // Jumps (and knockback) lift you off whatever floor you are on; you land back on it.
-    if (on && keys.has('Space') && me.onGround) { me.vy = 6.4; me.onGround = false; }
+    // Held Space keeps hopping; a buffered press (jumpBuf) catches taps that came and went between two frames.
+    if (on && (keys.has('Space') || jumpBuf > 0) && me.onGround) { me.vy = 6.4; me.onGround = false; jumpBuf = 0; }
+    jumpBuf = Math.max(0, jumpBuf - dt);
     me.vy -= 19 * dt; me.jy += me.vy * dt;
     if (me.jy <= 0) { if (!me.onGround) sfx.land(-me.vy, indoorAt(me.x, me.gy, me.z)); me.jy = 0; me.vy = 0; me.onGround = true; }
     // Footsteps every stride on the ground.

@@ -171,7 +171,7 @@ export function build() {
   for (const [x, z] of [[68, 23], [75, 23], [68, 30], [75, 30]]) b.prop('beacon', x, z);
   b.pick('sniper', 69, 24); b.pick('ammo', 74, 24); b.pick('ammo', 74, 29); b.pick('medkit', 69, 29); b.pick('firebomb', 72, 30);
   b.label('TOWER DECK', 72, 24, 11, CREAM, 0);
-  b.lamp(69, 27); b.lamp(75, 27);
+  b.lamp(71, 23.6); b.lamp(73, 30.4);
   b.level(0);
   const hillSwitch = b.obj('lever', 71, 31, 'Throw the hill line switch (LOUD)');
   b.label('WATER TOWER', 72, 21.6, 16, CREAM, 0);
@@ -182,7 +182,7 @@ export function build() {
   b.prop('barrel', 66, 28); b.prop('barrel', 78, 25); b.prop('barrel', 94, 48); b.prop('barrel', 56, 40);
   b.pick('ammo', 66, 30); b.pick('ammo', 67, 30); b.pick('ammo', 76, 29); b.pick('ammo', 76, 30); b.pick('medkit', 66, 23); b.pick('ammo', 60, 20);
   b.pick('rattle', 69, 32);                                      // before the hill-switch holdout
-  for (const [x, z] of [[66, 26], [77, 26], [66, 32], [77, 32]]) b.lamp(x, z);
+  for (const [x, z] of [[65.6, 24.4], [78.4, 29], [66, 32], [77, 32]]) b.lamp(x, z);
   b.lamp(52, 46); b.lamp(88, 52);
   b.arrow(56, 44, N); b.arrow(64, 35, E); b.arrow(87.5, 50, S);
   zz(58, 42, N); zz(65, 37, E);
@@ -221,7 +221,7 @@ export function build() {
   b.carve(88, 62, 91, 62, F.CONCRETE);                                     // porch
   b.carve(89, 63, 90, 63, F.CONCRETE);
   const officeEntry = b.door(89, 63, 90, 63, 'shutter', 'YARDMASTER');
-  b.lamp(89.5, 62.4);
+  b.lamp(91.7, 62.5);
   b.carve(82, 64, 98, 71, F.SAFE);
   b.prop('desk', 84, 65, 2, 1); b.prop('counter', 92, 64, 5, 1, { color: 0x8a6a40 }); b.prop('terminal', 93, 65);
   b.prop('shelf', 82, 68, 1, 3); b.prop('bench', 96, 68, 1, 2);
@@ -236,7 +236,7 @@ export function build() {
   b.carve(89, 72, 90, 72, F.CONCRETE);
   const officeExit = b.door(89, 72, 90, 72, 'shutter', 'BACK STAIRS');
   b.carve(88, 73, 91, 73, F.CONCRETE);                                     // back landing (stairs down: section 4)
-  b.label('STAIRS DOWN', 89.5, 73.5, 9, GOLD, 0); b.lamp(89.5, 73.5);
+  b.label('STAIRS DOWN', 89.5, 73.5, 9, GOLD, 0); b.lamp(91.7, 73.5);
   b.level(0);
 
   // ------------------------------------------------------------------
@@ -298,7 +298,7 @@ export function build() {
   b.label('MAZE', 37, 102, 30, RUSTL, 0);
   b.pick('smg', 33, 91); b.pick('autoshotgun', 32, 91); b.pick('medkit', 6, 113);
   b.pick('ammo', 22, 97); b.pick('medkit', 52, 88);
-  b.lamp(12, 89); b.lamp(32, 88); b.lamp(44, 106); b.lamp(20, 105);
+  b.lamp(14.6, 88.4); b.lamp(32, 88); b.lamp(43.4, 108.6); b.lamp(20, 105);
   b.level(1);
   b.carve(6, 81, 18, 86, F.CONCRETE); b.carve(46, 99, 50, 110, F.CONCRETE);
   box(10, 81, 3, 1); box(14, 85, 2, 1); box(48, 103, 1, 2);               // a third tier: cover on the tops
@@ -426,7 +426,7 @@ export function build() {
   b.prop('barrier', 136, 66, 1, 4); b.prop('barrier', 152, 66, 1, 4); b.prop('pallet', 126, 63, 2, 1); b.prop('crate', 162, 52);
   b.pick('ammo', 148, 52); b.pick('ammo', 128, 78); b.pick('medkit', 160, 78); b.pick('ammo', 176, 70);
   for (const [x, z] of [[124, 45], [148, 45], [136, 56], [160, 56], [148, 68], [124, 68], [172, 74]]) b.lamp(x, z);
-  b.arrow(142.5, 43, S); b.arrow(148, 70.5, E); b.arrow(170, 67.5, E); b.arrow(174.9, 66.4, N);
+  b.arrow(142.5, 43, S); b.arrow(148, 70.5, E);
   zz(150, 74, E);
   // Hank's locker room (tank crew).
   b.fill(113, 70, 122, 80); b.carve(114, 71, 121, 79, F.INTERIOR); b.carve(122, 74, 122, 75, F.INTERIOR);
@@ -441,62 +441,63 @@ export function build() {
   b.pick('shotgun', 176, 47); b.pick('launcher', 175, 47); b.pick('ammo', 169, 47); // Hank, the Brute, is on the mixing floor
   b.pick('firebomb', 174, 47);
   b.label('MIX CONTROL', 172.5, 46, 11, CREAM);
-  // Two real flights up to the labs, both 2 wide and rising north (-z) into the 2F corridor:
-  // the main stairs in the south-east corner and the back stairs by the lockers (west).
-  b.fill(173, 62, 173, 64); b.fill(176, 62, 177, 64); b.walls(173, 62, 177, 64, WALL.BUILDING, STOREY);
-  b.stairs(174, 62, 175, 64, '-z');
-  b.fill(113, 62, 113, 64); b.fill(116, 62, 116, 64); b.walls(113, 62, 116, 64, WALL.BUILDING, STOREY);
-  b.stairs(114, 62, 115, 64, '-z');
-  b.label('STAIRS UP: LABS 2F', 174.5, 66.6, 10, GOLD, 0); b.label('BACK STAIRS UP', 114.5, 66, 10, CREAM, 0);
-  b.lamp(174.5, 65.5); b.lamp(114.5, 65.5);
+  // Two real flights up to the labs, both 2 wide and rising north (-z) out of the south half of
+  // the floor, one either side of Wren's lab: the main stairs (east) and the back stairs (west).
+  b.fill(160, 62, 160, 64); b.fill(163, 62, 163, 64); b.walls(160, 62, 163, 64, WALL.BUILDING, STOREY);
+  b.stairs(161, 62, 162, 64, '-z');
+  b.fill(136, 62, 136, 64); b.fill(139, 62, 139, 64); b.walls(136, 62, 139, 64, WALL.BUILDING, STOREY);
+  b.stairs(137, 62, 138, 64, '-z');
+  b.label('STAIRS UP: LABS 2F', 161.5, 66.6, 10, GOLD, 0); b.label('BACK STAIRS UP', 137.5, 66.2, 10, CREAM, 0);
+  b.lamp(165, 64.5); b.lamp(134.5, 64.5);
+  b.arrow(156, 64.5, E); b.arrow(161.5, 65.6, N);
 
   // ------------------------------------------------------------------
   // 8. Second-floor labs (storey 1, over the mixing floor): Wren's lab (crescendo 2)
   // ------------------------------------------------------------------
+  // Both flights land in a short stair hall right outside Wren's lab. During the terminal-four
+  // hold the side labs and the staff exit are shut, so this floor is small enough for the
+  // director to treat it as a perch: the horde comes up the two stairwells from the mixing floor.
   b.walls(113, 42, 177, 81, WALL.BUILDING, STOREY);                     // ground-floor walls stop under the 2F slab
   b.level(1);
   b.fill(113, 42, 177, 81);                                                 // plant mass; rooms carved out below
   b.fill(140, 39, 145, 41); b.fill(165, 39, 168, 41);                      // lintels over the ground-floor doors
-  b.carve(113, 58, 177, 60, F.TILES);                                       // 2F corridor
-  b.carve(114, 61, 115, 61, F.TILES); b.carve(174, 61, 175, 61, F.TILES);  // stair landings
-  b.label('2F: LABORATORIES', 160, 59.6, 14, TEAL, 0);
-  b.label('BACK STAIRS', 114.5, 61.4, 9, CREAM, 0); b.label('MAIN STAIRS', 174.5, 61.4, 9, GOLD, 0);
-  b.prop('counter', 134, 58, 2, 1, { color: 0xc9d4e0 }); b.prop('bench', 164, 60, 3, 1); b.prop('barrier', 122, 59, 1, 1);
-  for (const x of [118, 132, 146, 160, 172]) b.lamp(x, 59.5);
-  b.arrow(170, 59.5, WEST); b.arrow(149, 59.5, WEST);
-  // Lab A (the back-stair shaft takes its north-west corner).
-  b.carve(119, 61, 120, 61, F.TILES); b.carve(117, 62, 125, 73, F.TILES); b.carve(113, 66, 116, 73, F.TILES);
-  b.prop('counter', 117, 65, 7, 1, { color: 0xc9d4e0 }); b.prop('counter', 115, 69, 8, 1, { color: 0xc9d4e0 }); b.prop('shelf', 113, 71, 1, 3);
-  b.pick('ammo', 124, 72); b.pick('ammo', 125, 72); b.pick('launcher', 124, 71); b.pick('medkit', 117, 63); // before the lab holdout
-  b.label('LAB A: STABILITY', 120, 67.5, 11, TEAL); b.lamp(120, 71);
-  // Lab B (side door into Wren's lab).
-  b.carve(131, 61, 132, 61, F.TILES); b.carve(127, 62, 137, 73, F.TILES); b.carve(138, 67, 138, 68, F.TILES);
-  b.prop('counter', 129, 64, 1, 6, { color: 0xc9d4e0 }); b.prop('shelf', 135, 71, 3, 1); b.prop('desk', 133, 65, 2, 1);
-  b.pick('ammo', 136, 63); b.pick('ammo', 136, 62); b.pick('ammo', 128, 72);
-  b.label('LAB B: AEROSOLS', 132, 69, 11, TEAL); b.lamp(132, 67);
-  // Wren's lab: two corridor doors, two side doors, terminal four, the exit to the break room.
+  b.carve(137, 59, 162, 60, F.TILES);                                       // stair hall
+  b.carve(137, 61, 138, 61, F.TILES); b.carve(161, 61, 162, 61, F.TILES);  // stair landings
+  b.label('2F: LABORATORIES', 150, 59.6, 14, TEAL, 0);
+  b.label('BACK STAIRS', 137.5, 61.4, 9, CREAM, 0); b.label('MAIN STAIRS', 161.5, 61.4, 9, GOLD, 0);
+  b.pick('launcher', 146, 59); b.pick('ammo', 147, 59); b.pick('ammo', 148, 59); b.pick('medkit', 152, 59);   // before the lab holdout
+  b.lamp(141, 59.1); b.lamp(158, 59.1);
+  b.arrow(159, 59.8, WEST); b.arrow(140, 59.8, E);
+  // Lab B (behind a door that opens once the download is done).
+  b.carve(127, 62, 135, 73, F.TILES);
+  const labBDoor = b.door(136, 67, 139, 68, 'shutter', 'LAB B');
+  b.prop('counter', 129, 64, 1, 6, { color: 0xc9d4e0 }); b.prop('shelf', 132, 71, 3, 1); b.prop('desk', 132, 65, 2, 1);
+  b.pick('ammo', 134, 63); b.pick('ammo', 134, 62); b.pick('ammo', 128, 72);
+  b.label('LAB B: AEROSOLS', 131, 69, 11, TEAL); b.lamp(131, 67);
+  // Wren's lab: two doorways off the stair hall, terminal four, the exit to the break room.
   b.carve(142, 61, 143, 61, F.TILES); b.carve(155, 61, 156, 61, F.TILES);
-  b.carve(139, 62, 160, 73, F.TILES); b.carve(161, 67, 161, 68, F.TILES);
+  b.carve(140, 62, 159, 73, F.TILES);
   for (const x of [141, 144, 147]) b.prop('terminal', x, 73);
   b.prop('counter', 146, 66, 5, 1, { color: 0xd9c7e8 });
   const terminal4 = b.obj('terminal', 151, 66, 'Download the MORNING BELL (terminal four)');
   b.prop('desk', 152, 65, 2, 1);
   b.prop('counter', 142, 69, 1, 3, { color: 0xd9c7e8 }); b.prop('counter', 157, 64, 1, 3, { color: 0xd9c7e8 });
-  b.prop('shelf', 160, 70, 1, 3); b.prop('desk', 153, 70, 2, 1);
+  b.prop('shelf', 159, 70, 1, 3); b.prop('desk', 153, 70, 2, 1);
   b.note(151, 65, "Wren's lab notebook, page 1", 'HX-9 sleepers chase noise because the dream wants quiet. They\'re not cruel. They\'re trying to hush us.');
-  b.note(140, 62, "Wren's lab notebook, page 2 (pinned up)", 'MORNING BELL won\'t wake them. I don\'t know how yet. It lets them lie down and rest. Needs the Pinecone Hill mast. Someone must keep it ringing.');
-  b.label('∿∿∿∿∿∿∿∿', 147, 62.4, 22, TEAL, 0); b.label('∿∿∿∿∿∿', 158.6, 69, 18, TEAL, WEST);   // sound-wave charts
+  b.note(141, 62, "Wren's lab notebook, page 2 (pinned up)", 'MORNING BELL won\'t wake them. I don\'t know how yet. It lets them lie down and rest. Needs the Pinecone Hill mast. Someone must keep it ringing.');
+  b.label('∿∿∿∿∿∿∿∿', 147, 62.4, 22, TEAL, 0); b.label('∿∿∿∿∿∿', 158.4, 69, 18, TEAL, WEST);   // sound-wave charts
   b.label('TO WREN, FROM MUM ♥', 152.5, 72.4, 11, PINK, 0);              // a child's drawing
   b.label('FORMULATION: DR. W. LOWELL', 149.5, 68.6, 13, LAV, 0); b.label('TERMINAL 4', 151.5, 64.2, 10, GOLD, 0);
-  b.pick('ammo', 140, 72); b.pick('ammo', 140, 73); b.pick('ammo', 159, 62); b.pick('ammo', 159, 63); b.pick('medkit', 145, 71);
+  b.pick('ammo', 140, 72); b.pick('ammo', 140, 73); b.pick('ammo', 158, 62); b.pick('ammo', 158, 63); b.pick('medkit', 145, 71);
   b.pick('rattle', 141, 72);                                     // for the terminal four holdout
   for (const [x, z] of [[144, 64], [156, 68], [148, 71]]) b.lamp(x, z);
   b.arrow(155.5, 60.5, S);
-  // Sound lab (side door into Wren's lab; the main-stair shaft takes its north-east corner).
-  b.carve(167, 61, 168, 61, F.TILES); b.carve(162, 62, 172, 73, F.TILES); b.carve(173, 66, 177, 73, F.TILES);
-  b.prop('shelf', 177, 67, 1, 6, { color: 0x3b3a66 }); b.prop('radio', 168, 67); b.prop('counter', 164, 71, 6, 1, { color: 0xc9d4e0 });
-  b.pick('ammo', 163, 63); b.pick('medkit', 174, 72);
-  b.label('SOUND LAB', 167, 65, 12, TEAL); b.label('BELL PROTOTYPE', 168.5, 69, 9, GOLD); b.lamp(168, 69);
+  // Sound lab (behind a door that opens once the download is done).
+  b.carve(164, 62, 177, 73, F.TILES);
+  const soundDoor = b.door(160, 67, 163, 68, 'shutter', 'SOUND LAB');
+  b.prop('shelf', 177, 64, 1, 8, { color: 0x3b3a66 }); b.prop('radio', 168, 67); b.prop('counter', 166, 71, 6, 1, { color: 0xc9d4e0 });
+  b.pick('ammo', 165, 63); b.pick('medkit', 174, 72);
+  b.label('SOUND LAB', 169, 65, 12, TEAL); b.label('BELL PROTOTYPE', 168.5, 69, 9, GOLD); b.lamp(170, 69);
   // Lab exit → staff passage → break room.
   const labExit = b.door(149, 74, 151, 74, 'shutter', 'STAFF ONLY');
   b.carve(149, 75, 156, 77, F.INTERIOR);
@@ -522,7 +523,7 @@ export function build() {
   b.lamp(165, 77.5); b.lamp(173, 78);
   const fireDoor = b.door(170, 81, 171, 81, 'shutter', 'FIRE ESCAPE');
   b.carve(169, 82, 172, 82, F.CONCRETE);                                   // fire-escape landing
-  b.lamp(170.5, 82.5);
+  b.lamp(172.6, 82.5);
   b.level(0);
   // The flight down (storey 0) against the loading-dock block.
   b.walls(158, 82, 177, 85, WALL.BUILDING, STOREY);
@@ -590,7 +591,7 @@ export function build() {
   b.prop('counter', 88, 109, 5, 1, { color: 0x6f7f9a }); b.prop('shelf', 87, 113, 1, 2);
   b.pick('medkit', 92, 114); b.pick('ammo', 88, 115);
   b.label('CONTROL TOWER', 91, 112.4, 14, GOLD); b.label('STAIRS UP', 95.5, 113.6, 10, GOLD, N);
-  b.lamp(91, 112); b.lamp(95.5, 114.5);
+  b.lamp(91, 112); b.lamp(93.5, 115.4);
   b.arrow(93, 114, E); b.arrow(95.5, 114.6, N);
   // Storey 1: switchgear floor, flight B up the west side.
   b.level(1);
@@ -601,7 +602,7 @@ export function build() {
   b.pick('ammo', 96, 114);
   b.label('SWITCHGEAR', 92.5, 112.5, 12, CREAM); b.label('STAIRS UP', 87.5, 114.6, 10, GOLD, N);
   b.label('STAIRS DOWN', 95.5, 109.5, 9, CREAM, 0);
-  b.lamp(92, 112); b.lamp(88, 115);
+  b.lamp(92, 112); b.lamp(90.5, 115.4);
   b.arrow(93.5, 110, WEST); b.arrow(90.5, 114.5, WEST); b.arrow(87.5, 114.4, N);
   // Storey 2: the control room, its front open onto a balcony over the pier (the lit window).
   b.level(2);
@@ -739,7 +740,7 @@ export function build() {
       ['Voice', 'The Hush Works. My lab\'s on the second floor. Terminal four.'],
     ],
   });
-  b.reach({ x0: 172, z0: 65, x1: 177, z1: 70 }, {
+  b.reach({ x0: 158, z0: 65, x1: 165, z1: 70 }, {
     objective: 'Cross the mixing floor', brute: true,
     radio: [
       ['Dot', 'Something big\'s moving in that plant. Big and soggy.'],
@@ -747,7 +748,7 @@ export function build() {
     ],
   });
   b.use(terminal4, {
-    objective: 'Download the Morning Bell', horde: true, hold: 90, opens: [labExit, breakEntry],
+    objective: 'Download the Morning Bell', horde: true, hold: 90, opens: [labExit, breakEntry, labBDoor, soundDoor],
     radio: [
       ['Voice', 'The file\'s called MORNING BELL. It won\'t wake them. But it lets them lie still.'],
       ['Nori', 'Who ARE you?'],

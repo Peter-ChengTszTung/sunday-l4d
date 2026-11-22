@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, STOREY, LADDER_SPEED, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, MEDS, medIndex, packMeds, medUseful, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
+import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, ZHIT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, MEDS, medIndex, packMeds, medUseful, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -170,6 +170,8 @@ const DIRECTOR = {
    * wave adds `wave2Push[n - 1]` specials and is `wave2Horde` of a full horde; its middle specials stage
    * brings `midHorde`. Alive specials never exceed `maxSpecials[n - 1]`; in `final` they are topped up
    * toward the push size every `drip` s (attacking at once). `final` also floods from two sides.
+   * With the whole team up on a perch (an upper floor under `perchMax` nodes: perchLevel), spawns come
+   * from a storey below, up to `perchReach` path tiles further out than usual (trySpawnCell).
    */
   holdout: {
     finalFrac: 0.2, finalSecs: [15, 20] as const, breath: [0.1, 6, 8] as const, shortBreath: [0.07, 4, 6] as const,
@@ -181,7 +183,7 @@ const DIRECTOR = {
       wave: [0, 0, 0, 0], breather: [0, 0, 0, 0], specials: [2, 2, 3, 3], brute: [0, 0, 0, 0], final: [2, 2, 3, 3],
     } as Record<HoldStageKind, readonly number[]>,
     wave2Push: [1, 2, 2, 3] as const, wave2Horde: 0.75, midHorde: 0.5,
-    pushWait: 6, maxSpecials: [2, 2, 3, 4] as const, drip: 7,
+    pushWait: 6, maxSpecials: [2, 2, 3, 4] as const, drip: 7, perchReach: 16, perchMax: 300,
     finalMsg: 'Here they come! Hold the line!',
   },
 };
@@ -204,16 +206,17 @@ const DIRECTOR = {
  *  - `spHp`: x health of the other specials (leaper, puffer, charger, drooler, alarm clock).
  *  - `dmg`: x all damage zombies (and goo puddles) deal to survivors.
  *  - `intro`: + campaign position for INTRO (new infected types show up that much sooner; negative = later).
+ *  - `ladder`: most zombies on one ladder at once (the rest wait at its foot or top); 1 = single file.
  * Survivor-side rules (respawn, downs, medkit heal, solo self-revives) are shared/constants.ts SURVIVOR_RULES.
  */
 const DIFFICULTY: Record<DifficultyId, {
   peak: number; relax: number; build: number; mob: number; mobEvery: number; slots: readonly number[]; spCd: number;
-  ambient: number; wander: number; brute: number; bruteHp: number; spHp: number; dmg: number; intro: number;
+  ambient: number; wander: number; brute: number; bruteHp: number; spHp: number; dmg: number; intro: number; ladder: number;
 }> = {
-  easy: { peak: 0.75, relax: 1.3, build: 0.75, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.6, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5, intro: -0.08 },
-  normal: { peak: 1, relax: 1, build: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1, intro: 0 },
-  hard: { peak: 1.2, relax: 0.75, build: 1.3, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5, intro: 0.05 },
-  nightmare: { peak: 1.35, relax: 0.55, build: 1.6, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2, intro: 0.1 },
+  easy: { peak: 0.75, relax: 1.3, build: 0.75, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.6, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5, intro: -0.08, ladder: 1 },
+  normal: { peak: 1, relax: 1, build: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1, intro: 0, ladder: 5 },
+  hard: { peak: 1.2, relax: 0.75, build: 1.3, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5, intro: 0.05, ladder: 5 },
+  nightmare: { peak: 1.35, relax: 0.55, build: 1.6, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2, intro: 0.1, ladder: Infinity },
 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 const BRUTE_HP_PER = 1100;
@@ -264,6 +267,10 @@ type Side = -1 | 0 | 1 | 2;
 /** Specials that hold for a coordinated attack and go for a lone survivor (not the Alarm Clock: it keeps away and rings). */
 const AMBUSHER = (type: number) => type === ZT.LEAPER || type === ZT.PUFFER || type === ZT.CHARGER || type === ZT.DROOLER || type === ZT.SNATCHER || type === ZT.PIGGYBACK;
 /** Specials that take a director slot: not commons, the Brute or the Weeper. */
+/** Highest a survivor's feet may be above the floor under them: a jump (~1.08 m) or a knockback hop, with slack. */
+const MAX_LIFT = 1.3;
+/** After the server teleports a survivor, their own position messages are ignored this long (ones already in flight would undo it). */
+const TP_GRACE = 0.3;
 const SLOTTED = (type: number) => !isCommon(type) && type !== ZT.BRUTE && type !== ZT.WEEPER;
 /** Zombies that hold a survivor without a wall (freed by shoving the victim, too). */
 const GRABBER = (type: number) => type === ZT.SNATCHER || type === ZT.PIGGYBACK;
@@ -623,8 +630,8 @@ export class Room {
     this.events.push(['loot', back]);
   }
 
-  private spawnPlayer(p: Player, s: Vec2, fresh: boolean): void {
-    const y = s.y ?? 0;
+  private spawnPlayer(p: Player, s0: Vec2, fresh: boolean): void {
+    const s = this.settle(s0), y = s.y;
     Object.assign(p, { x: s.x, y, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
       revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, freeAt: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0,
       downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0, regen: 0, regenRate: 0 });
@@ -633,6 +640,15 @@ export class Room {
     if (fresh) p.kills = 0;
     this.place(p);
     this.events.push(['tp', p.id, s.x, s.z, Math.PI, r2(y)]);
+    p.freeAt = this.time + TP_GRACE;
+  }
+
+  /** A spawn point standing on real floor: its own tile's floor height (stairs included), else the nearest open tile. */
+  private settle(s: Vec2): Pos3 {
+    const L = this.L, y = s.y ?? 0, n = L.nodeAt(s.x, y, s.z);
+    // The whole body must fit, not just its centre (a spawn offset can brush a machine or a wall).
+    if (!L.blocked(n, this.doors) && Math.abs(L.heightAt(n, s.x, s.z) - y) <= STOREY / 2 && !L.boxBlocked(s.x, L.heightAt(n, s.x, s.z), s.z, PLAYER.radius, this.doors)) return { x: s.x, y: L.heightAt(n, s.x, s.z), z: s.z };
+    return this.nearestOpen(s);
   }
 
   /** Refresh a survivor's floor height and node after they (or the server) moved them. */
@@ -666,6 +682,7 @@ export class Room {
       this.place(p);
       this.events.pop();
       this.events.push(['tp', p.id, p.x, p.z, mate.ry, r2(p.y)]);
+      p.freeAt = this.time + TP_GRACE;
     }
     this.send(p, { t: 'w', id: p.id, room: this.code, ch: this.ch, step: this.step, taken: [...this.taken], doors: this.doors, x: p.x, z: p.z, y: r2(p.y), debug: this.allowDebug ? 1 : 0, diff: this.difficulty });
     this.broadcastRoster();
@@ -774,10 +791,11 @@ export class Room {
     const at = this.nearestOpen(prev ? prev.at : this.def.spawns[0]);
     let i = 0;
     for (const p of this.players.values()) {
-      const s = { x: at.x + (i % 2) * 0.9, z: at.z + (i >> 1) * 0.9 }; i++;
-      Object.assign(p, { x: s.x, y: at.y, z: s.z, st: PSTATE.ALIVE, hp: PLAYER.hp, pinned: 0 });
+      const s = this.settle({ x: at.x + (i % 2) * 0.9, z: at.z + (i >> 1) * 0.9, y: at.y }); i++;
+      Object.assign(p, { x: s.x, y: s.y, z: s.z, st: PSTATE.ALIVE, hp: PLAYER.hp, pinned: 0 });
       this.place(p);
-      this.events.push(['tp', p.id, s.x, s.z, Math.PI, r2(at.y)]);
+      this.events.push(['tp', p.id, s.x, s.z, Math.PI, r2(s.y)]);
+      p.freeAt = this.time + TP_GRACE;
     }
     this.best = this.progressAt(at.x, at.y, at.z);
     this.waves = [];
@@ -803,6 +821,7 @@ export class Room {
       p.x = c.x; p.y = c.y; p.z = c.z;
       this.place(p);
       this.events.push(['tp', p.id, r2(p.x), r2(p.z), p.ry, r2(p.y)]);
+      p.freeAt = this.time + TP_GRACE;
     }
   }
 
@@ -822,7 +841,13 @@ export class Room {
       case 'p': {
         if (p.st === PSTATE.DEAD) return;
         if (![m.x, m.y, m.z, m.ry, m.rx].every(Number.isFinite)) return;
-        if (p.st === PSTATE.ALIVE && !p.pinned && !(this.time < p.freeAt)) { p.x = m.x; p.y = m.y; p.z = m.z; this.place(p); }
+        // In the grace after a teleport, a claim near where the server put you means the client has caught up.
+        if (this.time < p.freeAt && Math.hypot(m.x - p.x, m.z - p.z) < 2.5 && Math.abs(m.y - p.y) < 2) p.freeAt = 0;
+        if (p.st === PSTATE.ALIVE && !p.pinned && !(this.time < p.freeAt)) {
+          // Feet may be at most a jump (or a knockback hop) above the floor under the claimed spot, never below it.
+          const n = this.L.nodeAt(m.x, m.y, m.z), g = this.L.blocked(n, this.doors) ? p.gy : this.L.heightAt(n, m.x, m.z);
+          p.x = m.x; p.z = m.z; p.y = Math.min(Math.max(m.y, g), g + MAX_LIFT); this.place(p);
+        }
         p.ry = m.ry; p.rx = m.rx; p.w = m.w | 0; p.anim = m.a | 0;
         break;
       }
@@ -899,6 +924,8 @@ export class Room {
       if (nb + nh === 0) continue;
       const d = Math.hypot(z.x - p.x, z.z - p.z, z.y - p.gy);
       if (d > wp.range + 4) continue;
+      // Across storeys, the floor between must not be in the way (on one floor, claims stay trusted as before, so lag never eats hits).
+      if (Math.abs(z.y - p.gy) > REACH_DY && !this.sight(p.x, p.gy, p.z, z.x, z.y - EYE + 0.6, z.z) && !this.sight(p.x, p.gy, p.z, z.x, z.y - EYE + ZHIT.headY, z.z)) continue;
       // A Tinpot's front takes only a share of the bullet.
       const front = armoredFront(z.type, z.st, z.ry, z.x, z.z, p.x, p.z);
       if (front) this.events.push(['clang', z.id]);
@@ -1517,7 +1544,7 @@ export class Room {
   private walkTo(z: Zombie, to: Vec2, mult: number, dt: number): void {
     const dx = to.x - z.x, dz = to.z - z.z, len = Math.hypot(dx, dz);
     if (len > 0.01) {
-      const sp = z.speed * mult * this.L.speedAt(z.x, z.y, z.z, LADDER_SPEED) * dt;
+      const sp = z.speed * mult * this.L.speedAt(z.x, z.y, z.z, LADDER_SPEED * ZOMBIE_LADDER) * dt;
       this.L.moveSlide(z, (dx / len) * sp, (dz / len) * sp, ZTYPES[z.type].radius, this.doors);
       z.ry = Math.atan2(-dx, -dz);
     }
@@ -1534,6 +1561,7 @@ export class Room {
   private flowStep(z: Zombie, dir: 1 | -1, field: Int16Array = this.flow): Pos3 | null {
     const L = this.L, here = this.nodeOf(z);
     let best = field[here], bn = here;
+    this.stepNode = here;
     if (best >= INF) return null;
     const nb = this.nb, k = L.neighbors8(here, this.doors, nb);
     for (let i = 0; i < k; i++) {
@@ -1542,10 +1570,15 @@ export class Room {
       if (dir < 0 ? v < best : v > best) { best = v; bn = nb[i]; }
     }
     if (bn === here) return null;
+    this.stepNode = bn;
     const c = L.centre(bn);
     c.x += z.offX; c.z += z.offZ;
     return c;
   }
+  /** Node the last flowStep headed for (its own node when it returned null). */
+  private stepNode = 0;
+  /** Ladder node -> zombies on (or stepping onto) it this tick (at most `diff.ladder`, see updateZombies). */
+  private onLadder = new Map<number, number>();
 
   private explode(z: Zombie): void {
     const T = ZTYPES[ZT.PUFFER];
@@ -1596,7 +1629,7 @@ export class Room {
         this.killPlayer(p);
         return;
       }
-      p.st = PSTATE.DOWN; p.hp = PLAYER.hp; p.revT = 0;
+      p.st = PSTATE.DOWN; p.hp = PLAYER.hp; p.revT = 0; p.y = p.gy;
       // Alone: get yourself up (slowly) while self-revives last.
       p.revNeed = this.players.size === 1 && p.selfRev > 0 ? PLAYER.reviveTime * PLAYER.selfReviveMul : PLAYER.reviveTime;
       this.events.push(['down', p.id]);
@@ -1607,7 +1640,7 @@ export class Room {
 
   private killPlayer(p: Player): void {
     this.unpin(p);
-    p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = this.rules.respawn;
+    p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = this.rules.respawn; p.y = p.gy;
     this.events.push(['dead', p.id]);
   }
 
@@ -1642,8 +1675,56 @@ export class Room {
    * `side` 1: no further from the objective than the lead survivor; -1: further from it than the
    * rearmost survivor (behind the team); 2: between the two (a flank); 0: anywhere. `field`: path distances `minD`..`maxD` are
    * measured on (default: to the nearest survivor).
+   * Holding out on a perch (a holdout with every standing survivor up on a small deck, roof or
+   * catwalk: see perchLevel), spawns first try a storey below it, up to `perchReach` path tiles
+   * further out, so the horde comes up the stairs and ladders instead of out of a hidden corner of
+   * the perch; the usual rule when no such cell is hidden.
    */
   private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
+    if (this.holdout >= 0 && field === this.flow) {
+      const lv = this.perchLevel();
+      if (lv > 0) {
+        const c = this.sampleSpawnCell(minD, maxD + DIRECTOR.holdout.perchReach, side, field, lv);
+        if (c !== null) return c;
+      }
+    }
+    return this.sampleSpawnCell(minD, maxD, side, field, Infinity);
+  }
+
+  /**
+   * Storey of the perch the whole standing team is on, or 0 if they are not all up on one. A perch is
+   * an upper-storey floor of fewer than `perchMax` nodes you can walk around without taking stairs
+   * or a ladder (a deck, a small roof, a catwalk), measured from the lowest survivor; a whole upper
+   * floor or a big roof is not one.
+   */
+  private perchLevel(): number {
+    const L = this.L;
+    if (L.levels < 2) return 0;
+    let low: Player | null = null;
+    for (const p of this.standing()) if (!low || L.lvOf(p.node) < L.lvOf(low.node)) low = p;
+    if (!low || L.lvOf(low.node) === 0) return 0;
+    const lv = L.lvOf(low.node), max = DIRECTOR.holdout.perchMax;
+    if (this.perchMemo.doors !== this.doors) this.perchMemo = { doors: this.doors, size: new Map() };
+    let size = this.perchMemo.size.get(low.node);
+    if (size === undefined) {
+      // Flood the flat floor on this storey from where they stand, up to perchMax nodes.
+      const seen = new Set<number>([low.node]), queue = [low.node];
+      for (let i = 0; i < queue.length && seen.size < max; i++) {
+        for (let k = 0; k < 4; k++) {
+          const m = L.adj[queue[i] * 4 + k];
+          if (m < 0 || seen.has(m) || L.lvOf(m) !== lv || L.def.ramp[m] || L.blocked(m, this.doors)) continue;
+          seen.add(m); queue.push(m);
+        }
+      }
+      size = seen.size;
+      this.perchMemo.size.set(low.node, size);
+    }
+    return size < max ? lv : 0;
+  }
+  private perchMemo = { doors: -1, size: new Map<number, number>() };
+
+  /** trySpawnCell's sampler; `below`: only cells on a lower storey than this. */
+  private sampleSpawnCell(minD: number, maxD: number, side: Side, field: Int16Array, below: number): number | null {
     const players = this.standing();
     const L = this.L, open = this.cd.open;
     let lo = -1, hi = INF;
@@ -1664,7 +1745,7 @@ export class Room {
     for (let tries = 0; tries < 90; tries++) {
       const c = near.length && tries < 80 ? near[(Math.random() * near.length) | 0] : open[(Math.random() * open.length) | 0];
       const d = field[c];
-      if (d < minD || d > maxD) continue;
+      if (d < minD || d > maxD || L.lvOf(c) >= below) continue;
       if (obj && (obj[c] > hi || obj[c] < lo)) continue;
       const o = L.centre(c);
       if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) return c;
@@ -2435,6 +2516,9 @@ export class Room {
     const go = this.doors, L = this.L;
     const loner = this.lonerP();
     this.checkPins();
+    const ladders = this.onLadder;
+    ladders.clear();
+    if (L.levels > 1) for (const z of zs) { if (z.hp > 0 && !z.dormant) { const n = this.nodeOf(z); if (L.isLadder(n)) ladders.set(n, (ladders.get(n) ?? 0) + 1); } }
 
     for (const z of zs) {
       if (z.hp <= 0) continue;
@@ -2720,13 +2804,20 @@ export class Room {
         if (field[zn] >= INF) { z.st = ZSTATE.IDLE; continue; }
         // No better neighbour (it is in the target's node): settle on its own spot in this one.
         let to = this.flowStep(z, -1, field);
+        // A ladder takes `diff.ladder` climbers at a time: the rest wait at its foot (or its top).
+        const rung = this.stepNode;
+        if (to && rung !== zn && L.isLadder(rung)) {
+          const on = ladders.get(rung) ?? 0;
+          if (on >= this.diff.ladder) { z.st = ZSTATE.IDLE; face(); continue; }
+          ladders.set(rung, on + 1);
+        }
         if (!to) { to = L.centre(zn); to.x += z.offX; to.z += z.offZ; }
         dx = to.x - z.x; dz = to.z - z.z;
       }
       const len = Math.hypot(dx, dz);
       if (len > 0.01) {
         const sp = z.speed * (this.holdout >= 0 || d > 16 ? 1.12 : 1) * (z.type === ZT.BRUTE && d > BRUTE_CATCHUP.far ? BRUTE_CATCHUP.mult : 1)
-          * L.speedAt(z.x, z.y, z.z, LADDER_SPEED) * dt;
+          * L.speedAt(z.x, z.y, z.z, LADDER_SPEED * ZOMBIE_LADDER) * dt;
         L.moveSlide(z, (dx / len) * sp, (dz / len) * sp, T.radius, go);
         z.ry = Math.atan2(-dx, -dz);
       }
@@ -2856,6 +2947,7 @@ export class Room {
     p.st = PSTATE.ALIVE; p.hp = 50; p.x = mate.x; p.z = mate.z; p.y = mate.gy; p.downs = 0; p.revT = 0;
     this.place(p);
     this.events.push(['tp', p.id, r2(p.x), r2(p.z), mate.ry, r2(p.y)], ['msg', `${p.name} is back in the fight!`]);
+    p.freeAt = this.time + TP_GRACE;
   }
 
   private checkEnd(): void {

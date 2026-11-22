@@ -366,7 +366,7 @@ export function build() {
   b.carve(136, 42, 138, 51, F.CONCRETE);
   b.pick('ammo', 136, 45); b.pick('ammo', 138, 48);
   b.label('TRAM FOOTBRIDGE', 137.5, 47, 10, PINK, E);
-  b.lamp(137.5, 44); b.lamp(137.5, 50);
+  b.lamp(138.85, 45); b.lamp(138.85, 49);                     // on the east rail, clear of the stair and ladder landings
   b.level(0);
   // Pie Lane: a loop north of Cherry Street (more ways in for the horde).
   b.carve(128, 24, 131, 39, F.ASPHALT); b.carve(128, 24, 153, 27, F.ASPHALT); b.carve(150, 24, 153, 39, F.ASPHALT);

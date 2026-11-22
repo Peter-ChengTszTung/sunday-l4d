@@ -3,14 +3,16 @@
 // floor, wall posters and scribbles). Nothing here collides or blocks sight:
 // `solid`/`opaque` are never touched. Everything is written straight into the
 // per-chunk prop batches, so it costs no extra draw calls.
-import { TILE, CEIL_H } from '../../shared/constants';
+import { TILE, CEIL_H, STOREY } from '../../shared/constants';
 import { F, WALL, isIndoor, hash2 } from '../../shared/level';
 import { type Geo, box, sphere, cylinder } from './geo';
 import { type Batch, rgb, type V3 } from './gfx';
-import { type Ctx, CHUNK, newGeo, quad } from './worldkit';
+import { type Ctx, CHUNK, newGeo, quad, storeyOfY } from './worldkit';
 import type { GlowSpot } from './atmo';
 
 const T = TILE, HP = Math.PI / 2;
+/** The unsalted hash: `dressStorey` shadows `hash2` with a per-storey one, but arch.ts's facade hashes must be mirrored exactly. */
+const H2 = hash2;
 /** Overall amount of clutter. 1 = shipped look; lower it to thin every kit at once. */
 const DENSITY = 1;
 
@@ -54,7 +56,7 @@ const DARK = 0x2b2540, STEEL = 0x8f93a8, CREAM = 0xfff1e0, WOODC = 0xb5894f, PAP
 
 export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batch, glows: Geo[], glowSpots: GlowSpot[]): DressStats {
   const t0 = performance.now();
-  const { def, W, H, floorOf } = ctx;
+  const { def, W, H, L: LV } = ctx, { levels, WH, wall: SW, top: STOP } = ctx.S;
   const chap = Number(def.id.replace(/\D/g, '')) || 1;
   const stats: DressStats = { items: 0, wall: 0, scatter: 0, tris: 0, trisItems: 0, trisScatter: 0, trisWall: 0, ms: 0 };
   let triCount = 0; // running total, for the per-category split in `stats`
@@ -65,12 +67,12 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   const glow = newGeo();
   let ox = 0, oy = 0, oz = 0, ca = 1, sa = 0, seedA = 0, seedB = 0;
   /** Start an item at world metres (x, z), rotated `yaw` about Y (local +Z maps to (sin yaw, cos yaw)). */
-  const begin = (x: number, z: number, yaw: number, y = 0): void => {
+  const begin0 = (x: number, z: number, yaw: number, y = 0, seed = 0): void => {
     const cx = Math.floor(x / (CHUNK * T)), cz = Math.floor(z / (CHUNK * T)), k = cz * 1000 + cx;
     let c = chunkGeo.get(k);
     if (!c) { c = { s: newGeo(), h: newGeo(), x, z }; chunkGeo.set(k, c); }
     S = c.s; HULL = c.h; ox = x; oy = y; oz = z; ca = Math.cos(yaw); sa = Math.sin(yaw);
-    seedA = Math.round(x * 37) + 11; seedB = Math.round(z * 53) + 5;
+    seedA = Math.round(x * 37) + 11 + seed; seedB = Math.round(z * 53) + 5;
   };
   /** The item's own random numbers. */
   const R = (k: number): number => hash2(seedA + k * 131, seedB + k * 71);
@@ -219,7 +221,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     B(c, 0, 0.98, 0, 0.92, 1.92, 0.7); B(DARK, 0, 0.07, 0, 0.94, 0.14, 0.72, 0);
     GL(0xd8f6ff, -0.1, 1.25, 0.352, 0.56, 1.0, 0.01); B(DARK, 0.33, 1.2, 0.355, 0.1, 0.5, 0.01, 0); B(DARK, -0.1, 0.36, 0.355, 0.5, 0.16, 0.01, 0);
     for (let j = 0; j < 3; j++) B(pick(R(j), PASTEL), -0.1, 0.95 + j * 0.3, 0.36, 0.48, 0.14, 0.01, 0);
-    glowSpots.push({ x: ox + sa * 0.5, y: 1.3, z: oz + ca * 0.5, size: 1.1, color: 0xbfeaff, k: 0.3 });
+    glowSpots.push({ x: ox + sa * 0.5, y: oy + 1.3, z: oz + ca * 0.5, size: 1.1, color: 0xbfeaff, k: 0.3 });
   });
   const aboard = it(0.5, 0.95, (r) => {
     const c = r < 0.5 ? 0x3a3654 : 0xffd43b;
@@ -361,7 +363,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     B(c, 0, 0.9, -0.04, 0.72, 1.8, 0.66); B(DARK, 0, 0.92, 0.2, 0.74, 0.12, 0.36); B(DARK, 0, 1.3, 0.25, 0.6, 0.5, 0.05, 0, -0.25);
     GL(pick(R(1), [0x8ce99a, 0xffd43b, 0x74c0fc, 0xff8fa3]), 0, 1.3, 0.285, 0.5, 0.4, 0.01, -0.25); GL(CREAM, 0, 1.68, 0.3, 0.6, 0.16, 0.01);
     SP(0xe8413c, -0.16, 1.03, 0.24, 0.045, 0.045, 0.045, 0); B(0xffd43b, 0.14, 1.0, 0.26, 0.07, 0.03, 0.07, 0); B(CREAM, 0, 0.5, 0.292, 0.3, 0.4, 0.01, 0);
-    glowSpots.push({ x: ox + sa * 0.5, y: 1.35, z: oz + ca * 0.5, size: 1.0, color: 0xc9b8ff, k: 0.3 });
+    glowSpots.push({ x: ox + sa * 0.5, y: oy + 1.35, z: oz + ca * 0.5, size: 1.0, color: 0xc9b8ff, k: 0.3 });
   });
   const stanchion = it(0.3, 0.98, () => {
     for (const s of [-1, 1]) { C(0xc9a04a, s * 0.7, 0.03, 0, 0.14, 0.05, 0); C(0xc9a04a, s * 0.7, 0.48, 0, 0.03, 0.9); }
@@ -547,14 +549,46 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
       const x = -0.1 + i * 0.1, z = (i % 2) * 0.08 - 0.03, h = 0.1 + R(i) * 0.14;
       C(CREAM, x, h / 2 + 0.02, z, 0.035, h, i === 1 ? 2 : 0); GL(0xffd98a, x, h + 0.06, z, 0.03, 0.07, 0.03);
     }
-    glowSpots.push({ x: ox, y: 0.32, z: oz, size: 0.7, color: 0xffc46b, k: 0.55 }); void r;
+    glowSpots.push({ x: ox, y: oy + 0.32, z: oz, size: 0.7, color: 0xffc46b, k: 0.55 }); void r;
   });
   const jugs = it(0.36, 0.5, (r) => { for (let i = 0; i < (r < 0.4 ? 1 : 2); i++) { C(0x9fd8ff, -0.17 + i * 0.34, 0.2, 0, 0.14, 0.4); C(0x3f7cc4, -0.17 + i * 0.34, 0.43, 0, 0.05, 0.06, 0); } });
   const cans = it(0.34, 0.36, (r) => {
     for (let i = 0; i < 3; i++) C(pick(R(i), [0xe8413c, 0xffa94d, 0x8ce99a]), -0.14 + i * 0.14, 0.08, 0, 0.065, 0.16, i === 1 ? 2 : 0);
     for (let i = 0; i < 2; i++) C(pick(R(i + 4), [0xffd43b, 0xe8413c]), -0.07 + i * 0.14, 0.24, 0, 0.065, 0.16, i ? 2 : 0); C(PAPER, 0.3, 0.05, 0.1, 0.05, 0.1, 0); void r;
   });
-  const lantern = it(0.3, 0.42, () => { C(0x4fa36a, 0, 0.03, 0, 0.11, 0.06, 0); GL(0xffe9b0, 0, 0.17, 0, 0.13, 0.2, 0.13); C(0x4fa36a, 0, 0.3, 0, 0.12, 0.05); B(DARK, 0, 0.4, 0, 0.16, 0.02, 0.02, 0); glowSpots.push({ x: ox, y: 0.3, z: oz, size: 0.9, color: 0xffd9a0, k: 0.55 }); });
+  const lantern = it(0.3, 0.42, () => { C(0x4fa36a, 0, 0.03, 0, 0.11, 0.06, 0); GL(0xffe9b0, 0, 0.17, 0, 0.13, 0.2, 0.13); C(0x4fa36a, 0, 0.3, 0, 0.12, 0.05); B(DARK, 0, 0.4, 0, 0.16, 0.02, 0.02, 0); glowSpots.push({ x: ox, y: oy + 0.3, z: oz, size: 0.9, color: 0xffd9a0, k: 0.55 }); });
+
+  // ---- rooftops (upper storeys only)
+  const acUnit = it(0.8, 0.95, (r) => {
+    const c = r < 0.5 ? 0xc9c6d6 : 0xb4b8cc;
+    for (const s of [-1, 1]) B(DARK, s * 0.36, 0.06, 0, 0.1, 0.12, 0.72, 0);
+    B(c, 0, 0.5, 0, 1.0, 0.76, 0.78); C(DARK, 0, 0.885, 0, 0.3, 0.02, 0); C(0x54506e, 0, 0.9, 0, 0.08, 0.05, 0);
+    for (let i = 0; i < 4; i++) B(DARK, -0.08, 0.3 + i * 0.13, 0.392, 0.72, 0.03, 0.01, 0);
+    B(r < 0.5 ? 0xffd43b : 0x39c5bb, 0.38, 0.7, 0.393, 0.12, 0.08, 0.01, 0);
+  });
+  const acTwin = it(0.9, 1.05, (r) => {
+    const c = r < 0.5 ? 0xb4b8cc : 0xc9c6d6;
+    B(0x54506e, 0, 0.07, 0, 1.7, 0.14, 0.8, 0); B(c, 0, 0.58, 0, 1.8, 0.88, 0.86);
+    for (const s of [-1, 1]) { C(DARK, s * 0.45, 1.025, 0, 0.32, 0.02, 0); C(0x54506e, s * 0.45, 1.04, 0, 0.09, 0.05, 0); }
+    for (let i = 0; i < 5; i++) B(DARK, 0, 0.3 + i * 0.13, 0.432, 1.6, 0.03, 0.01, 0);
+    B(0x8f93a8, 0.98, 0.3, 0, 0.16, 0.09, 0.09, 0); B(0x8f93a8, 1.06, 0.15, 0, 0.09, 0.3, 0.09, 0);
+  });
+  const roofVent = it(0.5, 0.75, (r) => {
+    B(0x54506e, 0, 0.03, 0, 0.5, 0.06, 0.5, 0); C(STEEL, 0, 0.28, 0, 0.14, 0.5);
+    if (r < 0.6) { C(DARK, 0, 0.52, 0, 0.21, 0.04, 0); D(r < 0.3 ? STEEL : 0xc9c6d6, 0, 0.54, 0, 0.27, 0.17, 0.27); }
+    else { B(0xc9c6d6, 0, 0.62, 0, 0.5, 0.24, 0.5); for (let i = 0; i < 2; i++) B(DARK, 0, 0.57 + i * 0.1, 0.252, 0.4, 0.03, 0.01, 0); }
+  });
+  const gooseneck = it(0.4, 0.95, (r) => {
+    const c = r < 0.5 ? 0x8f93a8 : 0xb46a4a;
+    B(0x54506e, 0, 0.03, 0, 0.36, 0.06, 0.36, 0); C(c, 0, 0.42, 0, 0.09, 0.84); SP(c, 0, 0.84, 0, 0.1, 0.1, 0.1, 0);
+    C(c, 0, 0.84, 0.15, 0.09, 0.3, 2, HP); C(DARK, 0, 0.84, 0.305, 0.07, 0.01, 0, HP);
+  });
+  const roofBox = it(0.45, 0.9, (r) => {
+    for (const s of [-1, 1]) B(0x54506e, s * 0.26, 0.15, 0, 0.05, 0.3, 0.05, 0);
+    B(0x6f7f9a, 0, 0.58, 0, 0.7, 0.6, 0.36); B(0x8f93a8, 0, 0.9, 0, 0.76, 0.05, 0.42, 0);
+    B(0xffd43b, -0.16, 0.66, 0.183, 0.16, 0.16, 0.01, 0); B(DARK, 0.2, 0.58, 0.183, 0.03, 0.2, 0.01, 0);
+    if (r < 0.6) B(0x54506e, 0.72, 0.04, 0, 0.8, 0.05, 0.06, 0); // a conduit run across the felt
+  });
 
   // -------------------------------------------------------------------- kits
   const K_STREET = [bin, bin, bags, bags, hydrant, bollard, newsbox, newsbox, cone, meter, sign, bike, planter, planter, boxes, boxes, sawhorse, cardboard, scooter, postbox, vending, aboard, bottleCrate];
@@ -576,6 +610,8 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   const K_PARK = [bushlet, bushlet, planter, bin, lowBench, rocks, fern, birdBath, bike];
   const K_SAFE = [sleepingBag, sleepingBag, supplyCrate, supplyCrate, radioCrate, candles, candles, jugs, cans, backpack, lantern, bookStack, boxes];
   const K_ROAD = [cone, cone, sawhorse, cardboard, boxes, bags];
+  const K_ROOF = [acUnit, acUnit, acTwin, roofVent, roofVent, gooseneck, roofBox, roofBox, boxes, bags, cone, hoseCoil, toolbox, pipeStack, jerry, bottleCrate];
+  const K_DECK = [toolbox, jerry, cone, hoseCoil, gooseneck, roofBox, bags];
   const K_HINT: Record<number, Item[]> = {
     [HINT.ARCADE]: [arcade, arcade, arcade, arcade, vending, trashcan, stanchion],
     [HINT.TOYS]: [plush, plush, plush, shopBags, rack, boxes, balloons, ball],
@@ -587,609 +623,666 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     [HINT.LAUNDRY]: [laundryBasket, laundryBasket, laundryCart, boxes, chair, mopBucket],
   };
 
-  // ------------------------------------------------------------------ masks
-  const n = W * H;
-  const NO_FLOOR = 1, NO_WALL = 2, NO_PAINT = 4;
-  const mask = new Uint8Array(n), hint = new Uint8Array(n);
-  const stamp = (cx: number, cz: number, rad: number, bits: number) => {
-    for (let z = Math.max(0, Math.floor(cz - rad)); z <= Math.min(H - 1, Math.floor(cz + rad)); z++)
-      for (let x = Math.max(0, Math.floor(cx - rad)); x <= Math.min(W - 1, Math.floor(cx + rad)); x++)
-        if (Math.hypot(x + 0.5 - cx, z + 0.5 - cz) <= rad) mask[z * W + x] |= bits;
-  };
-  const rectMask = (x0: number, z0: number, x1: number, z1: number, bits: number) => {
-    for (let z = Math.max(0, Math.floor(z0)); z <= Math.min(H - 1, Math.floor(z1)); z++) for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(W - 1, Math.floor(x1)); x++) mask[z * W + x] |= bits;
-  };
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    const i = z * W + x, f = def.floor[i];
-    if (def.doorCell[i] >= 0) rectMask(x - 1, z - 1, x + 1, z + 1, NO_FLOOR | NO_WALL);
-    if (f === F.NONE || f === F.WATER) continue;
-    // Thresholds: arch.ts hangs a door frame wherever an indoor floor meets a different floor.
-    for (const [ax, az] of [[1, 0], [0, 1]]) {
-      const g = floorOf(x + ax, z + az);
-      if (g === F.NONE || g === F.WATER || g === f || !(isIndoor(f) || isIndoor(g))) continue;
-      rectMask(x - 1 + ax * 0, z - 1, x + 1 + ax, z + 1 + az, NO_FLOOR); mask[i] |= NO_WALL; mask[(z + az) * W + x + ax] |= NO_WALL;
+  /** Dresses one storey. Storey 0 is the whole of a flat map; upper storeys add rooftop plant and railing-side bits. */
+  const dressStorey = (lv: number): void => {
+    // ------------------------------------------------------------------ masks
+    const n = WH, o = lv * WH, yb = lv * STOREY, upper = lv > 0;
+  // This storey's slice of the per-node arrays, so everything below indexes by cell (z * W + x) as on a flat map.
+  const floor = def.floor.subarray(o, o + n), solid = def.solid.subarray(o, o + n), doorCell = def.doorCell.subarray(o, o + n), propCell = def.propCell.subarray(o, o + n), wallKind = def.wallKind.subarray(o, o + n);
+  const floorOf = (x: number, z: number) => ctx.floorOf(x, z, lv);
+  // Upper storeys salt every placement hash, so a floor is not a copy of the one below it. (Storey 0 keeps its old numbers.)
+  const hash2 = upper ? (a: number, b: number) => H2(a + lv * 89, b + lv * 53) : H2;
+  const begin = (x: number, z: number, yaw: number) => begin0(x, z, yaw, yb, lv * 7919);
+  /** Cell c is wall on this storey. (Upstairs a NONE cell may be open air instead.) */
+  const isWallC = (c: number): boolean => (upper ? SW[o + c] === 1 : floor[c] === F.NONE);
+  /** Height of the wall column at cell c above this storey's floor. */
+  const wallTop = (c: number): number => (upper ? STOP[o + c] - yb : def.wallH[c]);
+    const NO_FLOOR = 1, NO_WALL = 2, NO_PAINT = 4, NO_PLANT = 8;
+    const mask = new Uint8Array(n), hint = new Uint8Array(n);
+    const stamp = (cx: number, cz: number, rad: number, bits: number) => {
+      for (let z = Math.max(0, Math.floor(cz - rad)); z <= Math.min(H - 1, Math.floor(cz + rad)); z++)
+        for (let x = Math.max(0, Math.floor(cx - rad)); x <= Math.min(W - 1, Math.floor(cx + rad)); x++)
+          if (Math.hypot(x + 0.5 - cx, z + 0.5 - cz) <= rad) mask[z * W + x] |= bits;
+    };
+    const rectMask = (x0: number, z0: number, x1: number, z1: number, bits: number) => {
+      for (let z = Math.max(0, Math.floor(z0)); z <= Math.min(H - 1, Math.floor(z1)); z++) for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(W - 1, Math.floor(x1)); x++) mask[z * W + x] |= bits;
+    };
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x, f = floor[i];
+      if (doorCell[i] >= 0) rectMask(x - 1, z - 1, x + 1, z + 1, NO_FLOOR | NO_WALL);
+      if (f === F.NONE || f === F.WATER) continue;
+      // Thresholds: arch.ts hangs a door frame wherever an indoor floor meets a different floor.
+      for (const [ax, az] of [[1, 0], [0, 1]]) {
+        const g = floorOf(x + ax, z + az);
+        if (g === F.NONE || g === F.WATER || g === f || !(isIndoor(f) || isIndoor(g))) continue;
+        rectMask(x - 1 + ax * 0, z - 1, x + 1 + ax, z + 1 + az, NO_FLOOR); mask[i] |= NO_WALL; mask[(z + az) * W + x + ax] |= NO_WALL;
+      }
     }
-  }
-  // Storeys: this pass dresses the ground storey only, so only what stands on the ground keeps clutter away.
-  const onGround = (o: { y?: number }): boolean => (o.y ?? 0) < 1;
-  if (ctx.S.levels > 1) {
-    const { WH, wall } = ctx.S;
-    // Nothing on stairs or ladders, or in the way at their foot...
-    for (const r of def.ramps) if (r.lv === 0) rectMask(r.x0 - 1, r.z0 - 1, r.x1 + 1, r.z1 + 1, NO_FLOOR | NO_WALL);
-    // ...and nothing under a slab outdoors (a skybridge, a balcony), where trees, poles and wall signs would poke through it.
-    for (let i = 0; i < n; i++) if (def.floor[i] !== F.NONE && !isIndoor(def.floor[i]) && (def.floor[i + WH] !== F.NONE || wall[i + WH])) mask[i] |= NO_FLOOR | NO_WALL;
-  }
-  for (const p of def.pickups) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, p.kind === 'obj' ? NO_FLOOR | NO_WALL : NO_FLOOR);
-  for (const p of def.notes) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, NO_FLOOR);
-  for (const s of def.steps) if (onGround(s.at)) stamp(s.at.x / T, s.at.z / T, 2.0, NO_FLOOR);
-  for (const s of def.spawns) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
-  for (const k in def.checkpointSpawns) for (const s of def.checkpointSpawns[k]) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
-  for (const a of def.arrows) if (onGround(a)) { stamp(a.x, a.z, 1.1, NO_FLOOR); stamp(a.x, a.z, 0.75, NO_PAINT); }
-  for (const l of def.labels) {
-    if (!onGround(l)) continue;
-    const across = Math.abs(Math.sin(l.rot)) > 0.7, hw = (l.text.length * l.size * 0.62) / 80 + 0.2, hh = (l.size * 1.1) / 80 + 0.1;
-    rectMask(l.x - (across ? hh : hw), l.z - (across ? hw : hh), l.x + (across ? hh : hw), l.z + (across ? hw : hh), NO_FLOOR | NO_PAINT);
-    for (const [re, id, rad] of HINTS) if (re.test(l.text)) {
-      for (let z = Math.max(0, Math.floor(l.z - rad)); z <= Math.min(H - 1, Math.floor(l.z + rad)); z++)
-        for (let x = Math.max(0, Math.floor(l.x - rad)); x <= Math.min(W - 1, Math.floor(l.x + rad)); x++) hint[z * W + x] = id;
+    // Only what stands on this storey keeps clutter away.
+    const onGround = (q: { y?: number }): boolean => (upper ? storeyOfY(q.y, levels) === lv : (q.y ?? 0) < 1);
+    /** Outdoor paving laid on a building (a roof, a deck, a catwalk), not on the ground or a rock shelf. */
+    const roofCell = (i: number, f: number): boolean => {
+      if (!upper || !(f === F.CONCRETE || f === F.ASPHALT || f === F.SIDEWALK)) return false;
+      const b = o - WH + i;
+      return !(def.floor[b] === F.NONE && !def.air[b] && (def.wallKind[b] === WALL.ROCK || def.wallKind[b] === WALL.HEDGE));
+    };
+    if (levels > 1) {
+      // Nothing on stairs or ladders or in the way at their foot, and nothing around the hole and the landing of one that arrives from below...
+      for (const r of def.ramps) { if (r.lv === lv) rectMask(r.x0 - 1, r.z0 - 1, r.x1 + 1, r.z1 + 1, NO_FLOOR | NO_WALL); else if (upper && r.lv === lv - 1) rectMask(r.x0 - 2, r.z0 - 2, r.x1 + 2, r.z1 + 2, NO_FLOOR | NO_WALL); }
+      // ...and nothing under a slab outdoors (a skybridge, a balcony), where trees, poles and wall signs would poke through it.
+      if (lv + 1 < levels) for (let i = 0; i < n; i++) if (floor[i] !== F.NONE && !isIndoor(floor[i]) && (def.floor[o + WH + i] !== F.NONE || SW[o + WH + i])) mask[i] |= NO_FLOOR | NO_WALL;
     }
-  }
-  const last = def.steps[def.steps.length - 1];
-  if (last?.area && !last.area.lv) rectMask(last.area.x0 - 1, last.area.z0 - 1, last.area.x1 + 1, last.area.z1 + 1, NO_FLOOR);
+    for (const p of def.pickups) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, p.kind === 'obj' ? NO_FLOOR | NO_WALL : NO_FLOOR);
+    for (const p of def.notes) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, NO_FLOOR);
+    for (const s of def.steps) if (onGround(s.at)) stamp(s.at.x / T, s.at.z / T, 2.0, NO_FLOOR);
+    for (const s of def.spawns) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
+    for (const k in def.checkpointSpawns) for (const s of def.checkpointSpawns[k]) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
+    for (const a of def.arrows) if (onGround(a)) { stamp(a.x, a.z, 1.1, NO_FLOOR); stamp(a.x, a.z, 0.75, NO_PAINT); }
+    for (const l of def.labels) {
+      if (!onGround(l)) continue;
+      const across = Math.abs(Math.sin(l.rot)) > 0.7, hw = (l.text.length * l.size * 0.62) / 80 + 0.2, hh = (l.size * 1.1) / 80 + 0.1;
+      rectMask(l.x - (across ? hh : hw), l.z - (across ? hw : hh), l.x + (across ? hh : hw), l.z + (across ? hw : hh), NO_FLOOR | NO_PAINT);
+      for (const [re, id, rad] of HINTS) if (re.test(l.text)) {
+        for (let z = Math.max(0, Math.floor(l.z - rad)); z <= Math.min(H - 1, Math.floor(l.z + rad)); z++)
+          for (let x = Math.max(0, Math.floor(l.x - rad)); x <= Math.min(W - 1, Math.floor(l.x + rad)); x++) hint[z * W + x] = id;
+      }
+    }
+    const last = def.steps[def.steps.length - 1];
+    // Upstairs, every place the quest sends the team to (a helipad, a holdout deck) stays clear of rooftop plant.
+    if (upper) for (const st of def.steps) if (st.area && (st.area.lv ?? 0) === lv) rectMask(st.area.x0, st.area.z0, st.area.x1, st.area.z1, NO_PLANT);
+    if (last?.area && (last.area.lv ?? 0) === lv) rectMask(last.area.x0 - 1, last.area.z0 - 1, last.area.x1 + 1, last.area.z1 + 1, NO_FLOOR);
 
-  // Free run lengths through each cell (walls and props both narrow a passage).
-  const runX = new Uint8Array(n), runZ = new Uint8Array(n);
-  const free = (i: number) => def.solid[i] === 0;
-  for (let z = 0; z < H; z++) for (let x = 0, s = 0; x <= W; x++) {
-    if (x < W && free(z * W + x)) continue;
-    for (let k = s; k < x; k++) runX[z * W + k] = Math.min(255, x - s);
-    s = x + 1;
-  }
-  for (let x = 0; x < W; x++) for (let z = 0, s = 0; z <= H; z++) {
-    if (z < H && free(z * W + x)) continue;
-    for (let k = s; k < z; k++) runZ[k * W + x] = Math.min(255, z - s);
-    s = z + 1;
-  }
-  const lampNear = (x: number, z: number, r: number): boolean => { for (const l of def.lamps) if (onGround(l) && Math.abs(l.x - x) < r && Math.abs(l.z - z) < r) return true; return false; };
-
-  // ---------------------------------------------- hospital corridors (ch2)
-  // Long 2-5 tile wide passages on the hospital's tiled floors get their own treatment: a steady
-  // rhythm of parked equipment down both walls, handrails, signs and floor stripes, with the
-  // middle lane left clear. `corr` holds which way each such cell runs.
-  const CX = 1, CZ = 2;
-  const corr = new Uint8Array(n), hosp = new Uint8Array(n);
-  if (chap === 2) {
-    // The hospital is the big connected tiled areas (not the mall's tiled shop floors or the roof huts).
-    const seen = new Uint8Array(n);
-    for (let s = 0; s < n; s++) {
-      if (seen[s] || def.floor[s] !== F.TILES) continue;
-      const comp = [s]; seen[s] = 1;
-      for (let k = 0; k < comp.length; k++) {
-        const c = comp[k], cx = c % W;
-        for (const d of [1, -1, W, -W]) {
-          const j = c + d;
-          if (j < 0 || j >= n || seen[j] || def.floor[j] !== F.TILES || (d === 1 && cx === W - 1) || (d === -1 && cx === 0)) continue;
-          seen[j] = 1; comp.push(j);
-        }
-      }
-      if (comp.length >= 600) for (const c of comp) hosp[c] = 1;
+    // Free run lengths through each cell (walls and props both narrow a passage).
+    const runX = new Uint8Array(n), runZ = new Uint8Array(n);
+    const free = (i: number) => solid[i] === 0;
+    for (let z = 0; z < H; z++) for (let x = 0, s = 0; x <= W; x++) {
+      if (x < W && free(z * W + x)) continue;
+      for (let k = s; k < x; k++) runX[z * W + k] = Math.min(255, x - s);
+      s = x + 1;
     }
-    // One pass per axis. `at(a, b)` is the cell `a` tiles along the corridor on line `b`.
-    for (const bit of [CX, CZ]) {
-      const LA = bit === CX ? W : H, LB = bit === CX ? H : W;
-      const at = (a: number, b: number) => (bit === CX ? b * W + a : a * W + b);
-      const along = new Uint16Array(n), across = new Uint16Array(n);
-      for (let b = 0; b < LB; b++) for (let a = 0, s = 0; a <= LA; a++) {
-        if (a < LA && hosp[at(a, b)]) continue;
-        for (let k = s; k < a; k++) along[at(k, b)] = a - s;
-        s = a + 1;
+    for (let x = 0; x < W; x++) for (let z = 0, s = 0; z <= H; z++) {
+      if (z < H && free(z * W + x)) continue;
+      for (let k = s; k < z; k++) runZ[k * W + x] = Math.min(255, z - s);
+      s = z + 1;
+    }
+    const lampNear = (x: number, z: number, r: number): boolean => { for (const l of def.lamps) if (onGround(l) && Math.abs(l.x - x) < r && Math.abs(l.z - z) < r) return true; return false; };
+
+    // ---------------------------------------------- hospital corridors (ch2)
+    // Long 2-5 tile wide passages on the hospital's tiled floors get their own treatment: a steady
+    // rhythm of parked equipment down both walls, handrails, signs and floor stripes, with the
+    // middle lane left clear. `corr` holds which way each such cell runs.
+    const CX = 1, CZ = 2;
+    const corr = new Uint8Array(n), hosp = new Uint8Array(n);
+    if (chap === 2) {
+      // The hospital is the big connected tiled areas (not the mall's tiled shop floors or the roof huts).
+      const seen = new Uint8Array(n);
+      for (let s = 0; s < n; s++) {
+        if (seen[s] || floor[s] !== F.TILES) continue;
+        const comp = [s]; seen[s] = 1;
+        for (let k = 0; k < comp.length; k++) {
+          const c = comp[k], cx = c % W;
+          for (const d of [1, -1, W, -W]) {
+            const j = c + d;
+            if (j < 0 || j >= n || seen[j] || floor[j] !== F.TILES || (d === 1 && cx === W - 1) || (d === -1 && cx === 0)) continue;
+            seen[j] = 1; comp.push(j);
+          }
+        }
+        if (comp.length >= 600) for (const c of comp) hosp[c] = 1;
       }
-      for (let a = 0; a < LA; a++) for (let b = 0, s = 0; b <= LB; b++) {
-        if (b < LB && hosp[at(a, b)]) continue;
-        for (let k = s; k < b; k++) across[at(a, k)] = b - s;
-        s = b + 1;
-      }
-      const is = new Uint8Array(n);
-      for (let i = 0; i < n; i++) if (hosp[i] && across[i] >= 2 && across[i] <= 5 && along[i] >= Math.max(8, across[i] * 3)) is[i] = 1;
-      for (let b = 0; b < LB; b++) {
-        // A doorway stub can look like a corridor seen end-on: forget those first.
-        for (let a = 0, s = -1; a <= LA; a++) {
-          const on = a < LA && is[at(a, b)] > 0;
-          if (on && s < 0) s = a;
-          if (!on && s >= 0) { if (a - s < 3) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
-        }
-        // Carry the corridor across side openings and junctions...
-        for (let a = 0, prev = -1; a <= LA; a++) {
-          if (a === LA || !hosp[at(a, b)]) { prev = -1; continue; }
-          if (is[at(a, b)] !== 1) continue;
-          if (prev >= 0 && a - prev - 1 <= 20) for (let m = prev + 1; m < a; m++) is[at(m, b)] = 2;
-          prev = a;
-        }
-        // ...drop short stubs (a lift shaft, a doorway vestibule)...
-        for (let a = 0, s = -1; a <= LA; a++) {
-          const on = a < LA && is[at(a, b)] > 0;
-          if (on && s < 0) s = a;
-          if (!on && s >= 0) { if (a - s < 8) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
-        }
-        // ...and run on to the end wall.
-        for (let a = 0, s = 0; a <= LA; a++) {
+      // One pass per axis. `at(a, b)` is the cell `a` tiles along the corridor on line `b`.
+      for (const bit of [CX, CZ]) {
+        const LA = bit === CX ? W : H, LB = bit === CX ? H : W;
+        const at = (a: number, b: number) => (bit === CX ? b * W + a : a * W + b);
+        const along = new Uint16Array(n), across = new Uint16Array(n);
+        for (let b = 0; b < LB; b++) for (let a = 0, s = 0; a <= LA; a++) {
           if (a < LA && hosp[at(a, b)]) continue;
-          let first = -1, last = -1;
-          for (let k = s; k < a; k++) if (is[at(k, b)]) { if (first < 0) first = k; last = k; }
-          if (first >= 0 && first - s <= 5) for (let m = s; m < first; m++) is[at(m, b)] = 2;
-          if (last >= 0 && a - 1 - last <= 5) for (let m = last + 1; m < a; m++) is[at(m, b)] = 2;
+          for (let k = s; k < a; k++) along[at(k, b)] = a - s;
           s = a + 1;
         }
+        for (let a = 0; a < LA; a++) for (let b = 0, s = 0; b <= LB; b++) {
+          if (b < LB && hosp[at(a, b)]) continue;
+          for (let k = s; k < b; k++) across[at(a, k)] = b - s;
+          s = b + 1;
+        }
+        const is = new Uint8Array(n);
+        for (let i = 0; i < n; i++) if (hosp[i] && across[i] >= 2 && across[i] <= 5 && along[i] >= Math.max(8, across[i] * 3)) is[i] = 1;
+        for (let b = 0; b < LB; b++) {
+          // A doorway stub can look like a corridor seen end-on: forget those first.
+          for (let a = 0, s = -1; a <= LA; a++) {
+            const on = a < LA && is[at(a, b)] > 0;
+            if (on && s < 0) s = a;
+            if (!on && s >= 0) { if (a - s < 3) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
+          }
+          // Carry the corridor across side openings and junctions...
+          for (let a = 0, prev = -1; a <= LA; a++) {
+            if (a === LA || !hosp[at(a, b)]) { prev = -1; continue; }
+            if (is[at(a, b)] !== 1) continue;
+            if (prev >= 0 && a - prev - 1 <= 20) for (let m = prev + 1; m < a; m++) is[at(m, b)] = 2;
+            prev = a;
+          }
+          // ...drop short stubs (a lift shaft, a doorway vestibule)...
+          for (let a = 0, s = -1; a <= LA; a++) {
+            const on = a < LA && is[at(a, b)] > 0;
+            if (on && s < 0) s = a;
+            if (!on && s >= 0) { if (a - s < 8) for (let k = s; k < a; k++) is[at(k, b)] = 0; s = -1; }
+          }
+          // ...and run on to the end wall.
+          for (let a = 0, s = 0; a <= LA; a++) {
+            if (a < LA && hosp[at(a, b)]) continue;
+            let first = -1, last = -1;
+            for (let k = s; k < a; k++) if (is[at(k, b)]) { if (first < 0) first = k; last = k; }
+            if (first >= 0 && first - s <= 5) for (let m = s; m < first; m++) is[at(m, b)] = 2;
+            if (last >= 0 && a - 1 - last <= 5) for (let m = last + 1; m < a; m++) is[at(m, b)] = 2;
+            s = a + 1;
+          }
+        }
+        for (let i = 0; i < n; i++) if (is[i]) corr[i] |= bit;
       }
-      for (let i = 0; i < n; i++) if (is[i]) corr[i] |= bit;
     }
-  }
-  const wallAt = (x: number, z: number): boolean => x >= 0 && z >= 0 && x < W && z < H && def.floor[z * W + x] === F.NONE;
-  const CORR_MINOR = 0.8; // how often a slim item is tucked in after a big one
-  /** The corridor rhythm: a big item every fourth tile on each wall (the two walls half a step apart), slim ones between. */
-  function corridorItem(x: number, z: number, i: number, narrow: number): boolean {
-    if (narrow < 2) return false;
-    for (let di = 0; di < 4; di++) {
-      const [dx, dz] = DIRS[di];
-      if (!(corr[i] & (dz ? CX : CZ)) || !wallAt(x - dx, z - dz)) continue;
-      const a = dz ? x : z, line = dz ? z - dz : x - dx, side = di & 1, k = (a + side * 2) & 3;
-      const major = k === 0;
-      if (!major && !(k === 1 && hash2(a * 7 + side, line * 13 + 5) < CORR_MINOR * DENSITY)) continue;
-      const slim = narrow === 2 ? 0.5 : narrow === 3 ? 0.8 : 9;
-      let list = (major ? K_CORR_BIG : K_CORR_SMALL).filter((it) => it.d <= slim);
-      if (!list.length) list = K_CORR_SMALL.filter((it) => it.d <= slim);
-      if (!list.length) continue;
-      const item = list[((a >> 2) * 3 + side * 5 + line * 7 + (major ? 0 : 2)) % list.length];
-      const off = 1 - item.d / 2 - 0.09, j = hash2(x * 3 + 9, z * 5 + 1) - 0.5, sh = major ? j * 0.12 : -0.4 + j * 0.2;
-      const px = (x + 0.5) * T - dx * off + (dz ? sh : 0), pz = (z + 0.5) * T - dz * off + (dx ? sh : 0);
-      if (item.h > 1.2 && lampNear(px, pz, 0.8)) continue;
-      begin(px, pz, Math.atan2(dx, dz));
-      item.f(hash2(x * 41 + 1, z * 43 + 3));
-      faceItem.set(i * 4 + di, item.h); stats.items++;
-      return true;
-    }
-    return false;
-  }
-  /** Things dropped in a hurry: charts, a clipboard, a stethoscope. All flat on the floor. */
-  function corridorLitter(x: number, z: number): void {
-    const r = hash2(x * 19 + 31, z * 13 + 47), p = 0.13 * DENSITY;
-    if (r > p) return;
-    const q = hash2(x * 11 + 3, z * 19 + 7), k = r / p;
-    begin((x + 0.2 + hash2(x * 5 + 1, z * 3 + 2) * 0.6) * T, (z + 0.2 + hash2(x * 3 + 4, z * 7 + 6) * 0.6) * T, q * 6.283); stats.scatter++;
-    const clipboard = (cx: number, cz: number, rot: number) => {
-      B(0x8a5a3c, cx, 0.014, cz, 0.25, 0.028, 0.34, 1, 0, rot); sheet(PAPER, cx, cz + 0.015, 0.2, 0.26, rot, false, 0.032);
-      B(STEEL, cx - Math.sin(rot) * 0.14, 0.04, cz - Math.cos(rot) * 0.14, 0.11, 0.025, 0.04, 0, 0, rot);
-    };
-    if (k < 0.46) {
-      // Patient charts: sheets with a coloured header strip.
-      for (let b = 0; b < 2 + Math.floor(q * 3); b++) {
-        const sx = (R(b) - 0.5) * 0.9, sz = (R(b + 4) - 0.5) * 0.9, rot = R(b + 8) * 6;
-        sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, sx, sz, 0.21, 0.3, rot);
-        if (b % 2 === 0) sheet(pick(R(b + 12), [0x74c0fc, 0xff8fa3, 0x8ce99a, 0xffd43b]), sx - Math.sin(rot) * 0.11, sz - Math.cos(rot) * 0.11, 0.19, 0.05, rot, false, 0.034);
+    const wallAt = (x: number, z: number): boolean => x >= 0 && z >= 0 && x < W && z < H && isWallC(z * W + x);
+    const CORR_MINOR = 0.8; // how often a slim item is tucked in after a big one
+    /** The corridor rhythm: a big item every fourth tile on each wall (the two walls half a step apart), slim ones between. */
+    function corridorItem(x: number, z: number, i: number, narrow: number): boolean {
+      if (narrow < 2) return false;
+      for (let di = 0; di < 4; di++) {
+        const [dx, dz] = DIRS[di];
+        if (!(corr[i] & (dz ? CX : CZ)) || !wallAt(x - dx, z - dz)) continue;
+        const a = dz ? x : z, line = dz ? z - dz : x - dx, side = di & 1, k = (a + side * 2) & 3;
+        const major = k === 0;
+        if (!major && !(k === 1 && hash2(a * 7 + side, line * 13 + 5) < CORR_MINOR * DENSITY)) continue;
+        const slim = narrow === 2 ? 0.5 : narrow === 3 ? 0.8 : 9;
+        let list = (major ? K_CORR_BIG : K_CORR_SMALL).filter((it) => it.d <= slim);
+        if (!list.length) list = K_CORR_SMALL.filter((it) => it.d <= slim);
+        if (!list.length) continue;
+        const item = list[((a >> 2) * 3 + side * 5 + line * 7 + (major ? 0 : 2)) % list.length];
+        const off = 1 - item.d / 2 - 0.09, j = hash2(x * 3 + 9, z * 5 + 1) - 0.5, sh = major ? j * 0.12 : -0.4 + j * 0.2;
+        const px = (x + 0.5) * T - dx * off + (dz ? sh : 0), pz = (z + 0.5) * T - dz * off + (dx ? sh : 0);
+        if (item.h > 1.2 && lampNear(px, pz, 0.8)) continue;
+        begin(px, pz, Math.atan2(dx, dz));
+        item.f(hash2(x * 41 + 1, z * 43 + 3));
+        faceItem.set(i * 4 + di, item.h); stats.items++;
+        return true;
       }
-    } else if (k < 0.66) { clipboard(0, 0, q * 5); if (q < 0.5) sheet(PAPER, 0.34, 0.2, 0.21, 0.3, q * 9); }
-    else if (k < 0.8) {
-      // A dropped stethoscope beside its owner's clipboard.
-      clipboard(-0.3, 0.1, q * 5);
-      B(DARK, 0.2, 0.012, 0, 0.36, 0.024, 0.028, 0); B(DARK, 0.46, 0.012, 0.07, 0.24, 0.024, 0.026, 0, 0, -0.6); B(DARK, 0.46, 0.012, -0.07, 0.24, 0.024, 0.026, 0, 0, 0.6);
-      C(STEEL, 0, 0.014, 0, 0.045, 0.028, 0);
-    } else if (k < 0.92) { C(pick(q, [0xe8413c, 0xfff1e0, 0x74c0fc]), 0, 0.045, 0, 0.045, 0.13, 0, HP); sheet(0xd8ecf5, 0.2, 0.1, 0.2, 0.14, q * 5, false, 0.02); }
-    else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6);
-  }
-
-  // ------------------------------------------------------------ wall faces
-  // Same order as arch.ts: the direction from a wall cell out to the open cell it faces.
-  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const PLAIN = 0, WINDOW = 1, DOOR = 2, NATURAL = 3;
-  /** What arch.ts drew on the face of wall cell (wx, wz) looking out along DIRS[di]. Mirrors its hashes. */
-  function faceKind(wx: number, wz: number, di: number, nf: number): number {
-    if (isIndoor(nf)) return PLAIN;
-    if (def.wallKind[wz * W + wx] !== WALL.BUILDING) return NATURAL;
-    const [dx, dz] = DIRS[di], h = def.wallH[wz * W + wx];
-    const street = nf === F.ASPHALT || nf === F.SIDEWALK, bx = Math.floor(wx / 3), bz = Math.floor(wz / 3);
-    const along = (wx * Math.abs(dz) + wz * Math.abs(dx)) % 3;
-    if (street && h >= 6.5 && hash2(bx * 3 + di, bz * 5 + 7) < 0.6) return along === 1 && hash2(bx + di, bz) < 0.5 ? DOOR : WINDOW;
-    if (h >= 4 && along === 1 && hash2(bx * 5 + di, bz * 3 + 1) < 0.35) return DOOR;
-    return PLAIN;
-  }
-  /** Height of the tallest floor item standing against each wall face (key: open cell index * 4 + di). */
-  const faceItem = new Map<number, number>();
-
-  const kitFor = (f: number, i: number, wallKind: number): Item[] => {
-    const h = hint[i];
-    if (f === F.SAFE) return K_SAFE;
-    if (isIndoor(f)) {
-      if (K_HINT[h]) return K_HINT[h];
-      if (f === F.TILES) return chap === 2 ? K_HOSP : K_LAB;
-      return chap === 2 ? K_MALL : chap === 3 ? K_PLANT : chap === 4 ? K_HOME : K_SHOP;
+      return false;
     }
-    if (f === F.ASPHALT || f === F.SIDEWALK) return chap === 3 ? K_INDUS : h === HINT.PARKING ? K_PARKING : chap === 4 ? K_SUBURB_ST : K_STREET;
-    if (f === F.CONCRETE) return h === HINT.PARKING && chap !== 3 ? K_PARKING : K_INDUS;
-    if (chap === 3) return K_RAIL;
-    if (chap !== 4) return K_PARK;
-    return wallKind === WALL.BUILDING || wallKind === WALL.FENCE ? K_YARD : K_FOREST;
-  };
-
-  // ----------------------------------------------------------- open scatter
-  const LEAF = [0xffa94d, 0xffd43b, 0xe8793c, 0xc98f6a];
-  function scatter(f: number, x: number, z: number, i: number, r: number, edge: boolean): void {
-    const q = hash2(x * 11 + 3, z * 19 + 7), px = (x + 0.2 + hash2(x * 5 + 1, z * 3 + 2) * 0.6) * T, pz = (z + 0.2 + hash2(x * 3 + 4, z * 7 + 6) * 0.6) * T;
-    const yaw = q * 6.283;
-    if (f === F.GRASS || f === F.DIRT) {
-      const grass = f === F.GRASS, forest = chap === 4, p = (grass ? 0.3 : chap === 3 ? 0.1 : 0.2) * DENSITY;
+    /** Things dropped in a hurry: charts, a clipboard, a stethoscope. All flat on the floor. */
+    function corridorLitter(x: number, z: number): void {
+      const r = hash2(x * 19 + 31, z * 13 + 47), p = 0.13 * DENSITY;
       if (r > p) return;
-      begin(px, pz, yaw); stats.scatter++;
-      const k = r / p;
-      if (k < (grass ? 0.56 : 0.3)) {
-        // Tuft: a few blades, sometimes with flowers.
-        const c = grass ? 0x7fcf8a : 0x8fae6a, nb = 3 + Math.floor(q * 3);
-        for (let b = 0; b < nb; b++) { const a = b * 2.2 + q * 6; G(b % 2 ? c : 0x4f9f62, Math.cos(a) * 0.09, Math.sin(a) * 0.09, 0.035, 0.2 + R(b) * 0.2, Math.sin(a) * 0.3, -Math.cos(a) * 0.3); }
-        if (grass && q < 0.4) for (let b = 0; b < 3; b++) { const fx = (R(b + 6) - 0.5) * 0.5, fz = (R(b + 9) - 0.5) * 0.5; G(0x4f9f62, fx, fz, 0.012, 0.2); prim(BLADE, pick(R(b + 3), [0xfff1c9, 0xffb3d1, 0xffd43b, 0xc9b8ff]), fx, 0.27, fz, 0.06, 0.09, 0.06, 0, 0, b, Math.PI); }
-      } else if (k < 0.72 && (forest || chap === 1)) {
-        for (let b = 0; b < 3 + Math.floor(q * 4); b++) sheet(pick(R(b), LEAF), (R(b + 4) - 0.5) * 1.1, (R(b + 9) - 0.5) * 1.1, 0.13, 0.08, R(b + 14) * 6, false, 0.022);
-      } else if (k < 0.82) { SP(0x8a8197, 0, 0.05, 0, 0.08 + q * 0.035, 0.07, 0.09); } // pebble
-      else if (k < 0.88 && forest) { C(CREAM, 0, 0.06, 0, 0.03, 0.12, 0); D(q < 0.6 ? 0xe8413c : 0xc98f6a, 0, 0.11, 0, 0.1, 0.08, 0.1, 0); }
-      else if (k < 0.93 && forest && !grass) { prim(BLADE, 0x8a5a3c, 0, 0.05, 0, 0.05, 0.14, 0.05, 0, HP * 0.9); prim(BLADE, 0x7a4f35, 0.3, 0.05, 0.2, 0.045, 0.12, 0.045, 0, HP * 0.9, 1); } // pinecones
-      else if (forest && !edge) fern.f(q);
-      else for (let b = 0; b < 3; b++) { const a = b * 2.2 + q * 6; G(0x5aa86a, Math.cos(a) * 0.08, Math.sin(a) * 0.08, 0.03, 0.18 + R(b) * 0.1, Math.sin(a) * 0.3, -Math.cos(a) * 0.3); }
-      return;
-    }
-    if (f === F.SAFE) return;
-    const indoor = isIndoor(f), p = (indoor ? 0.06 : f === F.CONCRETE ? 0.055 : 0.07) * DENSITY;
-    if (r > p) return;
-    begin(px, pz, yaw); stats.scatter++;
-    const k = r / p, h = hint[i];
-    if (k < 0.42) {
-      // Dropped sheets (the ground texture has a few too; these catch the light).
-      for (let b = 0; b < 2 + Math.floor(q * 3); b++) sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, (R(b) - 0.5) * 0.9, (R(b + 4) - 0.5) * 0.9, 0.21, 0.3, R(b + 8) * 6);
-    } else if (indoor) {
-      if (k < 0.5 && (chap === 2 || h === HINT.TOYS) && f !== F.TILES) shopBags.f(q * 0.49);
-      else if (k < 0.48 && f === F.TILES && chap === 2) wetSign.f(q);
-      else if (k < 0.64) { C(pick(q, [0xe8413c, 0xfff1e0, 0x74c0fc]), 0, 0.045, 0, 0.045, 0.13, 0, HP); sheet(0xd8ecf5, 0.2, 0.1, 0.2, 0.14, q * 5, false, 0.02); } // dropped cup and a spill
-      else if (k < 0.7 && (chap === 3 || h === HINT.PARKING)) cone.f(q);
-      else if (k < 0.74 && chap === 4) backpack.f(q);
-      else if (k < 0.84) cardboard.f(q);
-      else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6); // flyers
-    } else {
-      if (k < 0.5 && chap === 1) umbrella.f(q);
-      else if (k < 0.52 && chap === 4) for (let b = 0; b < 5; b++) sheet(pick(R(b), LEAF), (R(b + 4) - 0.5) * 1.1, (R(b + 9) - 0.5) * 1.1, 0.13, 0.08, R(b + 14) * 6, false, 0.022);
-      else if (k < 0.57) cone.f(q * 0.5);
-      else if (k < 0.7) cardboard.f(q);
-      else if (k < 0.8) { C(pick(q, [0xe8413c, 0xc9c6d6, 0x8ce99a]), 0, 0.04, 0, 0.04, 0.12, 0, HP); C(0xc9c6d6, 0.25, 0.04, 0.2, 0.04, 0.12, 0, HP, 0.8); } // cans
-      else if (k < 0.88 && chap === 3) { B(STEEL, 0, 0.03, 0, 0.5, 0.05, 0.08, 1, 0, 0.4); B(0x6b4a34, 0.2, 0.05, 0.3, 0.8, 0.1, 0.16, 1, 0, -0.5); } // scrap
-      else if (k < 0.91 && chap !== 3) bags.f(0.6 + q * 0.4);
+      const q = hash2(x * 11 + 3, z * 19 + 7), k = r / p;
+      begin((x + 0.2 + hash2(x * 5 + 1, z * 3 + 2) * 0.6) * T, (z + 0.2 + hash2(x * 3 + 4, z * 7 + 6) * 0.6) * T, q * 6.283); stats.scatter++;
+      const clipboard = (cx: number, cz: number, rot: number) => {
+        B(0x8a5a3c, cx, 0.014, cz, 0.25, 0.028, 0.34, 1, 0, rot); sheet(PAPER, cx, cz + 0.015, 0.2, 0.26, rot, false, 0.032);
+        B(STEEL, cx - Math.sin(rot) * 0.14, 0.04, cz - Math.cos(rot) * 0.14, 0.11, 0.025, 0.04, 0, 0, rot);
+      };
+      if (k < 0.46) {
+        // Patient charts: sheets with a coloured header strip.
+        for (let b = 0; b < 2 + Math.floor(q * 3); b++) {
+          const sx = (R(b) - 0.5) * 0.9, sz = (R(b + 4) - 0.5) * 0.9, rot = R(b + 8) * 6;
+          sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, sx, sz, 0.21, 0.3, rot);
+          if (b % 2 === 0) sheet(pick(R(b + 12), [0x74c0fc, 0xff8fa3, 0x8ce99a, 0xffd43b]), sx - Math.sin(rot) * 0.11, sz - Math.cos(rot) * 0.11, 0.19, 0.05, rot, false, 0.034);
+        }
+      } else if (k < 0.66) { clipboard(0, 0, q * 5); if (q < 0.5) sheet(PAPER, 0.34, 0.2, 0.21, 0.3, q * 9); }
+      else if (k < 0.8) {
+        // A dropped stethoscope beside its owner's clipboard.
+        clipboard(-0.3, 0.1, q * 5);
+        B(DARK, 0.2, 0.012, 0, 0.36, 0.024, 0.028, 0); B(DARK, 0.46, 0.012, 0.07, 0.24, 0.024, 0.026, 0, 0, -0.6); B(DARK, 0.46, 0.012, -0.07, 0.24, 0.024, 0.026, 0, 0, 0.6);
+        C(STEEL, 0, 0.014, 0, 0.045, 0.028, 0);
+      } else if (k < 0.92) { C(pick(q, [0xe8413c, 0xfff1e0, 0x74c0fc]), 0, 0.045, 0, 0.045, 0.13, 0, HP); sheet(0xd8ecf5, 0.2, 0.1, 0.2, 0.14, q * 5, false, 0.02); }
       else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6);
     }
-  }
 
-  // --------------------------------------------------------- pass 1: floors
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    const i = z * W + x, f = def.floor[i];
-    if (f === F.NONE || f === F.WATER || def.solid[i] || def.doorCell[i] >= 0 || mask[i] & NO_FLOOR) continue;
-    const walls: number[] = [], props: number[] = [];
-    for (let di = 0; di < 4; di++) {
-      // Looking from the open cell towards DIRS[di]'s wall cell means stepping against the face direction.
-      const wx = x - DIRS[di][0], wz = z - DIRS[di][1];
-      if (wx < 0 || wz < 0 || wx >= W || wz >= H) continue;
-      const g = def.floor[wz * W + wx];
-      if (g === F.NONE) walls.push(di); else if (def.propCell[wz * W + wx]) props.push(di);
+    // ------------------------------------------------------------ wall faces
+    // Same order as arch.ts: the direction from a wall cell out to the open cell it faces.
+    const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const PLAIN = 0, WINDOW = 1, DOOR = 2, NATURAL = 3;
+    /** What arch.ts drew on the face of wall cell (wx, wz) looking out along DIRS[di]. Mirrors its hashes. */
+    function faceKind(wx: number, wz: number, di: number, nf: number): number {
+      if (isIndoor(nf)) return PLAIN;
+      if (wallKind[wz * W + wx] !== WALL.BUILDING) return NATURAL;
+      const [dx, dz] = DIRS[di], h = wallTop(wz * W + wx);
+      const street = nf === F.ASPHALT || nf === F.SIDEWALK, bx = Math.floor(wx / 3), bz = Math.floor(wz / 3);
+      const along = (wx * Math.abs(dz) + wz * Math.abs(dx)) % 3;
+      if (street && h >= 6.5 && H2(bx * 3 + di, bz * 5 + 7) < 0.6) return along === 1 && H2(bx + di, bz) < 0.5 ? DOOR : WINDOW;
+      if (h >= 4 && along === 1 && H2(bx * 5 + di, bz * 3 + 1) < 0.35) return DOOR;
+      return PLAIN;
     }
-    const narrow = Math.min(runX[i], runZ[i]), r = hash2(x * 7 + 13, z * 11 + 29), r2 = hash2(x * 17 + 5, z * 23 + 3);
-    const nature = f === F.GRASS || f === F.DIRT;
-    let placed = false;
-    const tri0 = triCount;
-    if (corr[i]) {
-      // Hospital corridor: its own rhythm instead of the random kit.
-      if (!corridorItem(x, z, i, narrow) && narrow >= 2) { corridorLitter(x, z); stats.trisScatter += triCount - tri0; }
-      continue;
+    /** Height of the tallest floor item standing against each wall face (key: open cell index * 4 + di). */
+    const faceItem = new Map<number, number>();
+
+    const kitFor = (f: number, i: number, wallKind: number): Item[] => {
+      const h = hint[i];
+      if (f === F.SAFE) return K_SAFE;
+      if (isIndoor(f)) {
+        if (K_HINT[h]) return K_HINT[h];
+        if (f === F.TILES) return chap === 2 ? K_HOSP : K_LAB;
+        return chap === 2 ? K_MALL : chap === 3 ? K_PLANT : chap === 4 ? K_HOME : K_SHOP;
+      }
+      if (roofCell(i, f)) return hint[i] === HINT.PARKING ? K_PARKING : K_ROOF;
+    if (f === F.ASPHALT || f === F.SIDEWALK) return chap === 3 ? K_INDUS : h === HINT.PARKING ? K_PARKING : chap === 4 ? K_SUBURB_ST : K_STREET;
+      if (f === F.CONCRETE) return h === HINT.PARKING && chap !== 3 ? K_PARKING : K_INDUS;
+      if (chap === 3) return K_RAIL;
+      if (chap !== 4) return K_PARK;
+      return wallKind === WALL.BUILDING || wallKind === WALL.FENCE ? K_YARD : K_FOREST;
+    };
+
+    // ----------------------------------------------------------- open scatter
+    const LEAF = [0xffa94d, 0xffd43b, 0xe8793c, 0xc98f6a];
+    function scatter(f: number, x: number, z: number, i: number, r: number, edge: boolean): void {
+      const q = hash2(x * 11 + 3, z * 19 + 7), px = (x + 0.2 + hash2(x * 5 + 1, z * 3 + 2) * 0.6) * T, pz = (z + 0.2 + hash2(x * 3 + 4, z * 7 + 6) * 0.6) * T;
+      const yaw = q * 6.283;
+      if (f === F.GRASS || f === F.DIRT) {
+        const grass = f === F.GRASS, forest = chap === 4, p = (grass ? 0.3 : chap === 3 ? 0.1 : 0.2) * DENSITY;
+        if (r > p) return;
+        begin(px, pz, yaw); stats.scatter++;
+        const k = r / p;
+        if (k < (grass ? 0.56 : 0.3)) {
+          // Tuft: a few blades, sometimes with flowers.
+          const c = grass ? 0x7fcf8a : 0x8fae6a, nb = 3 + Math.floor(q * 3);
+          for (let b = 0; b < nb; b++) { const a = b * 2.2 + q * 6; G(b % 2 ? c : 0x4f9f62, Math.cos(a) * 0.09, Math.sin(a) * 0.09, 0.035, 0.2 + R(b) * 0.2, Math.sin(a) * 0.3, -Math.cos(a) * 0.3); }
+          if (grass && q < 0.4) for (let b = 0; b < 3; b++) { const fx = (R(b + 6) - 0.5) * 0.5, fz = (R(b + 9) - 0.5) * 0.5; G(0x4f9f62, fx, fz, 0.012, 0.2); prim(BLADE, pick(R(b + 3), [0xfff1c9, 0xffb3d1, 0xffd43b, 0xc9b8ff]), fx, 0.27, fz, 0.06, 0.09, 0.06, 0, 0, b, Math.PI); }
+        } else if (k < 0.72 && (forest || chap === 1)) {
+          for (let b = 0; b < 3 + Math.floor(q * 4); b++) sheet(pick(R(b), LEAF), (R(b + 4) - 0.5) * 1.1, (R(b + 9) - 0.5) * 1.1, 0.13, 0.08, R(b + 14) * 6, false, 0.022);
+        } else if (k < 0.82) { SP(0x8a8197, 0, 0.05, 0, 0.08 + q * 0.035, 0.07, 0.09); } // pebble
+        else if (k < 0.88 && forest) { C(CREAM, 0, 0.06, 0, 0.03, 0.12, 0); D(q < 0.6 ? 0xe8413c : 0xc98f6a, 0, 0.11, 0, 0.1, 0.08, 0.1, 0); }
+        else if (k < 0.93 && forest && !grass) { prim(BLADE, 0x8a5a3c, 0, 0.05, 0, 0.05, 0.14, 0.05, 0, HP * 0.9); prim(BLADE, 0x7a4f35, 0.3, 0.05, 0.2, 0.045, 0.12, 0.045, 0, HP * 0.9, 1); } // pinecones
+        else if (forest && !edge) fern.f(q);
+        else for (let b = 0; b < 3; b++) { const a = b * 2.2 + q * 6; G(0x5aa86a, Math.cos(a) * 0.08, Math.sin(a) * 0.08, 0.03, 0.18 + R(b) * 0.1, Math.sin(a) * 0.3, -Math.cos(a) * 0.3); }
+        return;
+      }
+      if (f === F.SAFE) return;
+      // (A roof is swept by the wind and nobody walks it: a third of the street's litter.)
+      const indoor = isIndoor(f), p = (indoor ? 0.06 : roofCell(i, f) ? 0.02 : f === F.CONCRETE ? 0.055 : 0.07) * DENSITY;
+      if (r > p) return;
+      begin(px, pz, yaw); stats.scatter++;
+      const k = r / p, h = hint[i];
+      if (k < 0.42) {
+        // Dropped sheets (the ground texture has a few too; these catch the light).
+        for (let b = 0; b < 2 + Math.floor(q * 3); b++) sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, (R(b) - 0.5) * 0.9, (R(b + 4) - 0.5) * 0.9, 0.21, 0.3, R(b + 8) * 6);
+      } else if (indoor) {
+        if (k < 0.5 && (chap === 2 || h === HINT.TOYS) && f !== F.TILES) shopBags.f(q * 0.49);
+        else if (k < 0.48 && f === F.TILES && chap === 2) wetSign.f(q);
+        else if (k < 0.64) { C(pick(q, [0xe8413c, 0xfff1e0, 0x74c0fc]), 0, 0.045, 0, 0.045, 0.13, 0, HP); sheet(0xd8ecf5, 0.2, 0.1, 0.2, 0.14, q * 5, false, 0.02); } // dropped cup and a spill
+        else if (k < 0.7 && (chap === 3 || h === HINT.PARKING)) cone.f(q);
+        else if (k < 0.74 && chap === 4) backpack.f(q);
+        else if (k < 0.84) cardboard.f(q);
+        else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6); // flyers
+      } else {
+        if (k < 0.5 && chap === 1) umbrella.f(q);
+        else if (k < 0.52 && chap === 4) for (let b = 0; b < 5; b++) sheet(pick(R(b), LEAF), (R(b + 4) - 0.5) * 1.1, (R(b + 9) - 0.5) * 1.1, 0.13, 0.08, R(b + 14) * 6, false, 0.022);
+        else if (k < 0.57) cone.f(q * 0.5);
+        else if (k < 0.7) cardboard.f(q);
+        else if (k < 0.8) { C(pick(q, [0xe8413c, 0xc9c6d6, 0x8ce99a]), 0, 0.04, 0, 0.04, 0.12, 0, HP); C(0xc9c6d6, 0.25, 0.04, 0.2, 0.04, 0.12, 0, HP, 0.8); } // cans
+        else if (k < 0.88 && chap === 3) { B(STEEL, 0, 0.03, 0, 0.5, 0.05, 0.08, 1, 0, 0.4); B(0x6b4a34, 0.2, 0.05, 0.3, 0.8, 0.1, 0.16, 1, 0, -0.5); } // scrap
+        else if (k < 0.91 && chap !== 3) bags.f(0.6 + q * 0.4);
+        else for (let b = 0; b < 3; b++) sheet(pick(R(b), PASTEL), (R(b + 2) - 0.5) * 0.7, (R(b + 5) - 0.5) * 0.7, 0.16, 0.11, R(b + 8) * 6);
+      }
     }
-    if (walls.length && narrow >= 2) {
-      const corner = walls.length >= 2 && !(walls.includes(0) && walls.includes(1) && walls.length === 2) && !(walls.includes(2) && walls.includes(3) && walls.length === 2);
-      const base = f === F.SAFE ? 0.5 : nature ? 0.17 : isIndoor(f) ? 0.16 : chap === 1 ? 0.29 : 0.2; // ch1 is the smallest map: spend its spare budget on the streets
-      if (r < base * (corner ? 1.8 : 1) * (narrow === 2 ? 0.5 : 1) * DENSITY) {
-        const di = walls[Math.floor(r2 * walls.length)], [dx, dz] = DIRS[di], wx = x - dx, wz = z - dz;
-        const fk = faceKind(wx, wz, di, f), wk = def.wallKind[wz * W + wx];
-        if (fk !== DOOR) {
-          let list = kitFor(f, i, wk);
-          const lowOnly = fk === WINDOW || wk === WALL.FENCE, slim = narrow === 2 ? 0.45 : narrow === 3 ? 0.65 : 9;
-          if (lowOnly || slim < 9) list = list.filter((it) => (!lowOnly || it.h <= 1.1) && it.d <= slim);
-          if (list.length) {
-            const item = list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)];
-            const off = 1 - item.d / 2 - (isIndoor(f) ? 0.09 : 0.06), u = (hash2(x * 3 + 9, z * 5 + 1) - 0.5) * 0.3;
-            const px = (x + 0.5) * T - dx * off - dz * u, pz = (z + 0.5) * T - dz * off + dx * u;
-            if (!(item.h > 1.2 && lampNear(px, pz, 0.8)) && !(walls.length > 1 && item.d > 0.8 && !corner)) {
-              begin(px, pz, Math.atan2(dx, dz) + (item.h < 1 ? (r2 - 0.5) * 0.3 : 0));
-              item.f(hash2(x * 41 + 1, z * 43 + 3));
-              faceItem.set(i * 4 + di, item.h); stats.items++; placed = true;
+
+    // --------------------------------------------------------- pass 1: floors
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x, f = floor[i];
+      if (f === F.NONE || f === F.WATER || solid[i] || doorCell[i] >= 0 || mask[i] & NO_FLOOR) continue;
+      const walls: number[] = [], props: number[] = [];
+      for (let di = 0; di < 4; di++) {
+        // Looking from the open cell towards DIRS[di]'s wall cell means stepping against the face direction.
+        const wx = x - DIRS[di][0], wz = z - DIRS[di][1];
+        if (wx < 0 || wz < 0 || wx >= W || wz >= H) continue;
+        if (isWallC(wz * W + wx)) walls.push(di); else if (propCell[wz * W + wx]) props.push(di);
+      }
+      const narrow = Math.min(runX[i], runZ[i]), r = hash2(x * 7 + 13, z * 11 + 29), r2 = hash2(x * 17 + 5, z * 23 + 3);
+      const nature = f === F.GRASS || f === F.DIRT;
+      let placed = false;
+      const tri0 = triCount;
+      if (corr[i]) {
+        // Hospital corridor: its own rhythm instead of the random kit.
+        if (!corridorItem(x, z, i, narrow) && narrow >= 2) { corridorLitter(x, z); stats.trisScatter += triCount - tri0; }
+        continue;
+      }
+      if (walls.length && narrow >= 2) {
+        const corner = walls.length >= 2 && !(walls.includes(0) && walls.includes(1) && walls.length === 2) && !(walls.includes(2) && walls.includes(3) && walls.length === 2);
+        const base = f === F.SAFE ? 0.5 : nature ? 0.17 : isIndoor(f) ? 0.16 : chap === 1 ? 0.29 : 0.2; // ch1 is the smallest map: spend its spare budget on the streets
+        if (r < base * (corner ? 1.8 : 1) * (narrow === 2 ? 0.5 : 1) * DENSITY) {
+          const di = walls[Math.floor(r2 * walls.length)], [dx, dz] = DIRS[di], wx = x - dx, wz = z - dz;
+          const fk = faceKind(wx, wz, di, f), wk = wallKind[wz * W + wx];
+          if (fk !== DOOR) {
+            let list = kitFor(f, i, wk);
+            const lowOnly = fk === WINDOW || wk === WALL.FENCE, slim = narrow === 2 ? 0.45 : narrow === 3 ? 0.65 : 9;
+            if (lowOnly || slim < 9) list = list.filter((it) => (!lowOnly || it.h <= 1.1) && it.d <= slim);
+            if (list.length) {
+              const item = list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)];
+              const off = 1 - item.d / 2 - (isIndoor(f) ? 0.09 : 0.06), u = (hash2(x * 3 + 9, z * 5 + 1) - 0.5) * 0.3;
+              const px = (x + 0.5) * T - dx * off - dz * u, pz = (z + 0.5) * T - dz * off + dx * u;
+              if (!(item.h > 1.2 && lampNear(px, pz, 0.8)) && !(walls.length > 1 && item.d > 0.8 && !corner)) {
+                begin(px, pz, Math.atan2(dx, dz) + (item.h < 1 ? (r2 - 0.5) * 0.3 : 0));
+                item.f(hash2(x * 41 + 1, z * 43 + 3));
+                faceItem.set(i * 4 + di, item.h); stats.items++; placed = true;
+              }
             }
           }
         }
+      } else if (!walls.length && props.length && narrow >= 3 && r < 0.26 * DENSITY) {
+        // Beside a car, crate or counter: low junk only.
+        const di = props[Math.floor(r2 * props.length)], [dx, dz] = DIRS[di];
+        const list = kitFor(f, i, WALL.BUILDING).filter((it) => it.h <= 1.1 && it.d <= 0.7);
+        if (list.length) {
+          const item = list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)];
+          const px = (x + 0.5) * T - dx * 0.5 + dz * (r2 - 0.5) * 0.8, pz = (z + 0.5) * T - dz * 0.5 + dx * (r2 - 0.5) * 0.8;
+          if (!lampNear(px, pz, 0.6)) { begin(px, pz, Math.atan2(dx, dz) + (r2 - 0.5) * 1.2); item.f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true; }
+        }
       }
-    } else if (!walls.length && props.length && narrow >= 3 && r < 0.26 * DENSITY) {
-      // Beside a car, crate or counter: low junk only.
-      const di = props[Math.floor(r2 * props.length)], [dx, dz] = DIRS[di];
-      const list = kitFor(f, i, WALL.BUILDING).filter((it) => it.h <= 1.1 && it.d <= 0.7);
-      if (list.length) {
-        const item = list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)];
-        const px = (x + 0.5) * T - dx * 0.5 + dz * (r2 - 0.5) * 0.8, pz = (z + 0.5) * T - dz * 0.5 + dx * (r2 - 0.5) * 0.8;
-        if (!lampNear(px, pz, 0.6)) { begin(px, pz, Math.atan2(dx, dz) + (r2 - 0.5) * 1.2); item.f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true; }
+      // Islands: a few low things out in the open of big halls, plazas and yards (never tall, so never cover).
+      if (!walls.length && !props.length && narrow >= 7 && f !== F.SAFE && (x * 3 + z * 7) % 23 === 0 && r < 0.45 * DENSITY) {
+        let clear = true;
+        for (const [ax, az] of [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [-1, 1], [1, -1], [-1, -1]]) { const g = floorOf(x + ax, z + az); if (g === F.NONE || g === F.WATER || solid[(z + az) * W + x + ax]) clear = false; }
+        const road = f === F.ASPHALT && chap !== 3;
+        const list = road ? K_ROAD : kitFor(f, i, WALL.HEDGE).filter((it) => it.h <= 1.1 && it.d >= 0.36);
+        if (clear && list.length && !lampNear((x + 0.5) * T, (z + 0.5) * T, 1.2)) {
+          begin((x + 0.5) * T, (z + 0.5) * T, Math.floor(r2 * 4) * HP + (r2 - 0.5) * 0.5);
+          list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)].f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true;
+        }
+      }
+      // Rooftops: plant out in the open, in short rows (a bank of AC units, a pair of vents), plus the odd loner.
+      if (!placed && !walls.length && !props.length && narrow >= 5 && roofCell(i, f)) {
+        const bx = Math.floor(x / 6), bz = Math.floor(z / 5), lx = x - bx * 6, lz = z - bz * 5, cl = hash2(bx * 13 + 5, bz * 17 + 3) / DENSITY;
+        let item: Item | null = null;
+        if (cl < 0.08) { if (lz === 2 && (lx === 1 || lx === 3 || (lx === 5 && cl < 0.04))) item = acUnit; }
+        else if (cl < 0.13) { if (lx === 2 && (lz === 1 || lz === 3)) item = roofVent; else if (lx === 4 && lz === 2) item = gooseneck; }
+        else if (cl < 0.17) { if (lx === 2 && lz === 2) item = acTwin; else if (lx === 4 && lz === 2) item = roofBox; }
+        else if ((x * 5 + z * 3) % 31 === 0 && r < 0.4 * DENSITY) item = pick(r2, [roofVent, gooseneck, roofBox, roofVent]);
+        if (item) {
+          let clear = !(mask[i] & NO_PLANT) && !lampNear((x + 0.5) * T, (z + 0.5) * T, 1.2);
+          for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) { const j = (z + az) * W + x + ax; if (floorOf(x + ax, z + az) !== f || solid[j] || mask[j] & (NO_FLOOR | NO_PLANT)) clear = false; }
+          if (clear) {
+            begin((x + 0.5) * T + (r2 - 0.5) * 0.2, (z + 0.5) * T, (hash2(bx * 7 + 1, bz * 3 + 2) < 0.5 ? 0 : HP) + (r - 0.5) * 0.08);
+            item.f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true;
+          }
+        }
+      }
+      // Decks and catwalks have railings, not walls: now and then something small is left at the foot of one
+      // (never where the railing has a gap for a stair or ladder: the masks keep those clear).
+      if (upper && !placed && !walls.length && narrow >= 2 && !isIndoor(f) && !nature && r < 0.07 * DENSITY) {
+        for (let di = 0; di < 4; di++) {
+          const [dx, dz] = DIRS[di], ax = x - dx, az = z - dz;
+          const air = ax < 0 || az < 0 || ax >= W || az >= H || def.air[o + az * W + ax] === 1;
+          if (!air || LV.adj[(o + i) * 4 + (di ^ 1)] >= 0) continue;
+          const list = (roofCell(i, f) ? K_DECK : kitFor(f, i, WALL.FENCE)).filter((it) => it.h <= 1.0 && it.d <= 0.5);
+          if (!list.length) break;
+          const item = list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)];
+          const off = 1 - 0.24 - item.d / 2 - 0.06, px = (x + 0.5) * T - dx * off - dz * (r2 - 0.5) * 0.8, pz = (z + 0.5) * T - dz * off + dx * (r2 - 0.5) * 0.8;
+          if (!lampNear(px, pz, 0.7)) { begin(px, pz, Math.atan2(dx, dz) + (r2 - 0.5) * 0.4); item.f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true; }
+          break;
+        }
+      }
+      stats.trisItems += triCount - tri0;
+      const tri1 = triCount;
+      // Open-floor litter and undergrowth. Paved cells with an item keep clear; grass grows everywhere.
+      if ((!placed || nature) && narrow >= 3) scatter(f, x, z, i, hash2(x * 19 + 31, z * 13 + 47), walls.length > 0);
+      stats.trisScatter += triCount - tri1;
+      // Banners hung across big indoor halls, well above head height.
+      if ((f === F.INTERIOR || f === F.WOOD) && chap === 2 && runX[i] >= 9 && runZ[i] >= 9 && !walls.length && x % 5 === 2 && z % 4 === 1 && hash2(x * 3 + 1, z * 3 + 2) < 0.5 && !lampNear((x + 0.5) * T, (z + 0.5) * T, 1.3)) {
+        let clear = true;
+        for (const [ax, az] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (floorOf(x + ax, z + az) !== f) clear = false;
+        if (clear) {
+          begin((x + 0.5) * T, (z + 0.5) * T, r < 0.5 ? 0 : HP);
+          const c = pick(r2, PASTEL), y = CEIL_H - 0.95;
+          B(c, 0, y, 0, 1.5, 0.9, 0.03); B(CREAM, 0, y + 0.22, 0, 1.1, 0.14, 0.04, 0); B(CREAM, 0, y - 0.05, 0, 0.7, 0.08, 0.04, 0);
+          for (const s of [-1, 1]) prim(BLADE, c, s * 0.38, y - 0.45, 0, 0.37, 0.3, 0.015, 0, 0, 0, Math.PI);
+          for (const s of [-1, 1]) B(DARK, s * 0.65, CEIL_H - 0.25, 0, 0.015, 0.5, 0.015, 0);
+          stats.items++;
+        }
       }
     }
-    // Islands: a few low things out in the open of big halls, plazas and yards (never tall, so never cover).
-    if (!walls.length && !props.length && narrow >= 7 && f !== F.SAFE && (x * 3 + z * 7) % 23 === 0 && r < 0.45 * DENSITY) {
-      let clear = true;
-      for (const [ax, az] of [[2, 0], [-2, 0], [0, 2], [0, -2], [1, 1], [-1, 1], [1, -1], [-1, -1]]) { const g = floorOf(x + ax, z + az); if (g === F.NONE || g === F.WATER || def.solid[(z + az) * W + x + ax]) clear = false; }
-      const road = f === F.ASPHALT && chap !== 3;
-      const list = road ? K_ROAD : kitFor(f, i, WALL.HEDGE).filter((it) => it.h <= 1.1 && it.d >= 0.36);
-      if (clear && list.length && !lampNear((x + 0.5) * T, (z + 0.5) * T, 1.2)) {
-        begin((x + 0.5) * T, (z + 0.5) * T, Math.floor(r2 * 4) * HP + (r2 - 0.5) * 0.5);
-        list[Math.floor(hash2(x * 29 + 7, z * 31 + 17) * list.length)].f(hash2(x * 41 + 1, z * 43 + 3)); stats.items++; placed = true;
+    // Kerbside furniture: low things only, since this is away from any wall.
+    const K_KERB = [hydrant, bollard, bollard, cone, bin, newsbox, bags];
+    if (chap !== 3) for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
+      const i = z * W + x;
+      if (floor[i] !== F.SIDEWALK || solid[i] || mask[i] & NO_FLOOR || Math.min(runX[i], runZ[i]) < 3 || hash2(x * 23 + 9, z * 29 + 5) > (chap === 1 ? 0.12 : 0.075) * DENSITY) continue;
+      for (const [dx, dz] of DIRS) if (floor[(z + dz) * W + x + dx] === F.ASPHALT && floor[(z - dz) * W + x - dx] !== F.NONE) {
+        const px = (x + 0.5 + dx * 0.24) * T, pz = (z + 0.5 + dz * 0.24) * T;
+        if (lampNear(px, pz, 0.9)) break;
+        begin(px, pz, Math.atan2(-dx, -dz)); pick(hash2(x * 7 + 1, z * 3 + 8), K_KERB).f(hash2(x, z)); stats.items++;
+        break;
       }
     }
-    stats.trisItems += triCount - tri0;
-    const tri1 = triCount;
-    // Open-floor litter and undergrowth. Paved cells with an item keep clear; grass grows everywhere.
-    if ((!placed || nature) && narrow >= 3) scatter(f, x, z, i, hash2(x * 19 + 31, z * 13 + 47), walls.length > 0);
-    stats.trisScatter += triCount - tri1;
-    // Banners hung across big indoor halls, well above head height.
-    if ((f === F.INTERIOR || f === F.WOOD) && chap === 2 && runX[i] >= 9 && runZ[i] >= 9 && !walls.length && x % 5 === 2 && z % 4 === 1 && hash2(x * 3 + 1, z * 3 + 2) < 0.5 && !lampNear((x + 0.5) * T, (z + 0.5) * T, 1.3)) {
-      let clear = true;
-      for (const [ax, az] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) if (floorOf(x + ax, z + az) !== f) clear = false;
-      if (clear) {
-        begin((x + 0.5) * T, (z + 0.5) * T, r < 0.5 ? 0 : HP);
-        const c = pick(r2, PASTEL), y = CEIL_H - 0.95;
-        B(c, 0, y, 0, 1.5, 0.9, 0.03); B(CREAM, 0, y + 0.22, 0, 1.1, 0.14, 0.04, 0); B(CREAM, 0, y - 0.05, 0, 0.7, 0.08, 0.04, 0);
-        for (const s of [-1, 1]) prim(BLADE, c, s * 0.38, y - 0.45, 0, 0.37, 0.3, 0.015, 0, 0, 0, Math.PI);
-        for (const s of [-1, 1]) B(DARK, s * 0.65, CEIL_H - 0.25, 0, 0.015, 0.5, 0.015, 0);
-        stats.items++;
+    // Mailboxes down suburban sidewalks, on the lawn side.
+    if (chap === 4) for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
+      const i = z * W + x;
+      if (floor[i] !== F.SIDEWALK || solid[i] || mask[i] & NO_FLOOR || (x + z * 3) % 7 !== 0) continue;
+      for (const [dx, dz] of DIRS) if (floor[(z + dz) * W + x + dx] === F.GRASS && floor[(z - dz) * W + x - dx] !== F.GRASS) {
+        const px = (x + 0.5 + dx * 0.36) * T, pz = (z + 0.5 + dz * 0.36) * T;
+        if (lampNear(px, pz, 0.8)) break;
+        begin(px, pz, Math.atan2(-dx, -dz)); mailbox.f(hash2(x, z)); stats.items++;
+        break;
       }
     }
-  }
-  // Kerbside furniture: low things only, since this is away from any wall.
-  const K_KERB = [hydrant, bollard, bollard, cone, bin, newsbox, bags];
-  if (chap !== 3) for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
-    const i = z * W + x;
-    if (def.floor[i] !== F.SIDEWALK || def.solid[i] || mask[i] & NO_FLOOR || Math.min(runX[i], runZ[i]) < 3 || hash2(x * 23 + 9, z * 29 + 5) > (chap === 1 ? 0.12 : 0.075) * DENSITY) continue;
-    for (const [dx, dz] of DIRS) if (def.floor[(z + dz) * W + x + dx] === F.ASPHALT && def.floor[(z - dz) * W + x - dx] !== F.NONE) {
-      const px = (x + 0.5 + dx * 0.24) * T, pz = (z + 0.5 + dz * 0.24) * T;
-      if (lampNear(px, pz, 0.9)) break;
-      begin(px, pz, Math.atan2(-dx, -dz)); pick(hash2(x * 7 + 1, z * 3 + 8), K_KERB).f(hash2(x, z)); stats.items++;
-      break;
-    }
-  }
-  // Mailboxes down suburban sidewalks, on the lawn side.
-  if (chap === 4) for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
-    const i = z * W + x;
-    if (def.floor[i] !== F.SIDEWALK || def.solid[i] || mask[i] & NO_FLOOR || (x + z * 3) % 7 !== 0) continue;
-    for (const [dx, dz] of DIRS) if (def.floor[(z + dz) * W + x + dx] === F.GRASS && def.floor[(z - dz) * W + x - dx] !== F.GRASS) {
-      const px = (x + 0.5 + dx * 0.36) * T, pz = (z + 0.5 + dz * 0.36) * T;
-      if (lampNear(px, pz, 0.8)) break;
-      begin(px, pz, Math.atan2(-dx, -dz)); mailbox.f(hash2(x, z)); stats.items++;
-      break;
-    }
-  }
 
-  stats.trisItems = triCount - stats.trisScatter;
-  // ---------------------------------------------------------- pass 2: walls
-  const NEONS = [0xff7ac8, 0x5ff0e0, 0xffd45e, 0x9d8cff, 0xff8a6a];
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    const i = z * W + x, f = def.floor[i];
-    if (f === F.NONE || f === F.WATER || def.propCell[i] || mask[i] & NO_WALL) continue;
-    for (let di = 0; di < 4; di++) {
-      const [dx, dz] = DIRS[di], wx = x - dx, wz = z - dz;
-      if (wx < 0 || wz < 0 || wx >= W || wz >= H || def.floor[wz * W + wx] !== F.NONE) continue;
-      const fk = faceKind(wx, wz, di, f);
-      if (fk === DOOR || fk === WINDOW || fk === NATURAL) continue;
-      const indoor = isIndoor(f), h = indoor ? CEIL_H : def.wallH[wz * W + wx];
-      if (h < 2.4) continue;
-      const r = hash2(x * 13 + di * 7 + 3, z * 17 + di * 3 + 11), q = hash2(x * 5 + di + 23, z * 9 + di * 5 + 1);
-      const mx = (wx + 0.5 + dx * 0.5) * T, mz = (wz + 0.5 + dz * 0.5) * T, tx = -dz, tz = dx, nrm: V3 = [dx, 0, dz];
-      const below = faceItem.get(i * 4 + di) ?? 0;
-      begin(mx, mz, Math.atan2(dx, dz));
-      // Face frame: u runs along the wall (positive = the viewer's left), y up, o out of the wall.
-      const P = (u: number, y: number, o: number) => [mx + tx * u + dx * o, y, mz + tz * u + dz * o];
-      const rq = (c: number, u: number, y: number, hw: number, hh: number, o = 0.05, ang = 0) => {
-        const cs = Math.cos(ang), sn = Math.sin(ang), p: number[] = [];
-        for (const [a, b] of [[hw, -hh], [-hw, -hh], [-hw, hh], [hw, hh]]) p.push(...P(u + a * cs - b * sn, y + a * sn + b * cs, o));
-        quad(S, rgb(c), nrm, p); triCount += 2;
-      };
-      /** A flat card with an ink border behind it. */
-      const card = (c: number, u: number, y: number, hw: number, hh: number, ang = 0) => { rq(0x1a1226, u, y, hw + 0.022, hh + 0.022, 0.03, ang); rq(c, u, y, hw, hh, 0.048, ang); };
-      /** A chalk/paint stroke between two points given in the viewer's frame (x to the right). */
-      const stroke = (c: number, x0: number, y0: number, x1: number, y1: number, w = 0.035, o = 0.03) => rq(c, -(x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) / 2 + w * 0.4, w / 2, o, Math.atan2(y1 - y0, -(x1 - x0)));
-      const glyphs: Record<string, number[][]> = {
-        S: [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], A: [[0, 0, 0.5, 1], [0.5, 1, 1, 0], [0.22, 0.4, 0.78, 0.4]],
-        F: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5]], E: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5], [0, 0, 1, 0]], Z: [[0, 1, 1, 1], [1, 1, 0, 0], [0, 0, 1, 0]],
-        O: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]], K: [[0, 0, 0, 1], [0, 0.5, 1, 1], [0, 0.5, 1, 0]],
-        W: [[0, 1, 0.25, 0], [0.25, 0, 0.5, 0.6], [0.5, 0.6, 0.75, 0], [0.75, 0, 1, 1]], R: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0.5], [1, 0.5, 0, 0.5], [0.4, 0.5, 1, 0]],
-        D: [[0, 0, 0, 1], [0, 1, 0.7, 1], [0.7, 1, 1, 0.7], [1, 0.7, 1, 0.3], [1, 0.3, 0.7, 0], [0.7, 0, 0, 0]], 3: [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0], [0.3, 0.5, 1, 0.5]],
-        '<': [[0.5, 0, 0, 0.6], [0.5, 0, 1, 0.6], [0, 0.6, 0.25, 0.95], [0.25, 0.95, 0.5, 0.65], [0.5, 0.65, 0.75, 0.95], [0.75, 0.95, 1, 0.6]], // heart
-      };
-      const write = (text: string, c: number, x0: number, y0: number, size: number, w = 0.035, o = 0.03) => {
-        let cx = x0;
-        for (const ch of text) { for (const [a, b, c2, d2] of glyphs[ch] ?? []) stroke(c, cx + a * size * 0.6, y0 + b * size, cx + c2 * size * 0.6, y0 + d2 * size, w, o); cx += size * (ch === ' ' ? 0.5 : 0.85); }
-      };
-      const poster = (u: number, y: number) => {
-        const c = pick(q, PASTEL), ang = (hash2(x + di, z * 3) - 0.5) * 0.14, hw = 0.3, hh = 0.42;
-        card(c, u, y, hw, hh, ang); rq(CREAM, u, y + 0.2, hw * 0.75, 0.08, 0.055, ang); rq(pick(1 - q, PASTEL), u, y - 0.1, hw * 0.6, 0.16, 0.055, ang);
-      };
-      const picture = (u: number, y: number) => {
-        const hw = 0.3 + q * 0.12, hh = 0.24;
-        B(q < 0.5 ? 0x8a5a3c : 0xc9a04a, -u, y, 0.03, hw * 2 + 0.1, hh * 2 + 0.1, 0.05);
-        rq(pick(r * 7 % 1, [0xbfe6ff, 0xffd9a0, 0xc9b8ff]), u, y, hw, hh, 0.062); rq(pick(q, [0x5fbb72, 0x8f6fb0, 0xe8793c]), u, y - hh * 0.55, hw, hh * 0.45, 0.066); rq(0xfff1c9, u + hw * 0.4, y + hh * 0.4, 0.06, 0.06, 0.066, 0.78);
-      };
-      const clock = (u: number, y: number) => {
-        prim(CYL, PAPER, -u, y, 0.03, 0.22, 0.05, 0.22, 2, HP);
-        rq(0x1a1226, u, y + 0.07, 0.014, 0.08, 0.062); rq(0x1a1226, u - 0.055, y, 0.06, 0.016, 0.062); // stopped at 3:00
-      };
-      const vent = (u: number, y: number) => { B(0x8f93a8, -u, y, 0.03, 0.66, 0.4, 0.06); for (let k = 0; k < 3; k++) rq(DARK, u, y - 0.1 + k * 0.1, 0.27, 0.018, 0.064); };
-      const fuseBox = (u: number, y: number) => {
-        B(0x6f7f9a, -u, y, 0.07, 0.42, 0.56, 0.14); rq(0xffd43b, u, y + 0.08, 0.08, 0.08, 0.144); rq(DARK, u - 0.14, y - 0.05, 0.015, 0.05, 0.144);
-        const top = indoor ? h - 0.45 : 2.6; B(0x54506e, -u, (y + 0.28 + top) / 2, 0.04, 0.05, top - y - 0.28, 0.05, 0);
-      };
-      const extinguisher = (u: number) => { rq(CREAM, u, 1.2, 0.13, 0.3, 0.02); C(0xe8413c, -u, 1.16, 0.12, 0.085, 0.44); B(DARK, -u + 0.03, 1.43, 0.12, 0.12, 0.08, 0.05, 0); };
-      const sanitiser = (u: number) => { B(PAPER, -u, 1.42, 0.06, 0.16, 0.26, 0.11); rq(0x39c5bb, u, 1.42, 0.05, 0.05, 0.118); B(0x8f93a8, -u, 1.26, 0.09, 0.07, 0.04, 0.1, 0); };
-      const board = (u: number, y: number) => {
-        B(0x8a5a3c, -u, y, 0.025, 1.2, 0.8, 0.04); rq(0xd9b98a, u, y, 0.55, 0.35, 0.05);
-        for (let k = 0; k < 5; k++) { const a = hash2(x * 3 + k, z + di), b = hash2(x + k * 5, z * 7 + di); rq(pick(a, [PAPER, 0xfff3bf, 0xffc9d6, 0xbfeaff, 0xd3f9d8]), u - 0.42 + k * 0.21, y + (b - 0.5) * 0.3, 0.085, 0.11, 0.056, (a - 0.5) * 0.4); }
-      };
-      const signPlate = (u: number, y: number, kind: number) => {
-        if (kind === 0) { card(0xffd43b, u, y, 0.26, 0.26); stroke(0x1a1226, u * -1 - 0.14, y - 0.12, u * -1, y + 0.14, 0.04, 0.055); stroke(0x1a1226, u * -1, y + 0.14, u * -1 + 0.14, y - 0.12, 0.04, 0.055); stroke(0x1a1226, u * -1 - 0.14, y - 0.12, u * -1 + 0.14, y - 0.12, 0.04, 0.055); } // hazard triangle
-        else if (kind === 1) { card(0x4fa36a, u, y, 0.34, 0.15); rq(PAPER, u + 0.1, y, 0.14, 0.035, 0.055); rq(PAPER, u - 0.16, y, 0.07, 0.07, 0.055, 0.78); } // exit arrow
-        else if (kind === 2) { card(PAPER, u, y, 0.24, 0.24); rq(0x39c5bb, u, y, 0.16, 0.055, 0.055); rq(0x39c5bb, u, y, 0.055, 0.16, 0.055); } // cross
-        else { card(0xe8413c, u, y, 0.3, 0.12); rq(PAPER, u, y, 0.22, 0.03, 0.055); } // red notice
-      };
-      const graffiti = (u: number, y: number) => {
-        const c = pick(q, NEONS), k = hash2(x * 7 + di, z * 3 + 5);
-        if (k < 0.45) { write('Z', c, -u - 0.4, y - 0.1, 0.36, 0.06); write('Z', c, -u - 0.05, y + 0.05, 0.5, 0.07); write('Z', pick(1 - q, NEONS), -u + 0.42, y + 0.3, 0.3, 0.05); }
-        else if (k < 0.7) { write('<', c, -u - 0.3, y - 0.2, 0.6, 0.07); }
-        else { for (let s = 0; s < 4; s++) stroke(c, -u - 0.5 + s * 0.26, y - 0.25 + (s % 2) * 0.5, -u - 0.24 + s * 0.26, y + 0.25 - (s % 2) * 0.5, 0.07); stroke(pick(1 - q, NEONS), -u - 0.55, y - 0.36, -u + 0.55, y - 0.36, 0.05); }
-        if (k > 0.8 || k < 0.1) rq(c, u + 0.2, y - 0.5, 0.02, 0.14, 0.03); // a drip
-      };
-      const pipeRun = (y: number, c: number) => { prim(CYL_S, c, 0, y, 0.1, 0.06, 2, 0.06, 2, 0, 0, HP); if ((x * Math.abs(tx) + z * Math.abs(tz)) % 3 === 0) B(DARK, 0, y, 0.07, 0.07, 0.17, 0.14, 0); };
+    stats.trisItems = triCount - stats.trisScatter - stats.trisWall;
+    // ---------------------------------------------------------- pass 2: walls
+    const NEONS = [0xff7ac8, 0x5ff0e0, 0xffd45e, 0x9d8cff, 0xff8a6a];
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x, f = floor[i];
+      if (f === F.NONE || f === F.WATER || propCell[i] || mask[i] & NO_WALL) continue;
+      for (let di = 0; di < 4; di++) {
+        const [dx, dz] = DIRS[di], wx = x - dx, wz = z - dz;
+        if (wx < 0 || wz < 0 || wx >= W || wz >= H || !isWallC(wz * W + wx)) continue;
+        const fk = faceKind(wx, wz, di, f);
+        if (fk === DOOR || fk === WINDOW || fk === NATURAL) continue;
+        const indoor = isIndoor(f), h = indoor ? CEIL_H : wallTop(wz * W + wx);
+        if (h < 2.4) continue;
+        const r = hash2(x * 13 + di * 7 + 3, z * 17 + di * 3 + 11), q = hash2(x * 5 + di + 23, z * 9 + di * 5 + 1);
+        const mx = (wx + 0.5 + dx * 0.5) * T, mz = (wz + 0.5 + dz * 0.5) * T, tx = -dz, tz = dx, nrm: V3 = [dx, 0, dz];
+        const below = faceItem.get(i * 4 + di) ?? 0;
+        begin(mx, mz, Math.atan2(dx, dz));
+        // Face frame: u runs along the wall (positive = the viewer's left), y up, o out of the wall.
+        const P = (u: number, y: number, o: number) => [mx + tx * u + dx * o, yb + y, mz + tz * u + dz * o];
+        const rq = (c: number, u: number, y: number, hw: number, hh: number, o = 0.05, ang = 0) => {
+          const cs = Math.cos(ang), sn = Math.sin(ang), p: number[] = [];
+          for (const [a, b] of [[hw, -hh], [-hw, -hh], [-hw, hh], [hw, hh]]) p.push(...P(u + a * cs - b * sn, y + a * sn + b * cs, o));
+          quad(S, rgb(c), nrm, p); triCount += 2;
+        };
+        /** A flat card with an ink border behind it. */
+        const card = (c: number, u: number, y: number, hw: number, hh: number, ang = 0) => { rq(0x1a1226, u, y, hw + 0.022, hh + 0.022, 0.03, ang); rq(c, u, y, hw, hh, 0.048, ang); };
+        /** A chalk/paint stroke between two points given in the viewer's frame (x to the right). */
+        const stroke = (c: number, x0: number, y0: number, x1: number, y1: number, w = 0.035, o = 0.03) => rq(c, -(x0 + x1) / 2, (y0 + y1) / 2, Math.hypot(x1 - x0, y1 - y0) / 2 + w * 0.4, w / 2, o, Math.atan2(y1 - y0, -(x1 - x0)));
+        const glyphs: Record<string, number[][]> = {
+          S: [[1, 1, 0, 1], [0, 1, 0, 0.5], [0, 0.5, 1, 0.5], [1, 0.5, 1, 0], [1, 0, 0, 0]], A: [[0, 0, 0.5, 1], [0.5, 1, 1, 0], [0.22, 0.4, 0.78, 0.4]],
+          F: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5]], E: [[0, 0, 0, 1], [0, 1, 1, 1], [0, 0.5, 0.7, 0.5], [0, 0, 1, 0]], Z: [[0, 1, 1, 1], [1, 1, 0, 0], [0, 0, 1, 0]],
+          O: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0]], K: [[0, 0, 0, 1], [0, 0.5, 1, 1], [0, 0.5, 1, 0]],
+          W: [[0, 1, 0.25, 0], [0.25, 0, 0.5, 0.6], [0.5, 0.6, 0.75, 0], [0.75, 0, 1, 1]], R: [[0, 0, 0, 1], [0, 1, 1, 1], [1, 1, 1, 0.5], [1, 0.5, 0, 0.5], [0.4, 0.5, 1, 0]],
+          D: [[0, 0, 0, 1], [0, 1, 0.7, 1], [0.7, 1, 1, 0.7], [1, 0.7, 1, 0.3], [1, 0.3, 0.7, 0], [0.7, 0, 0, 0]], 3: [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 0, 0], [0.3, 0.5, 1, 0.5]],
+          '<': [[0.5, 0, 0, 0.6], [0.5, 0, 1, 0.6], [0, 0.6, 0.25, 0.95], [0.25, 0.95, 0.5, 0.65], [0.5, 0.65, 0.75, 0.95], [0.75, 0.95, 1, 0.6]], // heart
+        };
+        const write = (text: string, c: number, x0: number, y0: number, size: number, w = 0.035, o = 0.03) => {
+          let cx = x0;
+          for (const ch of text) { for (const [a, b, c2, d2] of glyphs[ch] ?? []) stroke(c, cx + a * size * 0.6, y0 + b * size, cx + c2 * size * 0.6, y0 + d2 * size, w, o); cx += size * (ch === ' ' ? 0.5 : 0.85); }
+        };
+        const poster = (u: number, y: number) => {
+          const c = pick(q, PASTEL), ang = (hash2(x + di, z * 3) - 0.5) * 0.14, hw = 0.3, hh = 0.42;
+          card(c, u, y, hw, hh, ang); rq(CREAM, u, y + 0.2, hw * 0.75, 0.08, 0.055, ang); rq(pick(1 - q, PASTEL), u, y - 0.1, hw * 0.6, 0.16, 0.055, ang);
+        };
+        const picture = (u: number, y: number) => {
+          const hw = 0.3 + q * 0.12, hh = 0.24;
+          B(q < 0.5 ? 0x8a5a3c : 0xc9a04a, -u, y, 0.03, hw * 2 + 0.1, hh * 2 + 0.1, 0.05);
+          rq(pick(r * 7 % 1, [0xbfe6ff, 0xffd9a0, 0xc9b8ff]), u, y, hw, hh, 0.062); rq(pick(q, [0x5fbb72, 0x8f6fb0, 0xe8793c]), u, y - hh * 0.55, hw, hh * 0.45, 0.066); rq(0xfff1c9, u + hw * 0.4, y + hh * 0.4, 0.06, 0.06, 0.066, 0.78);
+        };
+        const clock = (u: number, y: number) => {
+          prim(CYL, PAPER, -u, y, 0.03, 0.22, 0.05, 0.22, 2, HP);
+          rq(0x1a1226, u, y + 0.07, 0.014, 0.08, 0.062); rq(0x1a1226, u - 0.055, y, 0.06, 0.016, 0.062); // stopped at 3:00
+        };
+        const vent = (u: number, y: number) => { B(0x8f93a8, -u, y, 0.03, 0.66, 0.4, 0.06); for (let k = 0; k < 3; k++) rq(DARK, u, y - 0.1 + k * 0.1, 0.27, 0.018, 0.064); };
+        const fuseBox = (u: number, y: number) => {
+          B(0x6f7f9a, -u, y, 0.07, 0.42, 0.56, 0.14); rq(0xffd43b, u, y + 0.08, 0.08, 0.08, 0.144); rq(DARK, u - 0.14, y - 0.05, 0.015, 0.05, 0.144);
+          const top = indoor ? h - 0.45 : 2.6; B(0x54506e, -u, (y + 0.28 + top) / 2, 0.04, 0.05, top - y - 0.28, 0.05, 0);
+        };
+        const extinguisher = (u: number) => { rq(CREAM, u, 1.2, 0.13, 0.3, 0.02); C(0xe8413c, -u, 1.16, 0.12, 0.085, 0.44); B(DARK, -u + 0.03, 1.43, 0.12, 0.12, 0.08, 0.05, 0); };
+        const sanitiser = (u: number) => { B(PAPER, -u, 1.42, 0.06, 0.16, 0.26, 0.11); rq(0x39c5bb, u, 1.42, 0.05, 0.05, 0.118); B(0x8f93a8, -u, 1.26, 0.09, 0.07, 0.04, 0.1, 0); };
+        const board = (u: number, y: number) => {
+          B(0x8a5a3c, -u, y, 0.025, 1.2, 0.8, 0.04); rq(0xd9b98a, u, y, 0.55, 0.35, 0.05);
+          for (let k = 0; k < 5; k++) { const a = hash2(x * 3 + k, z + di), b = hash2(x + k * 5, z * 7 + di); rq(pick(a, [PAPER, 0xfff3bf, 0xffc9d6, 0xbfeaff, 0xd3f9d8]), u - 0.42 + k * 0.21, y + (b - 0.5) * 0.3, 0.085, 0.11, 0.056, (a - 0.5) * 0.4); }
+        };
+        const signPlate = (u: number, y: number, kind: number) => {
+          if (kind === 0) { card(0xffd43b, u, y, 0.26, 0.26); stroke(0x1a1226, u * -1 - 0.14, y - 0.12, u * -1, y + 0.14, 0.04, 0.055); stroke(0x1a1226, u * -1, y + 0.14, u * -1 + 0.14, y - 0.12, 0.04, 0.055); stroke(0x1a1226, u * -1 - 0.14, y - 0.12, u * -1 + 0.14, y - 0.12, 0.04, 0.055); } // hazard triangle
+          else if (kind === 1) { card(0x4fa36a, u, y, 0.34, 0.15); rq(PAPER, u + 0.1, y, 0.14, 0.035, 0.055); rq(PAPER, u - 0.16, y, 0.07, 0.07, 0.055, 0.78); } // exit arrow
+          else if (kind === 2) { card(PAPER, u, y, 0.24, 0.24); rq(0x39c5bb, u, y, 0.16, 0.055, 0.055); rq(0x39c5bb, u, y, 0.055, 0.16, 0.055); } // cross
+          else { card(0xe8413c, u, y, 0.3, 0.12); rq(PAPER, u, y, 0.22, 0.03, 0.055); } // red notice
+        };
+        const graffiti = (u: number, y: number) => {
+          const c = pick(q, NEONS), k = hash2(x * 7 + di, z * 3 + 5);
+          if (k < 0.45) { write('Z', c, -u - 0.4, y - 0.1, 0.36, 0.06); write('Z', c, -u - 0.05, y + 0.05, 0.5, 0.07); write('Z', pick(1 - q, NEONS), -u + 0.42, y + 0.3, 0.3, 0.05); }
+          else if (k < 0.7) { write('<', c, -u - 0.3, y - 0.2, 0.6, 0.07); }
+          else { for (let s = 0; s < 4; s++) stroke(c, -u - 0.5 + s * 0.26, y - 0.25 + (s % 2) * 0.5, -u - 0.24 + s * 0.26, y + 0.25 - (s % 2) * 0.5, 0.07); stroke(pick(1 - q, NEONS), -u - 0.55, y - 0.36, -u + 0.55, y - 0.36, 0.05); }
+          if (k > 0.8 || k < 0.1) rq(c, u + 0.2, y - 0.5, 0.02, 0.14, 0.03); // a drip
+        };
+        const pipeRun = (y: number, c: number) => { prim(CYL_S, c, 0, y, 0.1, 0.06, 2, 0.06, 2, 0, 0, HP); if ((x * Math.abs(tx) + z * Math.abs(tz)) % 3 === 0) B(DARK, 0, y, 0.07, 0.07, 0.17, 0.14, 0); };
 
-      if (corr[i] & (dz ? CX : CZ)) {
-        // Hospital corridor wall: a fixed rhythm of fittings instead of the random scatter.
-        const a = dz ? x : z, side = di & 1, b = a + side * 3 + (dz ? wz : wx), m = b % 6, g = Math.floor(b / 6);
-        // A side opening next door gets a room-number plaque on the near edge of this panel.
-        let open = 0;
-        for (const s of [-1, 1]) if (!wallAt(wx + (dz ? s : 0), wz + (dz ? 0 : s)) && !(corr[i + (dz ? s : s * W)] & (dz ? CZ : CX))) open = s * (dz ? tx : tz);
-        if (open) {
-          const pu = open * 0.66;
-          card(PAPER, pu, 1.62, 0.2, 0.12); rq(pick(q, [0x39c5bb, 0xff8fa3, 0x74c0fc, 0xffa94d]), pu, 1.7, 0.2, 0.04, 0.055);
-          write('3' + pick(r, ['OS', 'Z3', 'SO', '3Z', 'OZ']), 0x1a1226, -pu - 0.14, 1.53, 0.1, 0.02, 0.056);
+        if (corr[i] & (dz ? CX : CZ)) {
+          // Hospital corridor wall: a fixed rhythm of fittings instead of the random scatter.
+          const a = dz ? x : z, side = di & 1, b = a + side * 3 + (dz ? wz : wx), m = b % 6, g = Math.floor(b / 6);
+          // A side opening next door gets a room-number plaque on the near edge of this panel.
+          let open = 0;
+          for (const s of [-1, 1]) if (!wallAt(wx + (dz ? s : 0), wz + (dz ? 0 : s)) && !(corr[i + (dz ? s : s * W)] & (dz ? CZ : CX))) open = s * (dz ? tx : tz);
+          if (open) {
+            const pu = open * 0.66;
+            card(PAPER, pu, 1.62, 0.2, 0.12); rq(pick(q, [0x39c5bb, 0xff8fa3, 0x74c0fc, 0xffa94d]), pu, 1.7, 0.2, 0.04, 0.055);
+            write('3' + pick(r, ['OS', 'Z3', 'SO', '3Z', 'OZ']), 0x1a1226, -pu - 0.14, 1.53, 0.1, 0.02, 0.056);
+            stats.wall++; continue;
+          }
+          const cu = (q - 0.5) * 0.3;
+          if (m === 0) { if (below <= 1.05) sanitiser(cu); else vent(cu, 3.1); }
+          else if (m === 1) {
+            if (g % 2 === 0) {
+              // Directional sign pointing along the wall to the nearest ward (floor 3) or the ER (ground floor).
+              let to: { x: number; z: number } | null = null, best = 1e9, ward = false;
+              for (const l of def.labels) {
+              if (upper && storeyOfY(l.y, levels) !== lv) continue;
+                const w = /^WARD 3/.test(l.text) && l.z - z > -10 && l.z - z < 38, er = l.text === 'ER' && Math.abs(l.z - z) < 40 && Math.abs(l.x - x) < 70;
+                const d = Math.hypot(l.x - x, l.z - z) - (w ? 1000 : 0);
+                if ((w || er) && d < best) { best = d; to = l; ward = w; }
+              }
+              if (to) {
+                const sd = (to.x - x - 0.5) * tx + (to.z - z - 0.5) * tz, left = Math.abs(sd) > 2 ? sd > 0 : q < 0.5;
+                const text = ward ? 'WARD 3' : 'ER', tw = ward ? 0.7 : 0.24, x0 = -(tw + 0.3) / 2 + (left ? 0.3 : 0), xa = left ? x0 - 0.3 : x0 + tw + 0.06, hd = left ? 1 : -1, tipx = left ? xa : xa + 0.2;
+                card(ward ? 0x3f7cc4 : 0xe8413c, 0, 2.42, (tw + 0.3) / 2 + 0.1, 0.14);
+                write(text, PAPER, x0, 2.35, 0.14, 0.026, 0.056);
+                stroke(PAPER, xa, 2.42, xa + 0.2, 2.42, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.49, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.35, 0.03, 0.056);
+              } else signPlate(cu, 2.9, 1);
+            } else if (g % 4 === 1) clock(cu, 2.75); else signPlate(cu, 2.9, 1);
+          }
+          else if (m === 2) { if (below <= 1.5) { if (g % 2) picture(cu, 1.98); else poster(cu, 1.95); } }
+          else if (m === 4) {
+            if (below > 1.0) { if (below <= 1.5 && g % 2) board(0, 2.05); }
+            else if (g % 3 === 0) board(0, 1.95);
+            else if (g % 3 === 1) { B(0xe8413c, -cu, 1.25, 0.06, 0.42, 0.68, 0.12); rq(0xd8f6ff, cu, 1.25, 0.15, 0.27, 0.125); rq(0xc0322e, cu, 1.2, 0.055, 0.17, 0.13); rq(DARK, cu, 1.4, 0.03, 0.035, 0.13); } // extinguisher cabinet
+            else { B(0xffd43b, -cu, 1.34, 0.07, 0.24, 0.3, 0.14); B(0xe8413c, -cu, 1.51, 0.07, 0.26, 0.05, 0.16, 0); rq(DARK, cu, 1.32, 0.05, 0.05, 0.145, 0.78); } // sharps box
+          }
+          else if (m === 5 && q < 0.6) signPlate(cu, below > 1.5 ? 2.7 : 2.05, 2);
+          else continue;
           stats.wall++; continue;
         }
-        const cu = (q - 0.5) * 0.3;
-        if (m === 0) { if (below <= 1.05) sanitiser(cu); else vent(cu, 3.1); }
-        else if (m === 1) {
-          if (g % 2 === 0) {
-            // Directional sign pointing along the wall to the nearest ward (floor 3) or the ER (ground floor).
-            let to: { x: number; z: number } | null = null, best = 1e9, ward = false;
-            for (const l of def.labels) {
-              const w = /^WARD 3/.test(l.text) && l.z - z > -10 && l.z - z < 38, er = l.text === 'ER' && Math.abs(l.z - z) < 40 && Math.abs(l.x - x) < 70;
-              const d = Math.hypot(l.x - x, l.z - z) - (w ? 1000 : 0);
-              if ((w || er) && d < best) { best = d; to = l; ward = w; }
-            }
-            if (to) {
-              const sd = (to.x - x - 0.5) * tx + (to.z - z - 0.5) * tz, left = Math.abs(sd) > 2 ? sd > 0 : q < 0.5;
-              const text = ward ? 'WARD 3' : 'ER', tw = ward ? 0.7 : 0.24, x0 = -(tw + 0.3) / 2 + (left ? 0.3 : 0), xa = left ? x0 - 0.3 : x0 + tw + 0.06, hd = left ? 1 : -1, tipx = left ? xa : xa + 0.2;
-              card(ward ? 0x3f7cc4 : 0xe8413c, 0, 2.42, (tw + 0.3) / 2 + 0.1, 0.14);
-              write(text, PAPER, x0, 2.35, 0.14, 0.026, 0.056);
-              stroke(PAPER, xa, 2.42, xa + 0.2, 2.42, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.49, 0.03, 0.056); stroke(PAPER, tipx, 2.42, tipx + hd * 0.08, 2.35, 0.03, 0.056);
-            } else signPlate(cu, 2.9, 1);
-          } else if (g % 4 === 1) clock(cu, 2.75); else signPlate(cu, 2.9, 1);
+        const industrial = chap === 3 || (!indoor && f === F.CONCRETE);
+        // Long pipe runs: decided per stretch of wall so neighbouring tiles line up.
+        const stretch = hash2(Math.floor((x * Math.abs(tx) + z * Math.abs(tz)) / 6) + di * 31, (x * Math.abs(dx) + z * Math.abs(dz)) * 7 + 5);
+        let pipes = false;
+        if ((industrial && stretch < 0.3) || (f === F.INTERIOR && chap !== 2 && stretch < 0.12)) {
+          pipes = true; pipeRun(indoor ? 3.3 : 2.4, stretch < 0.1 ? 0xb46a4a : 0x8f93a8); if (stretch < 0.15) pipeRun(indoor ? 3.05 : 2.18, 0xffd43b); stats.wall++;
         }
-        else if (m === 2) { if (below <= 1.5) { if (g % 2) picture(cu, 1.98); else poster(cu, 1.95); } }
-        else if (m === 4) {
-          if (below > 1.0) { if (below <= 1.5 && g % 2) board(0, 2.05); }
-          else if (g % 3 === 0) board(0, 1.95);
-          else if (g % 3 === 1) { B(0xe8413c, -cu, 1.25, 0.06, 0.42, 0.68, 0.12); rq(0xd8f6ff, cu, 1.25, 0.15, 0.27, 0.125); rq(0xc0322e, cu, 1.2, 0.055, 0.17, 0.13); rq(DARK, cu, 1.4, 0.03, 0.035, 0.13); } // extinguisher cabinet
-          else { B(0xffd43b, -cu, 1.34, 0.07, 0.24, 0.3, 0.14); B(0xe8413c, -cu, 1.51, 0.07, 0.26, 0.05, 0.16, 0); rq(DARK, cu, 1.32, 0.05, 0.05, 0.145, 0.78); } // sharps box
+        const u = (q - 0.5) * 0.8;
+        if (f === F.SAFE) {
+          if (r > 0.55 * DENSITY) continue;
+          stats.wall++;
+          const chalk = pick(q, [0xfff6e0, 0xfff1c9, 0xbfeaff, 0xffc9d6]);
+          if (below > 1.2) { if (r < 0.2) clock(u, 2.9); continue; }
+          const k = r / 0.55;
+          if (k < 0.28) { write('SAFE', chalk, -0.62, 1.7, 0.42, 0.05); write('<', 0xff8fa3, 0.3, 2.3, 0.3, 0.05); }
+          else if (k < 0.42) { for (let s = 0; s < 4; s++) stroke(chalk, -0.3 + s * 0.14, 1.6, -0.3 + s * 0.14 + 0.02, 2.0, 0.04); stroke(chalk, -0.4, 1.66, 0.24, 1.94, 0.04); } // days survived
+          else if (k < 0.56) { write('OK', chalk, -0.3, 1.7, 0.4, 0.05); write('<', 0xff8fa3, 0.36, 1.72, 0.3, 0.05); }
+          else if (k < 0.7) picture(u, 1.95);
+          else if (k < 0.84) poster(u, 1.95);
+          else board(0, 1.95);
+          continue;
         }
-        else if (m === 5 && q < 0.6) signPlate(cu, below > 1.5 ? 2.7 : 2.05, 2);
-        else continue;
-        stats.wall++; continue;
-      }
-      const industrial = chap === 3 || (!indoor && f === F.CONCRETE);
-      // Long pipe runs: decided per stretch of wall so neighbouring tiles line up.
-      const stretch = hash2(Math.floor((x * Math.abs(tx) + z * Math.abs(tz)) / 6) + di * 31, (x * Math.abs(dx) + z * Math.abs(dz)) * 7 + 5);
-      let pipes = false;
-      if ((industrial && stretch < 0.3) || (f === F.INTERIOR && chap !== 2 && stretch < 0.12)) {
-        pipes = true; pipeRun(indoor ? 3.3 : 2.4, stretch < 0.1 ? 0xb46a4a : 0x8f93a8); if (stretch < 0.15) pipeRun(indoor ? 3.05 : 2.18, 0xffd43b); stats.wall++;
-      }
-      const u = (q - 0.5) * 0.8;
-      if (f === F.SAFE) {
-        if (r > 0.55 * DENSITY) continue;
+        if (indoor) {
+          const p = (f === F.TILES ? 0.3 : 0.26) * DENSITY;
+          if (r > p) continue;
+          stats.wall++;
+          const k = r / p, hi = below > 1.0;
+          if (hi) { if (k < 0.35) clock(u, 2.95); else if (k < 0.7) vent(u, 3.1); else signPlate(u, 2.9, 1); continue; }
+          if (f === F.TILES) {
+            if (k < 0.16) sanitiser(u); else if (k < 0.34) board(0, 1.95); else if (k < 0.46) signPlate(u, 2.0, 2); else if (k < 0.58) extinguisher(u);
+            else if (k < 0.7) clock(u, 2.6); else if (k < 0.82) poster(u, 1.95); else if (k < 0.92) signPlate(u, 2.9, 1); else vent(u, 3.1);
+          } else if (chap === 3 || hint[i] === HINT.PARKING) {
+            if (k < 0.2) fuseBox(u, 1.6); else if (k < 0.4) signPlate(u, 1.9, 0); else if (k < 0.55) extinguisher(u); else if (k < 0.7) vent(u, 3.0);
+            else if (k < 0.82) signPlate(u, 2.0, 3); else if (k < 0.92) poster(u, 1.95); else if (!pipes) clock(u, 2.7);
+          } else {
+            if (k < 0.34) poster(u, 1.95); else if (k < 0.56) picture(u, 1.95); else if (k < 0.66) clock(u, 2.6); else if (k < 0.76) vent(u, 3.1);
+            else if (k < 0.84) signPlate(u, 2.9, 1); else if (k < 0.92) extinguisher(u); else if (hint[i] === HINT.BOOKS || hint[i] === HINT.SCHOOL || hint[i] === HINT.OFFICE) board(0, 1.95); else poster(u, 2.0);
+          }
+          continue;
+        }
+        // Exterior building wall (plain stretch: no shop window or door here). Windows start at 2.7 m.
+        const p = (industrial ? 0.26 : chap === 4 ? 0.1 : 0.3) * DENSITY;
+        if (r > p || h < 2.9) continue;
         stats.wall++;
-        const chalk = pick(q, [0xfff6e0, 0xfff1c9, 0xbfeaff, 0xffc9d6]);
-        if (below > 1.2) { if (r < 0.2) clock(u, 2.9); continue; }
-        const k = r / 0.55;
-        if (k < 0.28) { write('SAFE', chalk, -0.62, 1.7, 0.42, 0.05); write('<', 0xff8fa3, 0.3, 2.3, 0.3, 0.05); }
-        else if (k < 0.42) { for (let s = 0; s < 4; s++) stroke(chalk, -0.3 + s * 0.14, 1.6, -0.3 + s * 0.14 + 0.02, 2.0, 0.04); stroke(chalk, -0.4, 1.66, 0.24, 1.94, 0.04); } // days survived
-        else if (k < 0.56) { write('OK', chalk, -0.3, 1.7, 0.4, 0.05); write('<', 0xff8fa3, 0.36, 1.72, 0.3, 0.05); }
-        else if (k < 0.7) picture(u, 1.95);
-        else if (k < 0.84) poster(u, 1.95);
-        else board(0, 1.95);
-        continue;
-      }
-      if (indoor) {
-        const p = (f === F.TILES ? 0.3 : 0.26) * DENSITY;
-        if (r > p) continue;
-        stats.wall++;
-        const k = r / p, hi = below > 1.0;
-        if (hi) { if (k < 0.35) clock(u, 2.95); else if (k < 0.7) vent(u, 3.1); else signPlate(u, 2.9, 1); continue; }
-        if (f === F.TILES) {
-          if (k < 0.16) sanitiser(u); else if (k < 0.34) board(0, 1.95); else if (k < 0.46) signPlate(u, 2.0, 2); else if (k < 0.58) extinguisher(u);
-          else if (k < 0.7) clock(u, 2.6); else if (k < 0.82) poster(u, 1.95); else if (k < 0.92) signPlate(u, 2.9, 1); else vent(u, 3.1);
-        } else if (chap === 3 || hint[i] === HINT.PARKING) {
-          if (k < 0.2) fuseBox(u, 1.6); else if (k < 0.4) signPlate(u, 1.9, 0); else if (k < 0.55) extinguisher(u); else if (k < 0.7) vent(u, 3.0);
-          else if (k < 0.82) signPlate(u, 2.0, 3); else if (k < 0.92) poster(u, 1.95); else if (!pipes) clock(u, 2.7);
+        const k = r / p;
+        if (below > 1.2) continue;
+        if (industrial) {
+          if (k < 0.3) signPlate(u, 1.8, 0); else if (k < 0.48) fuseBox(u, 1.5); else if (k < 0.68) graffiti(u, 1.5); else if (k < 0.8) signPlate(u, 1.9, 3);
+          else if (k < 0.9) vent(u, 1.6); else { B(DARK, -u, 1.9, 0.04, 0.05, 0.08, 0.08, 0); for (let s = 0; s < 5; s++) B(s % 2 ? 0x54506e : 0x8f93a8, -u, 1.75 - s * 0.2, 0.05 + (s % 2) * 0.02, 0.05, 0.2, 0.04, 0); } // hanging chain
+        } else if (chap === 4) {
+          if (k < 0.4) vent(u, 0.7); else if (k < 0.7) fuseBox(u, 1.4); else poster(u, 1.6);
         } else {
-          if (k < 0.34) poster(u, 1.95); else if (k < 0.56) picture(u, 1.95); else if (k < 0.66) clock(u, 2.6); else if (k < 0.76) vent(u, 3.1);
-          else if (k < 0.84) signPlate(u, 2.9, 1); else if (k < 0.92) extinguisher(u); else if (hint[i] === HINT.BOOKS || hint[i] === HINT.SCHOOL || hint[i] === HINT.OFFICE) board(0, 1.95); else poster(u, 2.0);
+          if (k < 0.34) graffiti(u, 1.5); else if (k < 0.62) { poster(u - 0.34, 1.6); if (q < 0.6) poster(u + 0.36, 1.66); } else if (k < 0.74) vent(u, 0.75);
+          else if (k < 0.86) fuseBox(u, 1.45); else if (k < 0.93) signPlate(u, 2.0, 3); else { B(0x54506e, -u, 1.25, 0.05, 0.07, 2.5, 0.07, 0); B(DARK, -u, 1.7, 0.06, 0.12, 0.05, 0.1, 0); } // conduit
         }
-        continue;
-      }
-      // Exterior building wall (plain stretch: no shop window or door here). Windows start at 2.7 m.
-      const p = (industrial ? 0.26 : chap === 4 ? 0.1 : 0.3) * DENSITY;
-      if (r > p || h < 2.9) continue;
-      stats.wall++;
-      const k = r / p;
-      if (below > 1.2) continue;
-      if (industrial) {
-        if (k < 0.3) signPlate(u, 1.8, 0); else if (k < 0.48) fuseBox(u, 1.5); else if (k < 0.68) graffiti(u, 1.5); else if (k < 0.8) signPlate(u, 1.9, 3);
-        else if (k < 0.9) vent(u, 1.6); else { B(DARK, -u, 1.9, 0.04, 0.05, 0.08, 0.08, 0); for (let s = 0; s < 5; s++) B(s % 2 ? 0x54506e : 0x8f93a8, -u, 1.75 - s * 0.2, 0.05 + (s % 2) * 0.02, 0.05, 0.2, 0.04, 0); } // hanging chain
-      } else if (chap === 4) {
-        if (k < 0.4) vent(u, 0.7); else if (k < 0.7) fuseBox(u, 1.4); else poster(u, 1.6);
-      } else {
-        if (k < 0.34) graffiti(u, 1.5); else if (k < 0.62) { poster(u - 0.34, 1.6); if (q < 0.6) poster(u + 0.36, 1.66); } else if (k < 0.74) vent(u, 0.75);
-        else if (k < 0.86) fuseBox(u, 1.45); else if (k < 0.93) signPlate(u, 2.0, 3); else { B(0x54506e, -u, 1.25, 0.05, 0.07, 2.5, 0.07, 0); B(DARK, -u, 1.7, 0.06, 0.12, 0.05, 0.1, 0); } // conduit
       }
     }
-  }
 
-  // ------------------------------------- pass 3: corridor rails and stripes
-  // One beam (or one painted quad) per straight run, cut at chunk edges so culling stays tight.
-  if (chap === 2) for (const di of [0, 1, 2, 3]) {
-    const [dx, dz] = DIRS[di], bit = dz ? CX : CZ, LA = dz ? W : H, LB = dz ? H : W;
-    const cell = (a: number, b: number) => (dz ? b * W + a : a * W + b);
-    /** Runs of `ok` cells along line `b`; `fn` gets the inclusive ends and whether each end is cut short by an opening. */
-    const runs = (b: number, ok: (a: number, i: number) => boolean, fn: (a0: number, a1: number, e0: boolean, e1: boolean) => void) => {
-      for (let a = 0, s = -1, e0 = true; a <= LA; a++) {
-        const on = a < LA && ok(a, cell(a, b));
-        if (s >= 0 && (!on || a % CHUNK === 0)) { fn(s, a - 1, e0, !on); s = -1; }
-        if (on && s < 0) { s = a; e0 = a % CHUNK !== 0 || a === 0 || !ok(a - 1, cell(a - 1, b)); }
+    // ------------------------------------- pass 3: corridor rails and stripes
+    // One beam (or one painted quad) per straight run, cut at chunk edges so culling stays tight.
+    if (chap === 2) for (const di of [0, 1, 2, 3]) {
+      const [dx, dz] = DIRS[di], bit = dz ? CX : CZ, LA = dz ? W : H, LB = dz ? H : W;
+      const cell = (a: number, b: number) => (dz ? b * W + a : a * W + b);
+      /** Runs of `ok` cells along line `b`; `fn` gets the inclusive ends and whether each end is cut short by an opening. */
+      const runs = (b: number, ok: (a: number, i: number) => boolean, fn: (a0: number, a1: number, e0: boolean, e1: boolean) => void) => {
+        for (let a = 0, s = -1, e0 = true; a <= LA; a++) {
+          const on = a < LA && ok(a, cell(a, b));
+          if (s >= 0 && (!on || a % CHUNK === 0)) { fn(s, a - 1, e0, !on); s = -1; }
+          if (on && s < 0) { s = a; e0 = a % CHUNK !== 0 || a === 0 || !ok(a - 1, cell(a - 1, b)); }
+        }
+      };
+      /** World position `a` tiles along line `b`, `o` metres out from the wall face on this side. */
+      const place = (a: number, b: number, o: number) => { const pa = a * T, pb = (b + 0.5 - (dx + dz) * 0.5) * T + (dx + dz) * o; return dz ? [pa, pb] : [pb, pa]; };
+      const wallSide = (a: number, b: number) => (dz ? wallAt(a, b - dz) : wallAt(b - dx, a));
+      for (let b = 0; b < LB; b++) {
+        // Handrail at 0.9 m.
+        runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && wallSide(a, b), (a0, a1, e0, e1) => {
+          const s0 = a0 * T + (e0 ? 0.14 : 0), s1 = (a1 + 1) * T - (e1 ? 0.14 : 0), [px, pz] = place((s0 + s1) / 2 / T, b, 0);
+          begin(px, pz, Math.atan2(dx, dz));
+          B(0xe8b98a, 0, 0.92, 0.05, s1 - s0, 0.1, 0.06); stats.wall++;
+        });
+        // A curtain rail over each room opening, the curtain bunched to one side.
+        runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && !wallSide(a, b) && hosp[i - (dz ? dz * W : dx)] === 1 && !corr[i - (dz ? dz * W : dx)] && doorCell[i - (dz ? dz * W : dx)] < 0, (a0, a1, e0, e1) => {
+          if (!e0 || !e1 || a1 - a0 > 2 || !wallSide(a0 - 1, b) || !wallSide(a1 + 1, b)) return;
+          const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = hash2(a0 * 5 + di, b * 3 + 1);
+          begin(px, pz, Math.atan2(dx, dz));
+          B(STEEL, 0, 2.66, -0.16, len, 0.045, 0.045, 0);
+          const cx = (hs < 0.5 ? -1 : 1) * (len / 2 - 0.22), c = pick(hs * 2 % 1, [0x9fe3cf, 0xffc9d6, 0xbfeaff, 0xfff3bf]);
+          B(c, cx, 1.6, -0.16, 0.36, 2.08, 0.14); for (const s of [-1, 1]) B(DARK, cx + s * 0.07, 1.6, -0.085, 0.012, 2.0, 0.01, 0);
+          stats.wall++;
+        });
+        // Wayfinding stripes painted down the first lane (one wall only).
+        if (!(di & 1)) runs(b, (a, i) => (corr[i] & bit) !== 0 && !(corr[i - (dz ? W : 1)] & bit) && !(mask[i] & NO_PAINT) && !propCell[i] && doorCell[i] < 0 && hash2(a * 3 + 1, b * 7 + di) > 0.05, (a0, a1) => {
+          const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = (b + di) % 3;
+          begin(px, pz, Math.atan2(dx, dz));
+          for (let k = 0; k < 2; k++) sheet([0x39c5bb, 0xff8fa3, 0xffd43b, 0x74c0fc, 0xff8a3c, 0x8ce99a][hs * 2 + k], 0, 1.2 + k * 0.2, len, 0.1, 0, true, 0.024);
+        });
       }
-    };
-    /** World position `a` tiles along line `b`, `o` metres out from the wall face on this side. */
-    const place = (a: number, b: number, o: number) => { const pa = a * T, pb = (b + 0.5 - (dx + dz) * 0.5) * T + (dx + dz) * o; return dz ? [pa, pb] : [pb, pa]; };
-    const wallSide = (a: number, b: number) => (dz ? wallAt(a, b - dz) : wallAt(b - dx, a));
-    for (let b = 0; b < LB; b++) {
-      // Handrail at 0.9 m.
-      runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && wallSide(a, b), (a0, a1, e0, e1) => {
-        const s0 = a0 * T + (e0 ? 0.14 : 0), s1 = (a1 + 1) * T - (e1 ? 0.14 : 0), [px, pz] = place((s0 + s1) / 2 / T, b, 0);
-        begin(px, pz, Math.atan2(dx, dz));
-        B(0xe8b98a, 0, 0.92, 0.05, s1 - s0, 0.1, 0.06); stats.wall++;
-      });
-      // A curtain rail over each room opening, the curtain bunched to one side.
-      runs(b, (a, i) => (corr[i] & bit) !== 0 && !(mask[i] & NO_WALL) && !wallSide(a, b) && hosp[i - (dz ? dz * W : dx)] === 1 && !corr[i - (dz ? dz * W : dx)] && def.doorCell[i - (dz ? dz * W : dx)] < 0, (a0, a1, e0, e1) => {
-        if (!e0 || !e1 || a1 - a0 > 2 || !wallSide(a0 - 1, b) || !wallSide(a1 + 1, b)) return;
-        const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = hash2(a0 * 5 + di, b * 3 + 1);
-        begin(px, pz, Math.atan2(dx, dz));
-        B(STEEL, 0, 2.66, -0.16, len, 0.045, 0.045, 0);
-        const cx = (hs < 0.5 ? -1 : 1) * (len / 2 - 0.22), c = pick(hs * 2 % 1, [0x9fe3cf, 0xffc9d6, 0xbfeaff, 0xfff3bf]);
-        B(c, cx, 1.6, -0.16, 0.36, 2.08, 0.14); for (const s of [-1, 1]) B(DARK, cx + s * 0.07, 1.6, -0.085, 0.012, 2.0, 0.01, 0);
-        stats.wall++;
-      });
-      // Wayfinding stripes painted down the first lane (one wall only).
-      if (!(di & 1)) runs(b, (a, i) => (corr[i] & bit) !== 0 && !(corr[i - (dz ? W : 1)] & bit) && !(mask[i] & NO_PAINT) && !def.propCell[i] && def.doorCell[i] < 0 && hash2(a * 3 + 1, b * 7 + di) > 0.05, (a0, a1) => {
-        const len = (a1 - a0 + 1) * T, [px, pz] = place((a0 + a1 + 1) / 2, b, 0), hs = (b + di) % 3;
-        begin(px, pz, Math.atan2(dx, dz));
-        for (let k = 0; k < 2; k++) sheet([0x39c5bb, 0xff8fa3, 0xffd43b, 0x74c0fc, 0xff8a3c, 0x8ce99a][hs * 2 + k], 0, 1.2 + k * 0.2, len, 0.1, 0, true, 0.024);
-      });
     }
-  }
+
+    stats.trisWall = triCount - stats.trisItems - stats.trisScatter;
+  };
+  for (let lv = 0; lv < levels; lv++) dressStorey(lv);
 
   stats.trisWall = triCount - stats.trisItems - stats.trisScatter;
   // ---------------------------------------------------------------- handoff

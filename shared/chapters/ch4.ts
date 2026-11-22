@@ -554,7 +554,7 @@ export function build() {
   b.label('PINECONE HILL TRAIL', 30, 168.6, 12, MINT, E); b.label('TRANSMITTER 1.2 km', 40, 169.6, 9, CREAM, E);
   b.label('SWITCHBACK', 82.5, 163, 10, CREAM, N); b.label('HILL STEPS', 82.5, 160.2, 12, GOLD, N);
   b.pick('ammo', 60, 169);
-  for (const [x, z] of [[24.5, 168], [56, 169.6], [82.5, 168], [81.4, 159.6]]) b.lamp(x, z);
+  for (const [x, z] of [[24.5, 168], [56, 169.6], [82.5, 168], [85.5, 160.6]]) b.lamp(x, z);
   b.arrow(30, 168.5, E); b.arrow(82.5, 165, N); b.arrow(82.5, 161, N);
   zz(50, 168.5, E); zz(82.5, 163.5, N);
   // Storey 1: the switchbacks and the fire road on the shelf (long uphill sightlines).
@@ -722,7 +722,7 @@ export function build() {
   b.prop('barrier', 133, 164, 1, 1); b.prop('crate', 136, 164);
   b.pick('sniper', 134, 165); b.pick('ammo', 135, 166); b.pick('ammo', 133, 166);
   b.label('WATCHTOWER', 134.5, 165.4, 8, OLIVE, 0);
-  b.lamp(134.5, 167.5);
+  b.lamp(133.4, 165.5);
   b.level(0);
   // The bridge deck, the boom gate and Dot's No. 9 bus on the far span.
   b.carve(159, 164, 171, 171, F.ASPHALT);

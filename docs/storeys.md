@@ -56,4 +56,7 @@ Practical rules:
 
 - Stairs: 3 tiles of run reads well (each tile rises 1.4 m). Give flights 2-tile-wide runs on the critical path, because the Brute has a 0.8 m radius.
 - Put a wall or air on both sides of a flight. You can only step onto a flight from its low end, its high end, or the side of its bottom tile.
+- You can't step off a flight's side partway up; the bottom tile's side and a flush top corner are fine. `npm run check:maps` walks a Brute-sized body and a survivor up every lane of every flight (centres and seams) and errors if one gets stuck.
+- Zombies climb ladders at `LADDER_SPEED * ZOMBIE_LADDER`, slower than survivors. The difficulty caps how many zombies can be on one ladder at once (`DIFFICULTY.ladder` in `server/room.ts`: Easy 1, Normal and Hard 5, Nightmare unlimited). During a holdout on a small perch (under `perchMax` nodes), the director spawns the horde on the storey below.
+- The server clamps a survivor's claimed height to between the floor under them and 1.3 m above it (`MAX_LIFT`). After a server teleport it ignores stale position messages for `TP_GRACE`.
 - Ladders go against the wall of the thing they climb. Zombies climb them too, slowly, which makes rooftops good holdouts but never perfectly safe.
