@@ -11,6 +11,11 @@ export interface Gun { ent: pc.Entity; muzzle: P3; pump: pc.Entity | null }
 
 const cube = box();
 const cyl = cylinder(14);
+const orb = sphere(10, 8);
+/** Ink outline thickness of a gun part, in gun units. */
+const INK = 0.012;
+/** Shared trim colours. */
+const DARK = 0x54506e, SOOT = 0x2b2540, PAD = 0x3d3955, GOLD = 0xffe066, BRASS = 0xf0b429, STEEL = 0xc3bdd8, WOOD = 0x8a5a3c;
 /** Shotgun pump: a separate part so the first-person rig can rack it. */
 const PUMP = { w: 0.1, h: 0.075, d: 0.2, color: 0x8a5a3c, t: 0.012, x: 0, y: 0.01, z: -0.36 };
 /** How far past the barrel's front face the muzzle point (flash, tracer origin) sits, in gun units. */
@@ -19,19 +24,41 @@ const MUZZLE_GAP = 0.02;
  * Chunky toy-like guns. Barrel points down -Z, origin at the grip. Returns the parts as an unbuilt batch,
  * plus the muzzle point in gun space: taken from the barrel-end part itself (see `tip`), so it can't drift
  * from the geometry.
+ *
+ * The gun sits at the right of the screen, so the player mostly sees its top and its left (-X) side:
+ * one-sided detail goes there.
  */
 function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
   const b = new Batch();
   /** Centre and Z length of the part just added. */
   let lx = 0, ly = 0, lz = 0, ld = 0;
   const part = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rx = 0) => {
-    b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'box', 0.012);
+    b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'box', INK);
     lx = x; ly = y; lz = z; ld = d;
   };
-  /** Round part: radius r, length len, along Z (barrels, scopes) or X (drums). */
-  const tube = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' = 'z') => {
-    b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'smooth', 0.012);
+  /** Round part: radius r, length len, along Z (barrels, scopes), X (drums) or Y (posts). */
+  const tube = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' | 'y' = 'z') => {
+    b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'smooth', INK);
     lx = x; ly = y; lz = z; ld = axis === 'z' ? len : 2 * r;
+  };
+  // Trim: small surface detail with no ink of its own (an outline that size would swallow it). Never the barrel end.
+  /** Flat trim: stripes, slots, ports, plates. */
+  const deco = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rx = 0) =>
+    b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'none');
+  /** Round trim: bores, lenses, bolts, studs. */
+  const stud = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' | 'y' = 'z') =>
+    b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'none');
+  /** Tapered round part along Z: radius `rFront` at the -Z end, `rBack` at the +Z end. */
+  const cone = (rFront: number, rBack: number, len: number, color: number, x: number, y: number, z: number) =>
+    b.add(cylinder(14, rBack, rFront), color, trs(x, y, z, Math.PI / 2, 0, 0, 1, len, 1), 'smooth', INK);
+  /** Ball (or a squashed one: per-axis radii). */
+  const ball = (color: number, x: number, y: number, z: number, rx: number, ry = rx, rz = rx) =>
+    b.add(orb, color, trs(x, y, z, 0, 0, 0, rx, ry, rz), 'smooth', INK);
+  /** Trigger guard and trigger hanging under the body: `z` is the trigger, `y` the underside it hangs from. */
+  const trigger = (z: number, y: number, guard = DARK, blade = GOLD) => {
+    part(0.024, 0.012, 0.1, guard, 0, y - 0.055, z - 0.01);
+    part(0.024, 0.055, 0.012, guard, 0, y - 0.027, z - 0.055);
+    deco(0.014, 0.036, 0.012, blade, 0, y - 0.02, z, 0.3);
   };
   let muzzle: P3 = [0, 0, 0];
   /** Call right after adding the barrel-end part: the muzzle is the centre of its front (-Z) face. */
@@ -40,104 +67,262 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
   switch (id) {
     case 'pistol':
       part(0.07, 0.09, 0.3, 0xff8fab, 0, 0.06, -0.1); tip();
-      part(0.06, 0.16, 0.08, 0x54506e, 0, -0.04, 0.02, 0.25);
-      part(0.04, 0.04, 0.06, 0xffe066, 0, 0.12, -0.2);
+      part(0.06, 0.16, 0.08, DARK, 0, -0.04, 0.02, 0.25);
+      part(0.04, 0.04, 0.06, GOLD, 0, 0.12, -0.2);
+      // Slide: grip ridges at the back, a pale stripe, a notched rear sight, the bore.
+      for (const z of [-0.02, 0.005, 0.03]) deco(0.076, 0.05, 0.012, 0xe0708f, 0, 0.075, z);
+      deco(0.073, 0.012, 0.17, 0xffc2d1, 0, 0.035, -0.15);
+      part(0.05, 0.025, 0.02, DARK, 0, 0.115, 0.035);
+      stud(0.02, 0.01, SOOT, 0, 0.065, -0.251);
+      // Frame: trigger guard, grip panels, magazine base.
+      trigger(-0.05, 0.015);
+      deco(0.066, 0.09, 0.045, 0x6e698c, 0, -0.045, 0.02, 0.25);
+      part(0.066, 0.02, 0.09, GOLD, 0, -0.127, -0.002, 0.25);
       break;
     case 'smg':
       part(0.08, 0.11, 0.42, 0x4dd4c6, 0, 0.06, -0.14);
-      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.03, 0.25);
-      part(0.05, 0.22, 0.07, 0xffe066, 0, -0.1, -0.16, -0.12);
-      part(0.045, 0.045, 0.16, 0x54506e, 0, 0.065, -0.42); tip();
-      part(0.06, 0.08, 0.16, 0x54506e, 0, 0.05, 0.15);
+      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.03, 0.25);
+      part(0.05, 0.22, 0.07, GOLD, 0, -0.1, -0.16, -0.12);
+      part(0.045, 0.045, 0.16, DARK, 0, 0.065, -0.42); tip();
+      part(0.06, 0.08, 0.16, DARK, 0, 0.05, 0.15);
+      // Top rail with sights, cooling slots, charging knob, muzzle ring.
+      part(0.03, 0.02, 0.3, DARK, 0, 0.125, -0.14);
+      part(0.02, 0.04, 0.02, GOLD, 0, 0.15, -0.27);
+      part(0.045, 0.03, 0.02, DARK, 0, 0.145, 0.0);
+      for (const z of [-0.31, -0.265, -0.22]) deco(0.084, 0.035, 0.022, 0x2f9c92, 0, 0.075, z);
+      deco(0.083, 0.012, 0.2, 0xb8f2ea, 0, 0.025, -0.1);
+      part(0.03, 0.02, 0.03, GOLD, -0.05, 0.09, -0.1);
+      tube(0.032, 0.03, GOLD, 0, 0.065, -0.47);
+      stud(0.014, 0.01, SOOT, 0, 0.065, -0.501);
+      trigger(-0.04, 0.005);
+      part(0.058, 0.022, 0.08, BRASS, 0, -0.212, -0.147, -0.12);
+      part(0.066, 0.1, 0.025, PAD, 0, 0.05, 0.24);
       break;
     case 'shotgun':
       part(0.085, 0.1, 0.62, 0xffa94d, 0, 0.07, -0.22);
-      part(0.06, 0.06, 0.5, 0x54506e, 0, 0.1, -0.42); tip();
-      part(0.07, 0.12, 0.26, 0x8a5a3c, 0, 0.01, 0.17, -0.2);
+      part(0.06, 0.06, 0.5, DARK, 0, 0.1, -0.42); tip();
+      part(0.07, 0.12, 0.26, WOOD, 0, 0.01, 0.17, -0.2);
       pump = true;
+      // Magazine tube under the barrel (the pump rides on it), clamped at the front; bead sight.
+      tube(0.02, 0.44, DARK, 0, 0.01, -0.42);
+      tube(0.025, 0.02, GOLD, 0, 0.01, -0.645);
+      part(0.07, 0.15, 0.025, STEEL, 0, 0.06, -0.59);
+      part(0.018, 0.025, 0.018, GOLD, 0, 0.142, -0.64);
+      // Receiver: loading port, spare shells on the left, trigger, butt pad.
+      deco(0.089, 0.035, 0.1, SOOT, 0, 0.085, -0.02);
+      deco(0.088, 0.012, 0.3, 0xffd8a8, 0, 0.04, -0.35);
+      for (const z of [-0.1, -0.135, -0.17]) { tube(0.013, 0.05, 0xff6b6b, -0.05, 0.085, z, 'y'); stud(0.0145, 0.014, 0xffd43b, -0.05, 0.056, z, 'y'); }
+      trigger(0.0, 0.02);
+      part(0.076, 0.13, 0.025, PAD, 0, 0.038, 0.305, -0.2);
       break;
     case 'rifle':
       part(0.08, 0.11, 0.56, 0xb197fc, 0, 0.06, -0.18);
-      part(0.045, 0.045, 0.3, 0x54506e, 0, 0.065, -0.58); tip();
-      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.03, 0.25);
-      part(0.05, 0.2, 0.09, 0x54506e, 0, -0.09, -0.2, -0.25);
+      part(0.045, 0.045, 0.3, DARK, 0, 0.065, -0.58); tip();
+      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.03, 0.25);
+      part(0.05, 0.2, 0.09, DARK, 0, -0.09, -0.2, -0.25);
       part(0.07, 0.1, 0.24, 0x7c5cd6, 0, 0.04, 0.2);
-      part(0.05, 0.05, 0.16, 0xffe066, 0, 0.15, -0.14);
+      part(0.05, 0.05, 0.16, GOLD, 0, 0.15, -0.14);
+      // Scope: mounts and lenses.
+      part(0.03, 0.03, 0.03, DARK, 0, 0.12, -0.19);
+      part(0.03, 0.03, 0.03, DARK, 0, 0.12, -0.09);
+      deco(0.036, 0.036, 0.006, 0x74c0fc, 0, 0.15, -0.221);
+      deco(0.036, 0.036, 0.006, SOOT, 0, 0.15, -0.059);
+      // Vented handguard, front sight, muzzle brake.
+      part(0.065, 0.075, 0.16, 0x7c5cd6, 0, 0.06, -0.54);
+      for (const z of [-0.5, -0.54, -0.58]) deco(0.069, 0.022, 0.022, SOOT, 0, 0.065, z);
+      part(0.018, 0.05, 0.02, DARK, 0, 0.105, -0.65);
+      part(0.058, 0.058, 0.045, GOLD, 0, 0.065, -0.7);
+      stud(0.014, 0.01, SOOT, 0, 0.065, -0.731);
+      // Body: pale stripe, bolt and charging handle, trigger, magazine base, cheek rest, butt pad.
+      deco(0.083, 0.012, 0.4, 0xd0bfff, 0, 0.03, -0.2);
+      deco(0.084, 0.03, 0.09, SOOT, 0, 0.085, -0.02);
+      part(0.03, 0.02, 0.03, GOLD, -0.052, 0.085, -0.05);
+      trigger(-0.05, 0.005);
+      part(0.056, 0.02, 0.1, GOLD, 0, -0.19, -0.175, -0.25);
+      part(0.05, 0.02, 0.14, DARK, 0, 0.1, 0.2);
+      part(0.076, 0.115, 0.025, PAD, 0, 0.04, 0.33);
       break;
     case 'autoshotgun': // Rumble Drum: stubby coral auto shotgun with a big yellow drum.
       part(0.1, 0.13, 0.48, 0xff6b6b, 0, 0.07, -0.15);
-      tube(0.036, 0.4, 0x54506e, 0, 0.105, -0.52);
-      part(0.085, 0.07, 0.07, 0x54506e, 0, 0.105, -0.73); tip();
-      tube(0.11, 0.1, 0xffe066, 0, -0.02, -0.33, 'x');
-      tube(0.04, 0.12, 0x54506e, 0, -0.02, -0.33, 'x');
-      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
+      tube(0.036, 0.4, DARK, 0, 0.105, -0.52);
+      part(0.085, 0.07, 0.07, DARK, 0, 0.105, -0.73); tip();
+      tube(0.11, 0.1, GOLD, 0, -0.02, -0.33, 'x');
+      tube(0.04, 0.12, DARK, 0, -0.02, -0.33, 'x');
+      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.04, 0.25);
       part(0.085, 0.12, 0.2, 0xc94f4f, 0, 0.045, 0.19);
-      part(0.04, 0.04, 0.08, 0xffe066, 0, 0.155, -0.1);
+      part(0.04, 0.04, 0.08, GOLD, 0, 0.155, -0.1);
+      // Drum: rims and a ring of bolts on each face.
+      for (const x of [-0.043, 0.043]) tube(0.116, 0.016, BRASS, x, -0.02, -0.33, 'x');
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        stud(0.012, 0.108, DARK, 0, -0.02 + Math.cos(a) * 0.075, -0.33 + Math.sin(a) * 0.075, 'x');
+      }
+      // Slotted heat shield over the barrel, bore, rear sight.
+      part(0.06, 0.02, 0.26, 0xc94f4f, 0, 0.148, -0.5);
+      for (const z of [-0.41, -0.47, -0.53, -0.59]) deco(0.04, 0.022, 0.028, SOOT, 0, 0.149, z);
+      stud(0.024, 0.01, SOOT, 0, 0.105, -0.766);
+      part(0.05, 0.03, 0.02, DARK, 0, 0.15, 0.05);
+      // Body: racing stripe, charging handle, trigger, butt pad.
+      deco(0.104, 0.014, 0.34, 0xfff5f5, 0, 0.1, -0.17);
+      part(0.03, 0.025, 0.04, GOLD, -0.06, 0.07, -0.05);
+      trigger(-0.05, 0.005);
+      part(0.09, 0.135, 0.025, PAD, 0, 0.045, 0.3);
       break;
     case 'sniper': // Kebabber: long mint bolt-action with a fat scope and a skewer-tip muzzle.
       part(0.075, 0.1, 0.5, 0x63e6be, 0, 0.06, -0.12);
-      tube(0.022, 0.56, 0x54506e, 0, 0.075, -0.63);
-      part(0.05, 0.05, 0.07, 0xffe066, 0, 0.075, -0.93); tip();
-      tube(0.036, 0.26, 0x54506e, 0, 0.165, -0.24);
+      tube(0.022, 0.56, DARK, 0, 0.075, -0.63);
+      part(0.05, 0.05, 0.07, GOLD, 0, 0.075, -0.93); tip();
+      tube(0.036, 0.26, DARK, 0, 0.165, -0.24);
       tube(0.044, 0.035, 0xff8fab, 0, 0.165, -0.38);
       tube(0.04, 0.03, 0xff8fab, 0, 0.165, -0.1);
-      part(0.03, 0.06, 0.03, 0x54506e, 0, 0.12, -0.31);
-      part(0.03, 0.06, 0.03, 0x54506e, 0, 0.12, -0.16);
-      part(0.09, 0.025, 0.025, 0xffe066, 0.065, 0.085, 0.0);
-      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
-      part(0.07, 0.13, 0.28, 0x8a5a3c, 0, 0.035, 0.24);
+      part(0.03, 0.06, 0.03, DARK, 0, 0.12, -0.31);
+      part(0.03, 0.06, 0.03, DARK, 0, 0.12, -0.16);
+      part(0.09, 0.025, 0.025, GOLD, 0.065, 0.085, 0.0);
+      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.04, 0.25);
+      part(0.07, 0.13, 0.28, WOOD, 0, 0.035, 0.24);
+      // Scope: lenses and adjustment turrets.
+      stud(0.032, 0.008, 0x74c0fc, 0, 0.165, -0.399);
+      stud(0.028, 0.008, SOOT, 0, 0.165, -0.084);
+      tube(0.016, 0.03, GOLD, 0, 0.208, -0.24, 'y');
+      tube(0.016, 0.03, GOLD, -0.045, 0.165, -0.24, 'x');
+      // Bolt knob, wooden fore-end with a folded bipod, barrel ring.
+      ball(0xff8fab, 0.115, 0.085, 0.0, 0.02);
+      part(0.065, 0.06, 0.16, WOOD, 0, 0.04, -0.43);
+      part(0.06, 0.025, 0.03, DARK, 0, 0.04, -0.525);
+      for (const x of [-0.024, 0.024]) part(0.012, 0.012, 0.22, DARK, x, 0.035, -0.64);
+      tube(0.03, 0.02, 0xff8fab, 0, 0.075, -0.87);
+      // Body: box magazine, pale stripe, trigger, cheek rest, butt pad.
+      part(0.05, 0.07, 0.1, DARK, 0, -0.02, -0.2);
+      deco(0.054, 0.012, 0.104, GOLD, 0, -0.05, -0.2);
+      deco(0.078, 0.012, 0.36, 0xc3fae8, 0, 0.03, -0.14);
+      trigger(-0.04, 0.01);
+      part(0.05, 0.03, 0.16, 0x63e6be, 0, 0.108, 0.25);
+      part(0.076, 0.145, 0.025, PAD, 0, 0.035, 0.39);
       break;
     case 'launcher': // Bloop Tube: fat bubblegum tube with yellow bands, a pop-gun on steroids.
       tube(0.08, 0.5, 0xda77f2, 0, 0.1, -0.24);
-      tube(0.092, 0.055, 0xffe066, 0, 0.1, -0.47);
-      tube(0.088, 0.045, 0xffe066, 0, 0.1, -0.03);
-      tube(0.058, 0.012, 0x2b2540, 0, 0.1, -0.5); tip();
-      part(0.06, 0.15, 0.08, 0x54506e, 0, -0.05, 0.04, 0.25);
-      part(0.05, 0.13, 0.06, 0x54506e, 0, -0.01, -0.27, -0.2);
-      part(0.03, 0.07, 0.03, 0xffe066, 0, 0.215, -0.32);
+      tube(0.092, 0.055, GOLD, 0, 0.1, -0.47);
+      tube(0.088, 0.045, GOLD, 0, 0.1, -0.03);
+      tube(0.058, 0.012, SOOT, 0, 0.1, -0.5); tip();
+      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.04, 0.25);
+      part(0.05, 0.13, 0.06, DARK, 0, -0.01, -0.27, -0.2);
+      part(0.03, 0.07, 0.03, GOLD, 0, 0.215, -0.32);
       part(0.07, 0.08, 0.08, 0xae3ec9, 0, 0.06, 0.08);
+      // Middle band, ladder sight crossbars, rear sight.
+      tube(0.086, 0.03, 0xae3ec9, 0, 0.1, -0.25);
+      part(0.055, 0.012, 0.012, GOLD, 0, 0.245, -0.32);
+      deco(0.045, 0.01, 0.034, DARK, 0, 0.215, -0.32);
+      part(0.04, 0.03, 0.015, DARK, 0, 0.19, -0.06);
+      // A shell seated in the breech.
+      tube(0.05, 0.03, 0xffd43b, 0, 0.115, 0.02);
+      stud(0.016, 0.006, DARK, 0, 0.115, 0.036);
+      // Two spare shells strapped to the left side.
+      deco(0.012, 0.03, 0.13, DARK, -0.083, 0.1, -0.14);
+      for (const z of [-0.11, -0.17]) { tube(0.022, 0.07, 0x74c0fc, -0.1, 0.1, z, 'y'); tube(0.023, 0.016, GOLD, -0.1, 0.143, z, 'y'); }
+      // Trigger, wire stock with a shoulder pad.
+      trigger(-0.05, 0.03);
+      part(0.02, 0.02, 0.2, DARK, 0, 0.06, 0.2);
+      part(0.06, 0.12, 0.025, PAD, 0, 0.05, 0.31);
       break;
     case 'magnum': // Thunder Pea: gold revolver, silver cylinder, red lightning stripe.
       part(0.07, 0.08, 0.3, 0xffd43b, 0, 0.08, -0.17); tip();
       part(0.072, 0.022, 0.12, 0xff6b6b, 0, 0.08, -0.2);
-      tube(0.066, 0.11, 0xc3bdd8, 0, 0.05, -0.02);
-      part(0.06, 0.1, 0.14, 0xf0b429, 0, 0.04, 0.03);
-      part(0.065, 0.17, 0.08, 0x8a5a3c, 0, -0.07, 0.08, 0.3);
-      part(0.022, 0.045, 0.035, 0x54506e, 0, 0.135, 0.07);
+      tube(0.066, 0.11, STEEL, 0, 0.05, -0.02);
+      part(0.06, 0.1, 0.14, BRASS, 0, 0.04, 0.03);
+      part(0.065, 0.17, 0.08, WOOD, 0, -0.07, 0.08, 0.3);
+      part(0.022, 0.045, 0.035, DARK, 0, 0.135, 0.07);
       part(0.022, 0.04, 0.022, 0xff6b6b, 0, 0.135, -0.3);
+      // Cylinder flutes, ejector rod under the barrel, top rib, rear sight, bore.
+      for (let i = 0; i < 6; i++) {
+        const a = ((i + 0.5) / 6) * Math.PI * 2;
+        stud(0.013, 0.08, 0x9a94b5, Math.sin(a) * 0.059, 0.05 + Math.cos(a) * 0.059, -0.02);
+      }
+      tube(0.014, 0.2, STEEL, 0, 0.03, -0.2);
+      part(0.025, 0.015, 0.24, BRASS, 0, 0.125, -0.16);
+      part(0.04, 0.02, 0.02, DARK, 0, 0.128, -0.02);
+      stud(0.02, 0.01, SOOT, 0, 0.085, -0.321);
+      // Trigger, grip medallion and butt cap.
+      trigger(0.0, -0.01, BRASS, DARK);
+      stud(0.017, 0.069, 0xffd43b, 0, -0.06, 0.083, 'x');
+      part(0.07, 0.02, 0.088, 0xffd43b, 0, -0.153, 0.055, 0.3);
       break;
     // Close-in weapons: the business end points down -Z like a barrel; the rig tips them upright (see ViewModel).
     case 'bat': // Bonk Bat: fat wooden slugger with a red tip band and taped grip.
-      tube(0.026, 0.2, 0x54506e, 0, 0.03, 0.0);
-      tube(0.034, 0.03, 0xffe066, 0, 0.03, 0.1);
-      tube(0.046, 0.52, 0xffc078, 0, 0.03, -0.36);
+      tube(0.026, 0.2, DARK, 0, 0.03, 0.0);
+      tube(0.034, 0.03, GOLD, 0, 0.03, 0.1);
+      tube(0.046, 0.4, 0xffc078, 0, 0.03, -0.42);
       tube(0.05, 0.07, 0xff6b6b, 0, 0.03, -0.6); tip();
+      // Tapers from the grip out to the barrel; tape wraps; a white maker's band with a red pinstripe; end cap.
+      cone(0.046, 0.026, 0.14, 0xffc078, 0, 0.03, -0.15);
+      for (const z of [-0.055, 0.0, 0.055]) tube(0.029, 0.018, 0x6e698c, 0, 0.03, z);
+      tube(0.048, 0.06, 0xfff5f5, 0, 0.03, -0.34);
+      stud(0.0485, 0.012, 0xff6b6b, 0, 0.03, -0.34);
+      stud(0.022, 0.01, BRASS, 0, 0.03, 0.116);
+      stud(0.036, 0.008, 0xc94f4f, 0, 0.03, -0.637);
       break;
     case 'machete': // Snip-Snap: a big pair of garden shears' single blade, mint handle.
       part(0.04, 0.055, 0.17, 0x63e6be, 0, 0.03, 0.0);
-      part(0.09, 0.03, 0.03, 0xffe066, 0, 0.03, -0.1);
-      part(0.016, 0.1, 0.5, 0xc3bdd8, 0, 0.045, -0.36); tip();
+      part(0.09, 0.03, 0.03, GOLD, 0, 0.03, -0.1);
+      part(0.016, 0.1, 0.5, STEEL, 0, 0.045, -0.36); tip();
       part(0.018, 0.03, 0.5, 0xffffff, 0, -0.01, -0.36);
+      // Shear pivot bolt, a groove down the blade.
+      tube(0.022, 0.03, GOLD, 0, 0.045, -0.15, 'x');
+      stud(0.01, 0.034, DARK, 0, 0.045, -0.15, 'x');
+      deco(0.02, 0.012, 0.36, 0x9a94b5, 0, 0.07, -0.4);
+      // Handle: grip grooves, a finger loop underneath, pommel.
+      for (const z of [-0.04, 0.0, 0.04]) deco(0.044, 0.059, 0.012, 0x38d9a9, 0, 0.03, z);
+      part(0.03, 0.015, 0.11, 0x38d9a9, 0, -0.045, 0.0);
+      part(0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, -0.05);
+      part(0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, 0.05);
+      part(0.046, 0.062, 0.02, GOLD, 0, 0.03, 0.09);
       break;
     case 'axe': // Big Chop: fire axe, red head with a silver edge.
-      tube(0.024, 0.66, 0x8a5a3c, 0, 0.03, -0.24); tip();
+      tube(0.024, 0.66, WOOD, 0, 0.03, -0.24); tip();
       // The blade hangs on the -Y side: held upright (the rig tips the tip up) that side faces forward, away from you.
       part(0.034, 0.2, 0.16, 0xff6b6b, 0, -0.06, -0.5);
-      part(0.022, 0.05, 0.2, 0xc3bdd8, 0, -0.175, -0.5);
-      part(0.04, 0.07, 0.1, 0x54506e, 0, 0.065, -0.5);
+      part(0.022, 0.05, 0.2, STEEL, 0, -0.175, -0.5);
+      part(0.04, 0.07, 0.1, DARK, 0, 0.065, -0.5);
+      // Head: collar round the haft, white stripe, rivets.
+      tube(0.031, 0.13, 0xc94f4f, 0, 0.03, -0.5);
+      deco(0.038, 0.022, 0.16, 0xfff5f5, 0, -0.105, -0.5);
+      for (const z of [-0.545, -0.455]) stud(0.012, 0.04, GOLD, 0, -0.04, z, 'x');
+      // Haft: taped grip between two yellow rings, red end knob.
+      tube(0.027, 0.14, DARK, 0, 0.03, -0.01);
+      for (const z of [-0.085, 0.065]) tube(0.03, 0.014, GOLD, 0, 0.03, z);
+      tube(0.03, 0.025, 0xff6b6b, 0, 0.03, 0.085);
       break;
     // Throwables.
     case 'firebomb': // Hot Sauce: a squat red bottle with a yellow label and a rag in the neck.
       tube(0.055, 0.17, 0xe8413c, 0, 0.05, -0.04);
-      tube(0.057, 0.06, 0xffe066, 0, 0.05, -0.04);
+      tube(0.057, 0.06, GOLD, 0, 0.05, -0.04);
       tube(0.024, 0.09, 0xe8413c, 0, 0.05, -0.17);
       part(0.03, 0.03, 0.07, 0xfff5f5, 0, 0.05, -0.24); tip();
+      // Shoulder up to the neck, cap ring, a band across the label, a darker base, a second rag end, an ember.
+      cone(0.025, 0.055, 0.045, 0xe8413c, 0, 0.05, -0.147);
+      tube(0.03, 0.02, GOLD, 0, 0.05, -0.2);
+      stud(0.058, 0.014, 0xe8413c, 0, 0.05, -0.04);
+      stud(0.0565, 0.014, 0xc92a2a, 0, 0.05, 0.036);
+      part(0.02, 0.02, 0.05, 0xffe3e3, 0.012, 0.064, -0.245, 0.5);
+      deco(0.032, 0.032, 0.014, 0xff922b, 0, 0.05, -0.27);
       break;
     case 'rattle': // Rattle Bomb: a baby rattle with a fuse.
-      tube(0.02, 0.17, 0xffe066, 0, 0.05, 0.03);
+      tube(0.02, 0.17, GOLD, 0, 0.05, 0.03);
       tube(0.075, 0.14, 0x74c0fc, 0, 0.05, -0.13);
       tube(0.079, 0.035, 0xff8fab, 0, 0.05, -0.13);
-      part(0.015, 0.015, 0.05, 0x2b2540, 0, 0.05, -0.225); tip();
+      part(0.015, 0.015, 0.05, SOOT, 0, 0.05, -0.225); tip();
+      // Domed ends, a ring of yellow studs either side of the band.
+      ball(0x74c0fc, 0, 0.05, -0.2, 0.073, 0.073, 0.022);
+      ball(0x74c0fc, 0, 0.05, -0.06, 0.073, 0.073, 0.022);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        stud(0.012, 0.012, GOLD, Math.sin(a) * 0.072, 0.05 + Math.cos(a) * 0.072, i % 2 ? -0.17 : -0.09, 'y');
+      }
+      // Handle: two beads and a teething ring on the end; a spark on the fuse.
+      tube(0.026, 0.02, 0xff8fab, 0, 0.05, 0.02);
+      tube(0.026, 0.02, 0x74c0fc, 0, 0.05, 0.06);
+      tube(0.036, 0.02, 0xff8fab, 0, 0.05, 0.14, 'x');
+      stud(0.018, 0.024, GOLD, 0, 0.05, 0.14, 'x');
+      deco(0.02, 0.02, 0.012, 0xff922b, 0, 0.05, -0.252);
       break;
   }
   return { b, muzzle, pump };
