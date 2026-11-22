@@ -726,6 +726,7 @@ function applyPlayers(list: PlayerSnap[]): void {
       m.gun = worldGun(WEAPONS[w]?.id ?? 'pistol');
       m.gun.setLocalPosition(0.1, 0.74, -0.36); m.gun.setLocalScale(1.15, 1.15, 1.15);
       if (WEAPONS[w]?.melee) m.gun.setLocalEulerAngles(55, 0, 0); // held upright, not pointed like a gun
+      else if (WEAPONS[w]?.thrown) m.gun.setLocalEulerAngles(80, 0, 0); // a bottle or rattle is carried neck up
       m.chibi.root.addChild(m.gun); m.gunW = w;
     }
   }
