@@ -2,10 +2,11 @@
 // It takes the client's own messages ('f' shots, 'g' grenade impacts, 'v' shoves, 'u' rack use) and
 // answers with ordinary 's' snapshots, so main.ts renders the dummies, deaths and pickups through
 // its usual paths. Damage uses the same shared formulas as server/room.ts (shotDamage, blastDamage).
-import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, FIRE, armoredFront, TINPOT_FRONT, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
+import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, FIRE, LURE, armoredFront, TINPOT_FRONT, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
 import { RANGE_DUMMIES, type RangeDummy } from '../../shared/range';
 import type { Level } from '../../shared/level';
 import type { ClientMsg, GameEvent, ServerMsg, ZombieSnap } from '../../shared/protocol';
+import type { BlastDef } from '../../shared/constants';
 
 /** Seconds a dummy stays down before it stands back up. */
 const RESPAWN = 1.2;
@@ -44,6 +45,8 @@ export class ShootingRange {
   private hits: { t: number; dmg: number }[] = [];
   /** Burning patches from thrown firebombs. */
   private fires: { x: number; z: number; age: number; tick: number }[] = [];
+  /** Rattle Bombs counting down to their blast (same fuse as the server: LURE.time). */
+  private lures: { x: number; z: number; t: number; B: BlastDef }[] = [];
   stats: RangeStats = ShootingRange.freshStats();
 
   constructor(private L: Level, private pid: number, private emit: (m: ServerMsg) => void) {
@@ -104,9 +107,18 @@ export class ShootingRange {
       this.events.push(['fire', this.nextId++, m.x, m.z, FIRE.r, FIRE.life]);
       return;
     }
-    // The range skips the rattle's fuse (nothing here walks over to it): it goes off where it lands.
-    if (thrown) this.events.push(['blast', 0, m.x, m.y, m.z, 1]);
-    const power = blastPower(B, Math.hypot(m.x - n.x, m.z - n.z)), R = blastRadius(B, power);
+    // A Rattle Bomb rattles for its fuse first, as in a real room (the dummies just don't walk over to it).
+    if (thrown) {
+      this.lures.push({ x: m.x, z: m.z, t: LURE.time, B });
+      this.events.push(['lure', m.x, m.z, LURE.time]);
+      return;
+    }
+    this.blastAt(B, m.x, m.y, m.z, blastPower(B, Math.hypot(m.x - n.x, m.z - n.z)));
+  }
+
+  /** Blast `B` at (x, y, z): damage the dummies in its radius and record it as the last shot. */
+  private blastAt(B: BlastDef, x: number, y: number, z: number, power: number): void {
+    const R = blastRadius(B, power), m = { x, y, z };
     this.stats.shotsFired++;
     const shot = { dmg: 0, body: 0, head: 0, zeds: 0, dist: Math.hypot(m.x - this.player.x, m.z - this.player.z), falloff: 1 };
     for (const d of [...this.dummies.values()]) {
@@ -173,6 +185,13 @@ export class ShootingRange {
         if (d.hp <= 0 || d.def.type === ZT.RAINCOAT || Math.hypot(d.x - f.x, d.z - f.z) > FIRE.r + ZTYPES[d.def.type].radius) continue;
         this.damage(d, FIRE.dps * FIRE.tick, false, false);
       }
+    }
+    for (let i = this.lures.length - 1; i >= 0; i--) {
+      const l = this.lures[i];
+      if ((l.t -= dt) > 0) continue;
+      this.lures.splice(i, 1);
+      this.events.push(['blast', 0, l.x, 0.4, l.z, 1]);
+      this.blastAt(l.B, l.x, 0.4, l.z, 1);
     }
     const z: ZombieSnap[] = [];
     for (const d of this.dummies.values()) {
