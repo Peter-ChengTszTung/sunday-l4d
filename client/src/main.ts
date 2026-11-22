@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
+import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, HEAL_MIN } from '../../shared/constants';
 import { F, isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -90,7 +90,12 @@ interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; z
 
 const me = {
   id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
-  hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, medkits: 0, respawn: 0, rev: 0,
+  hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, respawn: 0, rev: 0,
+  /**
+   * Medical items carried (per kind, MEDS order), the one Q uses (Z picks the next; -1 = none carried), and
+   * whether you are on your last legs (one more down is the end: Hot Cocoa is worth drinking even at full health).
+   */
+  meds: MEDS.map(() => 0), medSel: -1, lastLegs: false,
   weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve),
   /** Close-in weapon (slot 3): weapon index, -1 = none. Armour points left; seconds until you can throw again. */
   melee: -1, armor: 0, throwCd: 0,
@@ -165,6 +170,12 @@ document.addEventListener('keydown', (e) => {
     // 4 / 5: take a throwable in hand (hold left mouse to aim, release to throw). G throws one straight away.
     case 'Digit4': case 'Digit5': { const k = Number(e.code.slice(5)) - 4; if (me.thr[k] > 0) { me.thrSel = k; switchWeapon(THROWABLES[k]); } break; }
     case 'KeyG': throwIt(); break;
+    case 'KeyZ': {
+      // Next medical item for Q (not while one is half used).
+      const k = medNext(me.meds, me.medSel);
+      if (k >= 0 && k !== me.medSel && me.healT <= 0) { me.medSel = k; sfx.dryFire(); hud.feed(t('{item} ready — hold Q', { item: t(MEDS[k].name) })); }
+      break;
+    }
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
@@ -614,13 +625,15 @@ function findTarget(): Target {
     if (d >= bestD) continue;
     const k = pv.def.kind;
     let usable = true, text = '';
-    if (k === 'medkit') { usable = me.medkits < 1; text = t(usable ? 'Grab medkit' : 'Already carrying a medkit'); }
+    const mk = medIndex(k);
+    if (k === 'medkit') { usable = me.meds[0] < 1; text = t(usable ? 'Grab medkit' : 'Already carrying a medkit'); }
+    else if (mk > 0) { usable = me.meds[mk] < MEDS[mk].max; text = usable ? t('Take the {w}', { w: t(MEDS[mk].name) }) : t('No room for more {w} ({n})', { w: t(MEDS[mk].name), n: MEDS[mk].max }); }
     else if (k === 'ammo') { usable = me.primary >= 0; text = t(usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'); }
     else if (k === 'obj') { if (holdout >= 0) continue; text = t(pv.def.label ?? 'Use'); }
     else if (k === 'item') text = t('Pick up {item}', { item: t(pv.def.label ?? 'item') });
     else if (k === 'armor') { usable = me.armor < ARMOR.max; text = t(usable ? 'Strap on a Pillow Vest' : 'Your Pillow Vest is still plump'); }
     else {
-      const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : me.primary;
+      const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : me.primary;
       if (w.slot === 'throw') { usable = throwCount() < THROW_MAX; text = usable ? t('Take the {w}', { w: t(w.name) }) : t('Pockets full ({n} throwables)', { n: THROW_MAX }); }
       else if (cur === wi) { usable = w.slot === 'primary'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
       else text = cur >= 0 ? t('Swap your {old} for the {w}', { old: t(WEAPONS[cur].name), w: t(w.name) }) : t('Take the {w}', { w: t(w.name) });
@@ -642,7 +655,17 @@ function onGot(pickupId: number): void {
   const pv = world.pickups[pickupId];
   if (!pv) return;
   const k = pv.def.kind;
-  if (k === 'medkit') hud.feed(t('Medkit grabbed — hold Q to heal'));
+  const mk = medIndex(k);
+  if (mk >= 0) {
+    // Count it now (the next snapshot confirms) so the tray and Q's pick are right at once.
+    me.meds[mk] = Math.min(MEDS[mk].max, me.meds[mk] + 1); me.medSel = medSelect(me.meds, me.medSel);
+    const others = me.meds.some((n, i) => i !== mk && n > 0);
+    if (mk === 0) hud.feed(t(others ? 'Medkit grabbed — Z to pick it, hold Q to heal' : 'Medkit grabbed — hold Q to heal'));
+    else hud.feed(t(others ? '{item}: {what} — Z picks, hold Q to use' : '{item}: {what} — hold Q to use', { item: t(MEDS[mk].name), what: t(MEDS[mk].blurb) }));
+    sfx.pickup();
+    // On the range nothing bites: taking one off the shelf leaves you hurt (and on your last legs) so there is something to treat.
+    if (range && (me.hp > 40 || !me.lastLegs)) { me.hp = Math.min(me.hp, 40); me.lastLegs = true; rangeRegen.left = 0; hud.feed(t('Health set to 40 so you can try it')); }
+  }
   else if (k === 'ammo') {
     if (me.primary >= 0) {
       // Launchers are a support tool: an ammo pile tops them up to 6 shells, not a full reserve.
@@ -653,7 +676,7 @@ function onGot(pickupId: number): void {
     hud.feed(t('Ammo topped up'));
   }
   else if (k === 'armor') { me.armor = ARMOR.max; hud.feed(t('Pillow Vest on — it soaks up half of every bite until it bursts')); }
-  else if (k !== 'obj' && k !== 'item') {
+  else if (k !== 'obj' && k !== 'item' && mk < 0) {
     const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi];
     if (w.slot === 'throw') {
       const tk = THROWABLES.indexOf(wi);
@@ -703,7 +726,8 @@ function applyPlayers(list: PlayerSnap[]): void {
         if (st === PSTATE.DOWN) { hud.banner(t('You are down!'), true); sfx.down(); sfx.cancelReload(); me.reloadT = 0; }
         vm.visible = st === PSTATE.ALIVE;
       }
-      me.hp = hp; me.st = st; me.medkits = medkits; me.rev = rev; me.respawn = respawn;
+      me.hp = hp; me.st = st; me.rev = rev; me.respawn = respawn;
+      me.meds = unpackMeds(medkits); me.medSel = medSelect(me.meds, me.medSel);
       me.armor = p[13] ?? 0;
       // Just after a throw the snapshot may still count it: per kind, keep your own lower count until the server
       // agrees (or, after a few seconds, accept that the throw never counted and it is still yours).
@@ -848,7 +872,7 @@ function onEvent(ev: GameEvent): void {
     }
     case 'tp': if (ev[1] === me.id) { me.x = ev[2]; me.z = ev[3]; me.yaw = ev[4]; me.y = 0; me.vy = 0; me.vx = me.vz = 0; } break;
     case 'msg': hud.feed(tMsg(ev[1])); break;
-    case 'heal': if (ev[1] === me.id) sfx.heal(); break;
+    case 'heal': if (ev[1] === me.id) { sfx.heal(); if (MEDS[ev[2]]?.steady) me.lastLegs = false; if (range) rangeHeal(ev[2]); } break;
     case 'shot': {
       if (ev[1] === me.id) break;
       const m = mates.get(ev[1]);
@@ -883,7 +907,7 @@ function onEvent(ev: GameEvent): void {
     case 'pk': world.setTaken(ev[1], true); break;
     case 'got': if (ev[1] === me.id) onGot(ev[2]); break;
     case 'loot': for (const id of ev[1]) world.setTaken(id, false); break;
-    case 'last': if (ev[1] === me.id) { hud.banner(t('Last legs! One more down and you\'re out — find a medkit'), true); sfx.down(); } break;
+    case 'last': if (ev[1] === me.id) { me.lastLegs = true; hud.banner(t('Last legs! One more down and you\'re out — find a medkit'), true); sfx.down(); } break;
     case 'use': {
       world.setTaken(ev[2], true);
       const s = L.def.steps[step];
@@ -901,7 +925,7 @@ function onEvent(ev: GameEvent): void {
       sfx.pickup();
       break;
     }
-    case 'checkpoint': hud.banner(t('Checkpoint saved')); sfx.heal(); break;
+    case 'checkpoint': me.lastLegs = false; hud.banner(t('Checkpoint saved')); sfx.heal(); break;
     case 'zdie': killZed(ev[1], ev[5] === 1); if (ev[6] === me.id) hud.hitmark(ev[5] === 1, true); break;
     case 'boom': {
       const p = { x: ev[1], y: 0.9, z: ev[2] };
@@ -1132,6 +1156,15 @@ function enterGame(): void {
   if (!DEBUG) void canvas.requestPointerLock();
 }
 // ------------------------------------------------------------- shooting range
+/** Shooting range: health still trickling back from Gummy Vitamins, and the rate (per second). The range has no server to do it. */
+const rangeRegen = { left: 0, rate: 0, /** Fraction of a health point not yet handed over. */ frac: 0 };
+/** Shooting range: apply medical item `k` to yourself, by the same rules as a room on Normal. */
+function rangeHeal(k: number): void {
+  const med = MEDS[k];
+  if (!med) return;
+  me.hp = Math.min(PLAYER.hp, Math.ceil(me.hp + (k === 0 ? Math.max(HEAL_MIN, (PLAYER.hp - me.hp) * SURVIVOR_RULES.normal.heal) : med.heal)));
+  if (med.regen > 0) { rangeRegen.left = Math.max(rangeRegen.left, med.regen); rangeRegen.rate = med.regen / med.over; }
+}
 /** Drop every zombie and corpse on screen (leaving or entering the range). */
 function clearZeds(): void {
   for (const z of zeds.values()) z.chibi.dispose();
@@ -1150,7 +1183,7 @@ function enterRange(): void {
   useLevel(rangeLevel());
   const s = L.def.spawns[0];
   Object.assign(me, {
-    id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, medkits: 0,
+    id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, meds: MEDS.map(() => 0), medSel: -1, lastLegs: false,
     weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
   });
   clearThrowables();
@@ -1324,7 +1357,7 @@ function updateMe(dt: number): void {
   const sc = scopeUp();
   me.zoom += ((sc ? 1 : 0) - me.zoom) * Math.min(1, dt * 14);
   if (me.zoom < 0.01) me.zoom = 0;
-  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? 0.35 : 1);
+  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1);
   const sin = Math.sin(me.yaw), cos = Math.cos(me.yaw);
   const wx = ((-sin * f + cos * s) / len) * speed, wz = ((-cos * f - sin * s) / len) * speed;
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
@@ -1366,13 +1399,33 @@ function updateMe(dt: number): void {
   if (!updateThrowAim(on) && on && mouse.left) fire();
   updateNades(dt);
 
-  // Medkit channel.
-  const healing = on && keys.has('KeyQ') && !me.healLatch && me.medkits > 0 && me.hp < PLAYER.hp;
+  if (range && rangeRegen.left > 0) {
+    const give = Math.min(rangeRegen.left, rangeRegen.rate * dt);
+    rangeRegen.left -= give; rangeRegen.frac += give;
+    // Whole points as they build up; the last sliver rounds off when the trickle ends.
+    const whole = rangeRegen.left > 1e-6 ? Math.floor(rangeRegen.frac) : Math.round(rangeRegen.frac);
+    if (whole > 0) { rangeRegen.frac -= whole; me.hp = Math.min(PLAYER.hp, me.hp + whole); }
+  }
+  // Medical item channel: hold Q to use the selected one (small items are quick; the medkit takes its time).
+  const mk = me.medSel, med = MEDS[mk];
+  const healing = on && keys.has('KeyQ') && !me.healLatch && !!med && me.meds[mk] > 0 && medUseful(mk, me.hp, me.lastLegs ? 1 : 0);
   if (healing) {
     if (me.healT === 0) sfx.bandage();
     me.healT += dt;
-    if (me.healT >= PLAYER.healTime) { net.send({ t: 'h' }); me.healT = 0; me.healLatch = true; }
-  } else me.healT = 0;
+    if (me.healT >= med.time) {
+      net.send({ t: 'h', k: mk }); me.healT = 0; me.healLatch = true;
+      // Spent (the snapshot will agree): Q moves on to whatever is left.
+      me.meds[mk]--; me.medSel = medSelect(me.meds, mk);
+    }
+  } else {
+    // Q with nothing it could do: say why, once per press.
+    if (on && keys.has('KeyQ') && !me.healLatch && me.healT === 0) {
+      me.healLatch = true;
+      if (!med || me.meds[mk] <= 0) hud.feed(t('No medical items — look beside ammo piles'));
+      else if (me.hp >= PLAYER.hp) hud.feed(t('Already at full health'));
+    }
+    me.healT = 0;
+  }
 
   // Revive channel.
   target = on ? findTarget() : null;
@@ -1534,7 +1587,8 @@ function listen(dt: number): void {
 const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
-  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max);
+  hud.setHealth(me.hp, me.st, me.armor, ARMOR.max);
+  hud.setMeds(me.meds, me.medSel);
   // In hand: a gun shows its magazine, a close-in weapon nothing, a throwable how many you have left.
   const held = heldThrowable();
   hud.setAmmo(t(w.name), w.melee ? Infinity : held >= 0 ? me.thr[held] : me.mag[me.weapon], held >= 0 ? -1 : me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
@@ -1563,7 +1617,7 @@ function updateHud(dt: number): void {
       : me.pinType === ZT.PIGGYBACK ? 'A Piggyback is steering you! Teammates can shove or shoot it off' : 'Pinned by a Charger! Teammates can shoot or shove it off you') : null);
 
   if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, t(solo ? 'Getting up…' : 'Being helped up…')); hud.prompt(null); }
-  else if (me.healT > 0) { hud.ring(me.healT / PLAYER.healTime, t('Patching up…'), 'var(--pink)'); hud.prompt(null); }
+  else if (me.healT > 0) { hud.ring(me.healT / (MEDS[me.medSel]?.time ?? PLAYER.healTime), me.medSel > 0 ? t(MEDS[me.medSel].name) : t('Patching up…'), 'var(--pink)'); hud.prompt(null); }
   else if (target?.kind === 'revive') {
     if (me.reviving) { hud.ring(target.mate.rev, t('Helping {who}…', { who: target.mate.name })); hud.prompt(null); }
     else { hud.ring(null); hud.prompt(`<kbd>${t('Hold E')}</kbd> ${t('Help {who} up', { who: target.mate.name })}`); }

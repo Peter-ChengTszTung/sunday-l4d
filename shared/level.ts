@@ -29,7 +29,9 @@ export type ObjLook = 'gen' | 'radio' | 'lever' | 'terminal' | 'valve' | 'batter
 export type ItemLook = 'fuel' | 'fuse' | 'keycard' | 'medicine' | 'part' | 'tape';
 /** Weapon pickups use the weapon id (every weapon except the starting pistol can be found): guns, close-in weapons and throwables. */
 export type GunKind = Exclude<WeaponId, 'pistol'>;
-export type LootKind = GunKind | 'ammo' | 'medkit' | 'armor';
+/** Small medical items (shared/constants.ts MEDS, all but the medkit). */
+export type SmallMed = 'plaster' | 'vitamins' | 'cocoa';
+export type LootKind = GunKind | 'ammo' | 'medkit' | 'armor' | SmallMed;
 export type PickupKind = LootKind | 'obj' | 'item';
 
 export interface Vec2 { x: number; z: number }
@@ -289,9 +291,42 @@ export class LevelBuilder {
   /** Survive `hold` seconds. `at` is where the team should make its stand. */
   holdout(hold: number, o: Omit<StepOpts, 'hold'>): number { return this.addStep('holdout', { ...o, hold }); }
 
+  /**
+   * Small medical items, left where survivors already look: on a free tile beside every other ammo pile
+   * (ammo piles line the route), in a fixed rotation of kinds. Appended after everything authored, so
+   * existing pickup ids do not move. Chapters that place their own small meds near a pile keep theirs.
+   */
+  private scatterMeds(): void {
+    const ROTA: SmallMed[] = ['plaster', 'vitamins', 'plaster', 'cocoa', 'plaster', 'vitamins'];
+    const small = new Set<string>(ROTA);
+    const used = new Set<number>();
+    for (const p of this.pickups) used.add(Math.floor(p.z / TILE) * this.W + Math.floor(p.x / TILE));
+    for (const n of this.notes) used.add(Math.floor(n.z / TILE) * this.W + Math.floor(n.x / TILE));
+    const authored = this.pickups.filter((p) => small.has(p.kind));
+    const piles = this.pickups.filter((p) => p.kind === 'ammo');
+    let n = 0;
+    piles.forEach((p, k) => {
+      if (k % 2) return;
+      if (authored.some((a) => Math.hypot(a.x - p.x, a.z - p.z) < 4 * TILE)) return;
+      const px = Math.floor(p.x / TILE), pz = Math.floor(p.z / TILE);
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+        const x = px + dx, z = pz + dz;
+        if (x < 0 || z < 0 || x >= this.W || z >= this.H) continue;
+        const i = z * this.W + x;
+        // Free floor only, and never across a wall corner from the pile (a diagonal needs both sides open).
+        if (this.solid[i] || this.floor[i] === F.NONE || this.doorCell[i] >= 0 || used.has(i)) continue;
+        if (dx && dz && (this.solid[pz * this.W + x] || this.solid[z * this.W + px])) continue;
+        used.add(i);
+        this.pick(ROTA[n++ % ROTA.length], x, z);
+        return;
+      }
+    });
+  }
+
   done(meta: { id: string; title: string; subtitle: string; intro: string; theme?: Theme }): ChapterDef {
     if (!this.spawns.length) throw new Error(`${meta.id}: call start() with spawn points`);
     if (!this.steps.length) throw new Error(`${meta.id}: a chapter needs quest steps`);
+    this.scatterMeds();
     return {
       ...meta, theme: meta.theme ?? this.theme, W: this.W, H: this.H,
       floor: this.floor, solid: this.solid, opaque: this.opaque, propCell: this.propCell, wallH: this.wallH, wallKind: this.wallKind,

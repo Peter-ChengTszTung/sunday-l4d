@@ -89,6 +89,8 @@ export default {
   "Hold Q for {s} s. Also clears your count of downs.": "按住 Q {s} 秒。同時清除你的倒地次數。",
   "A pillow strapped on front and back. It soaks up part of every bite or hit until the stuffing runs out.": "前後各綁一顆枕頭。棉花用完之前，每次被咬或被打都能吸收一部分傷害。",
   "Pillow Vest": "枕頭背心", "Medkit": "急救包",
+  "Boo-Boo Plaster": "痛痛貼", "Gummy Vitamins": "軟糖維他命", "Hot Cocoa": "熱可可",
+  "heals most of what you have lost": "回復大部分失去的生命", "+20 health, quick": "+20 生命，很快", "+35 health over 8 s": "8 秒內 +35 生命", "+15 health and steadies your legs": "+15 生命，還能站穩腳步",
   // Infected notes
   "common infected": "普通感染者", "L4D2 riot infected": "L4D2 鎮暴感染者", "L4D2 hazmat infected": "L4D2 防護衣感染者",
   "The horde. Sleeps until it hears or sees you, then runs at the nearest survivor and swats.": "屍群的主力。平時沉睡，聽到或看到你就衝向最近的倖存者揮打。",

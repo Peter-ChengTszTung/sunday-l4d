@@ -1,6 +1,6 @@
 // Wire protocol (JSON over WebSocket). Tuples keep snapshots compact.
 
-// [id, x, y, z, yaw, pitch, hp, state, weapon, medkits, reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables)]
+// [id, x, y, z, yaw, pitch, hp, state, weapon, meds (counts per kind, see constants.ts packMeds: a lone medkit is 1), reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables)]
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 // [id, type, x, z, yaw, state]
 export type ZombieSnap = [number, number, number, number, number, number];
@@ -10,7 +10,8 @@ export type GameEvent =
   | ['reset', chapter: number, step: number, doors: number, taken: number[], keepGear: number]
   | ['tp', pid: number, x: number, z: number, yaw: number]
   | ['msg', text: string]
-  | ['heal', pid: number]
+  // `pid` used medical item `med` (index into MEDS).
+  | ['heal', pid: number, med: number]
   | ['shot', pid: number, weapon: number, ex: number, ey: number, ez: number]
   | ['shove', pid: number]
   | ['pk', pickupId: number]
@@ -91,7 +92,8 @@ export type ClientMsg =
   | { t: 'f'; w: number; h: [number, number, number][]; e: [number, number, number]; n?: number }
   | { t: 'v' }
   | { t: 'u'; id: number }
-  | { t: 'h' }
+  // Use a medical item: `k` = index into MEDS (absent = the medkit).
+  | { t: 'h'; k?: number }
   | { t: 'r'; id: number }
   // Dev-server only: jump to a quest step (teleports the team there).
   | { t: 'dbg'; step: number }

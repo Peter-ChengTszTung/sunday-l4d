@@ -292,6 +292,44 @@ export const SURVIVOR_RULES: Record<DifficultyId, { respawn: number; downs: numb
   nightmare: { respawn: Infinity, downs: 2, heal: 0.6, selfRevives: 1 },
 };
 export const HEAL_MIN = 20;
+
+/**
+ * Medical items, carried in their own pockets and used with one key: Q (hold) uses the selected item,
+ * Z picks the next one carried. Index 0 is the medkit; the rest are the small ones, far commoner than
+ * medkits (the level builder leaves one beside many ammo piles, see LevelBuilder.done).
+ *  - `max`: most carried at once. `time`: seconds of holding Q. `move`: speed multiplier while using it.
+ *  - `heal`: health restored at once. `regen`: health trickled back over `over` seconds on top.
+ *  - `steady`: also clears the down count (off "last legs"), as a medkit does.
+ * The medkit heals a share of missing health instead (SURVIVOR_RULES.heal, at least HEAL_MIN).
+ */
+export type MedId = 'medkit' | 'plaster' | 'vitamins' | 'cocoa';
+export interface MedDef { id: MedId; name: string; icon: string; max: number; time: number; move: number; heal: number; regen: number; over: number; steady: boolean; blurb: string }
+export const MEDS: MedDef[] = [
+  { id: 'medkit', name: 'Medkit', icon: '✚', max: 1, time: PLAYER.healTime, move: 0.35, heal: 0, regen: 0, over: 0, steady: true, blurb: 'heals most of what you have lost' },
+  { id: 'plaster', name: 'Boo-Boo Plaster', icon: '🩹', max: 3, time: 0.9, move: 0.7, heal: 20, regen: 0, over: 0, steady: false, blurb: '+20 health, quick' },
+  { id: 'vitamins', name: 'Gummy Vitamins', icon: '💊', max: 2, time: 0.5, move: 0.85, heal: 5, regen: 30, over: 8, steady: false, blurb: '+35 health over 8 s' },
+  { id: 'cocoa', name: 'Hot Cocoa', icon: '☕', max: 1, time: 1.5, move: 0.5, heal: 15, regen: 0, over: 0, steady: true, blurb: '+15 health and steadies your legs' },
+];
+export const medIndex = (id: string): number => MEDS.findIndex((m) => m.id === id);
+/** Carried medical items as one number for PlayerSnap: 3 bits per kind, in MEDS order (so a lone medkit is still 1). */
+export const packMeds = (counts: readonly number[]): number => MEDS.reduce((v, _, k) => v + Math.min(7, Math.max(0, counts[k] | 0)) * 8 ** k, 0);
+export const unpackMeds = (v: number): number[] => MEDS.map((_, k) => Math.floor((v || 0) / 8 ** k) % 8);
+/** Whether using med `k` would do anything for a survivor at `hp` with `downs` downs on the clock. */
+export const medUseful = (k: number, hp: number, downs = 0): boolean => !!MEDS[k] && (hp < PLAYER.hp || (MEDS[k].steady && k !== 0 && downs > 0));
+/**
+ * Which item Q should use after the pockets changed: the current pick if still carried, else the first
+ * small item carried, the medkit last (so a stray tap never burns the medkit on a scratch). -1 = none.
+ */
+export function medSelect(counts: readonly number[], cur: number): number {
+  if (counts[cur] > 0) return cur;
+  for (let k = 1; k < MEDS.length; k++) if (counts[k] > 0) return k;
+  return counts[0] > 0 ? 0 : -1;
+}
+/** The next carried item after `cur` (Z). */
+export function medNext(counts: readonly number[], cur: number): number {
+  for (let i = 1; i <= MEDS.length; i++) { const k = (cur + i + MEDS.length) % MEDS.length; if (counts[k] > 0) return k; }
+  return -1;
+}
 /** A client-supplied difficulty (an id, or its index in DIFFICULTIES) as an id; anything else is 'normal'. */
 export function parseDifficulty(v: unknown): DifficultyId {
   if (typeof v === 'string') return DIFFICULTIES.find((d) => d.id === v)?.id ?? 'normal';

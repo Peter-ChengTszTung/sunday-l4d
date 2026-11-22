@@ -3,7 +3,7 @@
 //   npx tsx scripts/i18n.ts            missing strings per locale (exit 1 if any)
 //   npx tsx scripts/i18n.ts --dump 1   every string of chapter 1 as JSON (for translators)
 import { CHAPTERS, getLevel } from '../shared/chapters';
-import { WEAPONS, DIFFICULTIES, SURVIVORS } from '../shared/constants';
+import { WEAPONS, DIFFICULTIES, SURVIVORS, MEDS } from '../shared/constants';
 import { LOCALES } from '../client/src/i18n';
 
 /** Every player-visible string of chapter `i` (0-based). */
@@ -21,7 +21,7 @@ function chapterStrings(i: number): string[] {
   return [...new Set(out.filter((s) => /[A-Za-z]/.test(s)))];
 }
 const sharedStrings = (): string[] => [
-  ...WEAPONS.map((w) => w.name), ...DIFFICULTIES.flatMap((d) => [d.label, d.hint]), ...SURVIVORS.map((s) => s.name),
+  ...WEAPONS.map((w) => w.name), ...DIFFICULTIES.flatMap((d) => [d.label, d.hint]), ...SURVIVORS.map((s) => s.name), ...MEDS.flatMap((m) => [m.name, m.blurb]),
 ];
 
 const argv = process.argv.slice(2);

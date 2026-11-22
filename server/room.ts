@@ -2,7 +2,7 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
+import { TILE, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, MEDS, medIndex, packMeds, medUseful, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
 import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Step, type Vec2 } from '../shared/level';
 import { getLevel, chapterCount } from '../shared/chapters';
 import { wandererRegions, type Regions } from '../shared/regions';
@@ -215,10 +215,11 @@ const BRUTE_CATCHUP = { mult: 1.3, far: 9 };
 /** A full horde: base + per survivor walkers (before difficulty). Solo gets a smaller one, a full squad the same as before. */
 const HORDE = { base: 8, per: 5 };
 /**
- * Loot thinning, rolled each attempt: medkits kept on the map are at most base + per x survivors;
+ * Loot thinning, rolled each attempt: medkits kept on the map are at most base + per x survivors, small
+ * medical items (plasters, vitamins, cocoa) at most smallBase + smallPer x survivors, wherever they lie;
  * `ammo` of the ammo piles are kept (each pile serves every survivor once, see onUse).
  */
-const LOOT = { medBase: 3, medPer: 2, ammo: 0.5 };
+const LOOT = { medBase: 3, medPer: 2, ammo: 0.5, smallBase: 5, smallPer: 3 };
 /** Most a launcher blast does to a survivor at its centre (falls to 0 at half its radius). */
 const BLAST_FF = 20;
 const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
@@ -263,7 +264,9 @@ const GRABBER = (type: number) => type === ZT.SNATCHER || type === ZT.PIGGYBACK;
 export interface Player {
   id: number; ws: WebSocket; name: string; look: number;
   x: number; y: number; z: number; ry: number; rx: number;
-  hp: number; st: number; medkits: number; w: number; anim: number;
+  hp: number; st: number; w: number; anim: number;
+  /** Medical items carried, per kind in MEDS order, and health still to trickle back from Gummy Vitamins (`regen`, at `regenRate` a second). */
+  meds: number[]; regen: number; regenRate: number;
   revT: number; reviving: number; respawnT: number; lastFire: number; lastShove: number; kills: number;
   /** Shot clock: scheduled time of the last accepted shot, and the weapon it came from. */ fireW: number;
   /** Launcher grenades fired and not yet claimed ('g'): where and when they left the tube. */
@@ -412,6 +415,7 @@ export class Room {
   private taken = new Set<number>();
   /** Loot thinning (thinLoot): this attempt's medkits in reveal order, and those currently held back. */
   private medOrder: number[] = [];
+  private smallOrder: number[] = [];
   private thinned = new Set<number>();
   private events: GameEvent[] = [];
   private time = 0;
@@ -587,15 +591,17 @@ export class Room {
     const safe = this.def.steps.filter((s) => s.checkpoint && s.area).map((s) => s.area!);
     const inSafe = (x: number, z: number) => safe.some((a) => cellOf(x) >= a.x0 && cellOf(x) <= a.x1 && cellOf(z) >= a.z0 && cellOf(z) <= a.z1);
     this.medOrder = shuffle(this.def.pickups.filter((p) => p.kind === 'medkit' && !this.taken.has(p.id) && !inSafe(p.x, p.z)).map((p) => p.id));
-    this.thinned = new Set(this.medOrder.slice(this.medLimit()));
+    this.smallOrder = shuffle(this.def.pickups.filter((p) => medIndex(p.kind) > 0 && !this.taken.has(p.id)).map((p) => p.id));
+    this.thinned = new Set([...this.medOrder.slice(this.medLimit()), ...this.smallOrder.slice(this.smallLimit())]);
     for (const id of this.thinned) this.taken.add(id);
     const ammo = shuffle(this.def.pickups.filter((p) => p.kind === 'ammo' && !this.taken.has(p.id)));
     for (const p of ammo.slice(Math.ceil(ammo.length * LOOT.ammo))) this.taken.add(p.id);
   }
   private medLimit(): number { return LOOT.medBase + LOOT.medPer * Math.max(1, this.players.size); }
+  private smallLimit(): number { return LOOT.smallBase + LOOT.smallPer * Math.max(1, this.players.size); }
   /** The squad grew: put back thinned medkits up to the new limit (clients get a 'loot' event). */
   private revealLoot(): void {
-    const back = this.medOrder.slice(0, this.medLimit()).filter((id) => this.thinned.has(id));
+    const back = [...this.medOrder.slice(0, this.medLimit()), ...this.smallOrder.slice(0, this.smallLimit())].filter((id) => this.thinned.has(id));
     if (!back.length) return;
     for (const id of back) { this.thinned.delete(id); this.taken.delete(id); }
     this.events.push(['loot', back]);
@@ -604,9 +610,10 @@ export class Room {
   private spawnPlayer(p: Player, s: Vec2, fresh: boolean): void {
     Object.assign(p, { x: s.x, y: 0, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
       revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, freeAt: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0,
-      downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0 });
+      downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0, regen: 0, regenRate: 0 });
     if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; p.melee = -1; p.thr = {}; }
-    if (fresh) { p.medkits = 0; p.kills = 0; }
+    if (fresh || !p.meds) p.meds = MEDS.map(() => 0);
+    if (fresh) p.kills = 0;
     this.events.push(['tp', p.id, s.x, s.z, Math.PI]);
   }
 
@@ -615,7 +622,7 @@ export class Room {
     const used = new Set([...this.players.values()].map((p) => p.look));
     let look = 0;
     while (used.has(look)) look++;
-    const p = { id: this.nextPid++, ws, name: name || SURVIVORS[look].name, look, medkits: 0, kills: 0 } as Player;
+    const p = { id: this.nextPid++, ws, name: name || SURVIVORS[look].name, look, meds: MEDS.map(() => 0), kills: 0 } as Player;
     // Beside a standing survivor, else beside a downed one (a solo self-reviving player gets their helper right there).
     const mate = this.standing()[0] ?? this.watchers()[0];
     this.players.set(p.id, p);
@@ -791,10 +798,15 @@ export class Room {
       case 'v': this.onShove(p); break;
       case 'u': if (!p.pinned) this.onUse(p, m.id | 0); break;
       case 'h': {
-        if (p.st !== PSTATE.ALIVE || p.pinned || p.medkits < 1 || p.hp >= PLAYER.hp) return;
-        p.medkits--; p.hp = Math.min(PLAYER.hp, p.hp + Math.max(HEAL_MIN, (PLAYER.hp - p.hp) * this.rules.heal));
-        p.downs = 0;
-        this.events.push(['heal', p.id]);
+        const k = m.k === undefined ? 0 : m.k | 0, med = MEDS[k];
+        if (!med || p.st !== PSTATE.ALIVE || p.pinned || !(p.meds[k] > 0) || !medUseful(k, p.hp, p.downs)) return;
+        p.meds[k]--;
+        // The medkit heals a share of what is missing; the small items a flat amount, vitamins mostly as a trickle.
+        const now = k === 0 ? Math.max(HEAL_MIN, (PLAYER.hp - p.hp) * this.rules.heal) : med.heal;
+        p.hp = Math.min(PLAYER.hp, p.hp + now);
+        if (med.regen > 0) { p.regen = Math.max(p.regen, med.regen); p.regenRate = med.regen / med.over; }
+        if (med.steady) p.downs = 0;
+        this.events.push(['heal', p.id, k]);
         break;
       }
       case 'r': p.reviving = p.pinned ? 0 : m.id | 0; break;
@@ -1044,10 +1056,13 @@ export class Room {
     if (!pk || p.st !== PSTATE.ALIVE || this.state !== 'play') return;
     if (Math.hypot(pk.x - p.x, pk.z - p.z) > PLAYER.useRange + 1) return;
     const s = this.cur;
-    if (pk.kind === 'medkit') {
-      if (this.taken.has(id) || p.medkits >= 1) return;
-      this.taken.add(id); p.medkits = 1;
-      this.events.push(['pk', id]);
+    const mk = medIndex(pk.kind);
+    if (mk >= 0) {
+      // Medical items: each kind has its own pocket (MEDS[k].max).
+      if (this.taken.has(id) || p.meds[mk] >= MEDS[mk].max) return;
+      this.taken.add(id); p.meds[mk]++;
+      this.events.push(['pk', id], ['got', p.id, id]);
+      return;
     } else if (pk.kind === 'obj') {
       if (!s || s.kind !== 'use' || s.target !== id || this.holdout >= 0 || this.taken.has(id)) return;
       this.taken.add(id);
@@ -2730,6 +2745,11 @@ export class Room {
       if (tg.revT >= tg.revNeed) { this.standUp(tg); p.reviving = 0; this.events.push(['revived', tg.id, p.id]); }
     }
     for (const p of all) {
+      // Gummy Vitamins: health trickling back while on your feet (going down wastes the rest).
+      if (p.regen > 0) {
+        if (p.st !== PSTATE.ALIVE) p.regen = 0;
+        else { const give = Math.min(p.regen, p.regenRate * dt); p.regen -= give; p.hp = Math.min(PLAYER.hp, p.hp + give); }
+      }
       if (p.st === PSTATE.DOWN) {
         // Solo self-revive: progress on your own, bleeding as usual.
         const self = !revived.has(p.id) && this.players.size === 1 && p.selfRev > 0;
@@ -2803,7 +2823,7 @@ export class Room {
   private snapshot(): void {
     const p: PlayerSnap[] = [];
     for (const q of this.players.values()) {
-      p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, q.medkits,
+      p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, packMeds(q.meds),
         r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), packThrowables((wi) => q.thr[wi] ?? 0)]);
     }
     const z: ZombieSnap[] = [];

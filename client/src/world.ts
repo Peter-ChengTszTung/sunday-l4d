@@ -359,7 +359,7 @@ export function buildWorld(L: Level): World {
   const doorTarget = (v: (typeof doorViews)[number]) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
 
   // ---------------------------------------------------------------- pickups
-  const RING: Record<string, number> = { medkit: 0xff6b8a, ammo: 0xa9e34b, item: 0xffd43b, armor: 0x74c0fc, firebomb: 0xff7a3a, rattle: 0xff7a3a };
+  const RING: Record<string, number> = { medkit: 0xff6b8a, plaster: 0x63e6be, vitamins: 0x63e6be, cocoa: 0x63e6be, ammo: 0xa9e34b, item: 0xffd43b, armor: 0x74c0fc, firebomb: 0xff7a3a, rattle: 0xff7a3a };
   /** Ground ring colour: fixed for supplies, by tier for weapons (blue = basic, orange-gold = tier 2). */
   const ringColor = (kind: string): number => RING[kind] ?? ((WEAPONS.find((w) => w.id === kind)?.tier ?? 1) >= 2 ? 0xffa53a : 0x74c0fc);
   const arrowMesh = mesh(make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
@@ -457,6 +457,27 @@ export function buildWorld(L: Level): World {
       [0.045, 0.035, 0.045, 0xffd43b, -0.1, 0.22, 0.1, 0.015], [0.045, 0.035, 0.045, 0xffd43b, 0, 0.22, 0.1, 0.015], [0.045, 0.035, 0.045, 0xffd43b, 0.1, 0.22, 0.1, 0.015],
     ], [...round(0.04, 0.09, 0xff6b6b, -0.11, 0.25, -0.08), ...round(0.04, 0.09, 0x2b2540, 0.11, 0.25, -0.08)]),
   };
+  // Small medical items: each floats under a green cross, so they read as "health" from across a room.
+  const SIGN: BoxPart[] = [[0.17, 0.055, 0.055, 0x51cf66, 0, 0.44, 0, 0.018], [0.055, 0.17, 0.055, 0x51cf66, 0, 0.44, 0, 0.018]];
+  // Boo-Boo Plaster: a tin of plasters with one printed on the lid and a loose one stuck across the corner.
+  FLOAT.plaster = () => inkModel([
+    [0.4, 0.26, 0.16, 0xfff5f5], [0.41, 0.05, 0.17, 0x63e6be, 0, 0.105, 0, 0], [0.41, 0.03, 0.17, 0x63e6be, 0, -0.115, 0, 0],
+    [0.26, 0.085, 0.175, 0xffc9a3, 0, -0.015, 0, 0], [0.085, 0.085, 0.18, 0xffe8d6, 0, -0.015, 0, 0],
+    [0.02, 0.02, 0.183, 0xe8a87c, -0.09, -0.015, 0, 0], [0.02, 0.02, 0.183, 0xe8a87c, 0.09, -0.015, 0, 0],
+    ...SIGN,
+  ], [slash(0.2, 0.06, 0.02, 0xffc9a3, 0.16, 0.12, -0.6), slash(0.06, 0.062, 0.022, 0xffe8d6, 0.16, 0.12, -0.6)]);
+  // Gummy Vitamins: an orange jar with a white cap and label, three gummies stuck to it.
+  FLOAT.vitamins = () => inkModel([
+    [0.07, 0.07, 0.03, 0xff6b6b, -0.07, -0.03, 0.135, 0], [0.07, 0.07, 0.03, 0xffd43b, 0.0, -0.03, 0.14, 0], [0.07, 0.07, 0.03, 0x51cf66, 0.07, -0.03, 0.135, 0],
+    [0.07, 0.07, 0.03, 0xff6b6b, 0.07, -0.03, -0.135, 0], [0.07, 0.07, 0.03, 0xffd43b, 0.0, -0.03, -0.14, 0], [0.07, 0.07, 0.03, 0x51cf66, -0.07, -0.03, -0.135, 0],
+    ...SIGN,
+  ], [...round(0.14, 0.3, 0xffa94d, 0, -0.03, 0), ...round(0.144, 0.14, 0xfff5f5, 0, -0.03, 0, 1, 0), ...round(0.11, 0.05, 0xffa94d, 0, 0.145, 0, 1, 0), ...round(0.15, 0.08, 0xfff5f5, 0, 0.2, 0)]);
+  // Hot Cocoa: a pink mug, cocoa to the brim, two marshmallows, a handle.
+  FLOAT.cocoa = () => inkModel([
+    [0.05, 0.045, 0.06, 0xff8fab, 0.2, 0.07, 0, 0.02], [0.05, 0.045, 0.06, 0xff8fab, 0.2, -0.09, 0, 0.02], [0.045, 0.2, 0.06, 0xff8fab, 0.235, -0.01, 0, 0.02],
+    [0.07, 0.05, 0.07, 0xfff5f5, -0.04, 0.165, 0.02, 0.015], [0.06, 0.05, 0.06, 0xfff5f5, 0.05, 0.16, -0.04, 0.015],
+    ...SIGN,
+  ], [...round(0.17, 0.3, 0xff8fab, 0, -0.01, 0), ...round(0.176, 0.035, 0xfff5f5, 0, 0.125, 0, 1, 0), ...round(0.174, 0.03, 0xffc2d1, 0, -0.06, 0, 1, 0), ...round(0.145, 0.012, 0x7a4a3a, 0, 0.142, 0, 1, 0)]);
   const floatCache = new Map<string, pc.Mesh>();
   const floatMesh = (key: string): pc.Mesh => {
     let m = floatCache.get(key);
@@ -477,7 +498,7 @@ export function buildWorld(L: Level): World {
     const float = new pc.Entity('float');
     float.setLocalPosition(0, 0.75, 0);
     switch (p.kind) {
-      case 'medkit': case 'ammo': case 'armor': float.addChild(meshEntity(floatMesh(p.kind), toonMat)); break;
+      case 'medkit': case 'ammo': case 'armor': case 'plaster': case 'vitamins': case 'cocoa': float.addChild(meshEntity(floatMesh(p.kind), toonMat)); break;
       case 'obj': float.addChild(meshEntity(arrowMesh, objMat)); break;
       case 'item': float.addChild(meshEntity(floatMesh(p.look ?? 'part'), toonMat)); break;
       default: {

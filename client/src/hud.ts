@@ -1,5 +1,5 @@
 // DOM heads-up display. Only touches the DOM when a value actually changes.
-import { PSTATE, PLAYER } from '../../shared/constants';
+import { PSTATE, PLAYER, MEDS } from '../../shared/constants';
 import { t } from './i18n';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -9,7 +9,7 @@ export interface MateView { id: number; name: string; color: string; hp: number;
 
 export class Hud {
   private el = {
-    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), medkit: $('medkit'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), throwkey: $('throwkey'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
+    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), meds: $('meds'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), throwkey: $('throwkey'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
     acount: $('acount'), slots: $('slots'), team: $('team'), feed: $('feed'), banner: $('banner'), prompt: $('prompt'), ring: $('ring'),
     ringfg: document.getElementById('ringfg') as unknown as SVGCircleElement, ringlabel: $('ringlabel'), hitmark: $('hitmark'), vignette: $('vignette'),
     goo: $('goo'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
@@ -47,15 +47,28 @@ export class Hud {
     };
   }
 
+  /**
+   * The medical tray: one chip per kind carried (`counts` in MEDS order) with how many; `sel` is the one Q uses,
+   * and it wears the Q badge. With more than one kind carried a Z chip shows how to switch.
+   */
+  setMeds(counts: readonly number[], sel: number): void {
+    this.set('meds', `${counts.join(',')}|${sel}`, () => {
+      const kinds = counts.filter((n) => n > 0).length;
+      this.el.meds.hidden = kinds === 0;
+      this.el.meds.innerHTML = MEDS.map((m, k) => (counts[k] > 0
+        ? `<div class="med${k === sel ? ' sel' : ''}" title="${t(m.name)}">${m.icon}${counts[k] > 1 ? `<b>${counts[k]}</b>` : ''}${k === sel ? '<small>Q</small>' : ''}</div>` : '')).join('')
+        + (kinds > 1 ? '<div class="medkey">Z</div>' : '');
+    });
+  }
+
   /** `armor` of `armorMax` vest points left; `throwable`: what G throws and what else is carried ('' = nothing); `throwKey`: the key hint on its chip. */
-  setHealth(hp: number, st: number, medkits: number, armor = 0, armorMax = 1, throwable = '', throwKey = 'G'): void {
+  setHealth(hp: number, st: number, armor = 0, armorMax = 1, throwable = '', throwKey = 'G'): void {
     const shown = Math.max(0, Math.min(PLAYER.hp, hp));
     this.set('hp', `${shown}|${st}`, () => {
       this.el.hpbar.style.width = `${shown}%`;
       this.el.hpbar.style.background = st === PSTATE.DOWN ? 'var(--pink)' : shown > 60 ? 'var(--green)' : shown > 30 ? 'var(--yellow)' : 'var(--pink)';
       this.el.hptext.textContent = st === PSTATE.DOWN ? t('DOWN! {hp}', { hp: shown }) : st === PSTATE.DEAD ? t('OUT') : String(shown);
     });
-    this.set('mk', String(medkits), () => { this.el.medkit.hidden = medkits < 1; });
     const ar = Math.max(0, Math.min(armorMax, armor));
     this.set('ar', String(ar), () => { this.el.armor.hidden = ar <= 0; this.el.armorbar.style.width = `${(ar / armorMax) * 100}%`; });
     this.set('th', `${throwable}|${throwKey}`, () => { this.el.throwable.hidden = !throwable; this.el.throwname.textContent = throwable; this.el.throwkey.textContent = throwKey; });
