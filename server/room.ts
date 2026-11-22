@@ -811,6 +811,7 @@ export class Room {
       }
       case 'r': p.reviving = p.pinned ? 0 : m.id | 0; break;
       case 'dbg': if (this.allowDebug && this.state === 'play') this.debugJump(m.step); break;
+      case 'dbgz': if (this.allowDebug && this.state === 'play' && ZTYPES[m.zt | 0] && Number.isFinite(m.x) && Number.isFinite(m.z) && !this.L.solidAt(cellOf(m.x), cellOf(m.z), this.doors)) this.spawnZombie(m.zt | 0, m.x, m.z).leapCd = 0.2; break; // ready to pounce
     }
   }
   private onFire(p: Player, m: Extract<ClientMsg, { t: 'f' }>): void {

@@ -97,6 +97,8 @@ export type ClientMsg =
   | { t: 'r'; id: number }
   // Dev-server only: jump to a quest step (teleports the team there).
   | { t: 'dbg'; step: number }
+  // Dev-server only: spawn a zombie of type `zt` (ZT) at (x, z) metres, awake.
+  | { t: 'dbgz'; zt: number; x: number; z: number }
   // Launcher grenade impact claim for the oldest grenade this player fired ('f' with a blast weapon).
   // The server checks range and line of sight from where it was fired, then applies the blast.
   | { t: 'g'; x: number; y: number; z: number; n?: number };

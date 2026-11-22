@@ -1440,6 +1440,34 @@ function sendPos(): void {
   net.send({ t: 'p', x: +me.x.toFixed(2), y: +me.y.toFixed(2), z: +me.z.toFixed(2), ry: +me.yaw.toFixed(3), rx: +me.pitch.toFixed(3), w: me.weapon, a: 0 });
 }
 
+/**
+ * Ridden by a Piggyback you can't see what has you from your own eyes, so the camera pulls out behind
+ * you for as long as it is on (`rideCam`: 0 = first person, 1 = fully out) and your own survivor is drawn,
+ * reeling under it. The mouse still looks around; you still can't act until it is knocked off.
+ */
+let rideCam = 0;
+/** How far behind its victim's centre a riding Piggyback hangs (m). */
+const RIDE_BACK = 0.24;
+const RIDE_CAM = { dist: 3.6, lift: 0.55, secs: 0.28 };
+/** Your own survivor, built the first time the camera leaves your head (`look`: roster look it was built for). */
+let selfBody: { chibi: Chibi; look: number } | null = null;
+/** Draw (or hide) your own survivor at your position. */
+function updateSelfBody(dt: number, show: boolean): void {
+  if (!show) { if (selfBody) selfBody.chibi.group.enabled = false; return; }
+  const look = roster.get(me.id)?.look ?? 0;
+  if (!selfBody || selfBody.look !== look) {
+    selfBody?.chibi.dispose();
+    selfBody = { chibi: new Chibi(survivorLook(look)), look };
+    app.root.addChild(selfBody.chibi.group);
+  }
+  // Facing the way you look, as teammates see you: the camera is then always behind your back, and the rider on it.
+  const g = selfBody.chibi.group;
+  g.enabled = true;
+  g.setPosition(me.x, me.y, me.z);
+  g.setLocalEulerAngles(0, me.yaw * RAD, 0);
+  selfBody.chibi.animate('stagger', time, dt);
+}
+
 function updateCamera(dt: number): void {
   const scopeFov = WEAPONS[me.weapon].scope?.fov ?? baseFov;
   camera.camera!.fov = baseFov + (scopeFov - baseFov) * me.zoom;
@@ -1457,12 +1485,24 @@ function updateCamera(dt: number): void {
     else { cam.x = me.x; cam.y = 6; cam.z = me.z + 4; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(me.x, 0, me.z); }
     cam.rot.copy(camera.getRotation());
     setTorch(false, 0, 0, 0, 0, 0, -1);
+    rideCam = 0; updateSelfBody(dt, false);
     return;
   }
   const down = me.st === PSTATE.DOWN;
   const pitch = me.pitch + me.recoil;
   cam.x = me.x; cam.y = me.y + (down ? 0.42 : PLAYER.eye); cam.z = me.z;
   cam.fx = -Math.sin(me.yaw) * Math.cos(pitch); cam.fy = Math.sin(pitch); cam.fz = -Math.cos(me.yaw) * Math.cos(pitch);
+  // Piggyback ride: ease out behind your own shoulders (not through a wall), and back in when it is off.
+  const riding = me.pinned && me.pinType === ZT.PIGGYBACK && !down;
+  rideCam = Math.max(0, Math.min(1, rideCam + (riding ? dt : -dt) / RIDE_CAM.secs));
+  if (rideCam > 0) {
+    const e = rideCam * rideCam * (3 - 2 * rideCam), h = Math.hypot(cam.fx, cam.fz) || 1;
+    const room = L.rayGrid(me.x, me.z, -cam.fx / h, -cam.fz / h, RIDE_CAM.dist, doors) - 0.35;
+    const back = Math.max(0.6, Math.min(RIDE_CAM.dist, room / h)) * e;
+    cam.x -= cam.fx * back; cam.z -= cam.fz * back;
+    cam.y = Math.max(0.45, Math.min(CEIL_H - 0.35, cam.y - cam.fy * back + RIDE_CAM.lift * e));
+  }
+  updateSelfBody(dt, rideCam > 0.2);
   quatYXZ(pitch + (Math.random() - 0.5) * shake, me.yaw + (Math.random() - 0.5) * shake, down ? 0.35 : (Math.random() - 0.5) * shake, cam.rot);
   camera.setPosition(cam.x, cam.y, cam.z);
   camera.setRotation(cam.rot);
@@ -1489,10 +1529,18 @@ function updateEntities(dt: number): void {
   }
   for (const z of zeds.values()) {
     z.x += (z.tx - z.x) * k; z.z += (z.tz - z.z) * k; z.ry = lerpAngle(z.ry, z.tr, k);
-    // A riding Piggyback sits up on its victim's shoulders.
+    // A riding Piggyback clings to its victim's back: just behind their shoulders, facing the way they face
+    // (whichever way it is steering them), so it is never drawn in front of their face.
     const riding = z.type === ZT.PIGGYBACK && z.st === ZSTATE.PIN;
-    z.chibi.group.setPosition(z.x, riding ? 0.62 : 0, z.z);
-    z.chibi.group.setLocalEulerAngles(0, z.ry * RAD, 0);
+    const rid = riding ? pinBy.get(z.id) : undefined, host = rid === me.id ? me : rid !== undefined ? mates.get(rid) : undefined;
+    if (host) {
+      const hry = host === me ? me.yaw : (host as Mate).ry;
+      z.chibi.group.setPosition(host.x + Math.sin(hry) * RIDE_BACK, host.y + 0.62, host.z + Math.cos(hry) * RIDE_BACK);
+      z.chibi.group.setLocalEulerAngles(0, hry * RAD, 0);
+    } else {
+      z.chibi.group.setPosition(z.x, riding ? 0.62 : 0, z.z);
+      z.chibi.group.setLocalEulerAngles(0, z.ry * RAD, 0);
+    }
     z.chibi.animate(z.type === ZT.WEEPER && z.st === ZSTATE.IDLE ? 'sit' : POSE[z.st] ?? 'idle', time, dt);
     // A Snatcher's scarf, from its hands to whoever it has.
     if (z.type === ZT.SNATCHER && z.st === ZSTATE.PIN) {
@@ -1644,7 +1692,7 @@ app.on('update', (dt: number) => {
     updateEntities(dt);
     updateHud(dt);
     const moving = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed) * (me.onGround ? 1 : 0.2);
-    vm.visible = me.st === PSTATE.ALIVE && me.zoom < 0.5; // the scope overlay replaces the gun
+    vm.visible = me.st === PSTATE.ALIVE && me.zoom < 0.5 && rideCam < 0.05; // the scope overlay replaces the gun; none in the ride camera
     vm.update(dt, moving, lookDX, lookDY);
     flushOwnShots();
     lookDX = lookDY = 0;
@@ -1670,4 +1718,4 @@ app.start();
 // Debug: `?debug&step=N` jumps the room to quest step N after joining (dev server only).
 const jump = (n: number) => { if (debugServer) net.send({ t: 'dbg', step: n }); };
 if (params.has('step')) { const n = Number(params.get('step')); const t = setInterval(() => { if (me.id && debugServer) { jump(n); clearInterval(t); } }, 200); }
-if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, get world() { return world; }, get level() { return L; }, fire, shove, interact, jump, give: debugGive, state: () => ({ inGame, locked, ended, chapter, step, qc, doors, holdout, serverState }) } });
+if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, get world() { return world; }, get level() { return L; }, fire, shove, interact, jump, give: debugGive, /** Dev server: spawn zombie type `zt` at (x, z). */ spawn: (zt: number, x: number, z: number) => { if (debugServer) net.send({ t: 'dbgz', zt, x, z }); }, state: () => ({ inGame, locked, ended, chapter, step, qc, doors, holdout, serverState }) } });
