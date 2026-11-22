@@ -14,6 +14,7 @@ import { WEAPONS, ZT, ZSTATE } from '../../shared/constants';
 /** What the listener is doing; main.ts feeds this every frame through `update`. */
 export interface Listener {
   x: number; z: number;
+  /** Floor height the listener is on (metres; multi-storey maps). Absent = 0. */ y?: number;
   /** Facing on the ground plane (unit vector). */ fx: number; fz: number;
   indoor: boolean;
   /** 0 healthy … 1 nearly dead. */ hurt: number;
@@ -54,8 +55,13 @@ export class Sfx {
   /** 2 s of sparse clicks and pops for radio crackle. */
   private crackle!: AudioBuffer;
   muted = false;
-  /** Set by main.ts: true when a wall stands between the listener and (x, z). */
-  occluded: ((x: number, z: number) => boolean) | null = null;
+  /**
+   * Set by main.ts: true when a wall (or a floor slab) stands between the listener and (x, z). `y` is the
+   * floor height the sound was made on (see `at`), or null when the caller didn't say.
+   */
+  occluded: ((x: number, z: number, y: number | null) => boolean) | null = null;
+  /** Floor height of the next positional sound (see `at`); read and cleared by the next `emit`. */
+  private srcY: number | null = null;
 
   private world!: GainNode; private local!: GainNode; private ui!: GainNode;
   private muffle!: BiquadFilterNode; private verbIn!: GainNode; private verbOut!: GainNode; private verbRoom!: GainNode;
@@ -270,12 +276,15 @@ export class Sfx {
    * reverb send that falls off slower than the dry signal (far sounds are wetter). Culls when the mix is full.
    */
   private emit(pos: readonly [number, number] | null, o: Emit, body: () => void): void {
+    const sy = this.srcY;
+    this.srcY = null;
     if (!this.ctx) return;
     const c = this.ctx, prio = o.prio ?? false;
     if (this.voices >= MAX_VOICES && !prio) return;
     let to: AudioNode = this.local;
     if (pos) {
-      const l = this.lis, dx = pos[0] - l.x, dz = pos[1] - l.z, d = Math.hypot(dx, dz), reach = o.reach ?? 1;
+      // Multi-storey maps: a sound on another floor is that much further away (flat maps: dy = 0).
+      const l = this.lis, dx = pos[0] - l.x, dz = pos[1] - l.z, dy = sy === null ? 0 : sy - (l.y ?? 0), d = Math.hypot(dx, dy, dz), reach = o.reach ?? 1;
       const a = this.att(d / reach);
       if (a < 0.012 || (!prio && this.voices > MAX_VOICES * 0.6 && a < 0.25)) return;
       let cut = Math.max(1100, 18000 * Math.exp(-d / (28 * Math.sqrt(reach)))), dry = a, pan = 0;
@@ -284,7 +293,7 @@ export class Sfx {
         if (front < 0) cut *= 1 + 0.4 * front;
         pan = (ux * -l.fz + uz * l.fx) * 0.85 * Math.min(1, d / 3);
       }
-      if (o.occlude !== false && d > 2 && this.occluded?.(pos[0], pos[1])) { cut = Math.min(cut, 650); dry *= 0.5; }
+      if (o.occlude !== false && d > 2 && this.occluded?.(pos[0], pos[1], sy)) { cut = Math.min(cut, 650); dry *= 0.5; }
       const lp = c.createBiquadFilter(), p = c.createStereoPanner();
       lp.type = 'lowpass'; lp.frequency.value = cut; lp.Q.value = 0.5;
       p.pan.value = pan;
@@ -393,7 +402,14 @@ export class Sfx {
   }
 
   /** Call every frame with the listener; drives the beds, ducking, muffling and heartbeat. */
+  /**
+   * The next positional sound is on the floor at height y (multi-storey maps): it counts the height
+   * difference in its distance and checks walls and floor slabs at that height. `sfx.at(y).groan(x, z)`.
+   */
+  at(y: number): this { this.srcY = y; return this; }
+
   update(dt: number, l: Listener): void {
+    this.srcY = null; // an `at` whose sound never emitted must not leak into a later one
     this.lis = l;
     if (!this.ctx) return;
     if (this.built !== this.scene) this.buildScene();

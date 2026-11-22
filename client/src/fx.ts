@@ -9,17 +9,19 @@ import { STAR_MESH } from './viewmodel';
 interface Particle {
   ent: pc.Entity; mi: pc.MeshInstance; vx: number; vy: number; vz: number; life: number; max: number; size: number;
   grav: number; spin: number; grow: number; x: number; y: number; z: number;
+  /** Floor height under where it was spawned (it bounces there). */ fl: number;
 }
 /** Particles of one kind. `free` is a stack of the indices in `items` that are dead, so spawning never searches. */
 interface Pool { items: Particle[]; free: number[]; mesh: pc.Mesh; mat: pc.Material; star: boolean }
 interface Tracer { ent: pc.Entity; life: number }
-/** Drooler goo in flight: a ballistic arc from (x0, z0) to (x1, z1). */
-interface Glob { ent: pc.Entity; x0: number; z0: number; x1: number; z1: number; t: number; flight: number }
-interface Puddle { ent: pc.Entity; id: number; x: number; z: number; r: number; age: number; life: number; bub: number }
+/** Drooler goo in flight: a ballistic arc from (x0, y0, z0) to (x1, y1, z1) (y: floor heights; multi-storey maps). */
+interface Glob { ent: pc.Entity; x0: number; z0: number; x1: number; z1: number; y0: number; y1: number; t: number; flight: number }
+/** `y`: the floor height it lies on. */
+interface Puddle { ent: pc.Entity; id: number; x: number; y: number; z: number; r: number; age: number; life: number; bub: number }
 /** A firebomb's burning patch: scorch disc plus a steady stream of flame blobs. `snd`: seconds to the next crackle. */
-interface Flame { ent: pc.Entity; id: number; x: number; z: number; r: number; age: number; life: number; snd: number }
+interface Flame { ent: pc.Entity; id: number; x: number; y: number; z: number; r: number; age: number; life: number; snd: number }
 /** A Rattle Bomb shaking on the floor until it goes off. */
-interface Rattle { ent: pc.Entity; x: number; z: number; t: number; snd: number }
+interface Rattle { ent: pc.Entity; x: number; y: number; z: number; t: number; snd: number }
 export interface P3 { x: number; y: number; z: number }
 /** Most particles of one kind alive at once; further spawns are dropped. */
 const POOL_MAX = 220;
@@ -80,14 +82,19 @@ export class FX {
   private arcRing: pc.Entity | null = null;
   private arcOn = false;
   /** A burning patch wants its next crackle: returns seconds until the one after. */
-  onCrackle: ((x: number, z: number) => number) | null = null;
+  onCrackle: ((x: number, y: number, z: number) => number) | null = null;
   /** A Rattle Bomb shakes (several times a second until it blows). */
-  onRattle: ((x: number, z: number) => void) | null = null;
+  onRattle: ((x: number, y: number, z: number) => void) | null = null;
   /** Called when a glob lands (for the splat sound). */
-  onSplat: ((x: number, z: number) => void) | null = null;
+  onSplat: ((x: number, y: number, z: number) => void) | null = null;
+  /**
+   * Floor height at or below height y at (x, z) (set by main.ts), so particles bounce on the storey they
+   * were spawned over. Unset: the ground (y = 0).
+   */
+  groundAt: ((x: number, y: number, z: number) => number) | null = null;
 
-  /** Drooler goo glob: flies the same arc the server simulates. */
-  glob(x0: number, z0: number, x1: number, z1: number, flight: number): void {
+  /** Drooler goo glob: flies the same arc the server simulates, from floor height y0 to y1. */
+  glob(x0: number, z0: number, x1: number, z1: number, flight: number, y0 = 0, y1 = 0): void {
     let ent = this.spareGlobs.pop();
     if (ent) ent.enabled = true;
     else {
@@ -96,18 +103,19 @@ export class FX {
       app.root.addChild(ent);
     }
     ent.setLocalScale(0.32, 0.32, 0.32);
-    this.globs.push({ ent, x0, z0, x1, z1, t: 0, flight });
+    this.globs.push({ ent, x0, z0, x1, z1, y0, y1, t: 0, flight });
   }
 
-  puddle(id: number, x: number, z: number, r: number, life: number): void {
+  /** A goo puddle on the floor at height y. */
+  puddle(id: number, x: number, z: number, r: number, life: number, y = 0): void {
     // Same cap as the server, which drops its oldest puddle silently.
     while (this.puddles.length >= DROOLER.maxPuddles) this.parkPuddle(this.puddles.shift()!);
     let ent = this.sparePuddles.pop();
     if (ent) ent.enabled = true;
     else { ent = meshEntity(PUDDLE_MESH, puddleMat); app.root.addChild(ent); }
-    ent.setPosition(x, 0.035 + (id % 7) * 0.002, z); // tiny offset so overlapping puddles don't z-fight
+    ent.setPosition(x, y + 0.035 + (id % 7) * 0.002, z); // tiny offset so overlapping puddles don't z-fight
     ent.setLocalScale(0.01, 1, 0.01);
-    this.puddles.push({ ent, id, x, z, r, age: 0, life, bub: 0 });
+    this.puddles.push({ ent, id, x, y, z, r, age: 0, life, bub: 0 });
   }
   private parkGlob(g: Glob): void { g.ent.enabled = false; this.spareGlobs.push(g.ent); }
   private parkPuddle(p: Puddle): void { p.ent.enabled = false; this.sparePuddles.push(p.ent); }
@@ -123,30 +131,30 @@ export class FX {
     this.rattles.length = 0;
   }
 
-  /** A firebomb burst: a flash of flame, then a patch that burns for `life` seconds. */
-  fire(id: number, x: number, z: number, r: number, life: number): void {
+  /** A firebomb burst: a flash of flame, then a patch that burns for `life` seconds on the floor at height y. */
+  fire(id: number, x: number, z: number, r: number, life: number, y = 0): void {
     while (this.flames.length >= FIRE.max) this.parkFlame(this.flames.shift()!);
     let ent = this.spareScorch.pop();
     if (ent) ent.enabled = true;
     else { ent = meshEntity(SCORCH_MESH, puddleMat); app.root.addChild(ent); }
-    ent.setPosition(x, 0.03 + (id % 7) * 0.002, z);
+    ent.setPosition(x, y + 0.03 + (id % 7) * 0.002, z);
     ent.setLocalScale(0.01, 1, 0.01);
-    this.flames.push({ ent, id, x, z, r, age: 0, life, snd: 0 });
-    _p.x = x; _p.y = 0.3; _p.z = z;
+    this.flames.push({ ent, id, x, y, z, r, age: 0, life, snd: 0 });
+    _p.x = x; _p.y = y + 0.3; _p.z = z;
     this.burst(_p, 0xff922b, 18, 7, 0.26);
     this.burst(_p, 0xffd43b, 8, 5, 0.3, true, 0.4, 3);
   }
   private parkFlame(f: Flame): void { f.ent.enabled = false; this.spareScorch.push(f.ent); }
-  /** True if (x, z) is inside a burning patch. */
-  inFire(x: number, z: number): boolean {
-    for (const f of this.flames) if (f.age > 0.2 && Math.hypot(x - f.x, z - f.z) < f.r) return true;
+  /** True if (x, z) on the floor at height y is inside a burning patch. */
+  inFire(x: number, z: number, y = 0): boolean {
+    for (const f of this.flames) if (f.age > 0.2 && Math.abs(y - f.y) < 1.5 && Math.hypot(x - f.x, z - f.z) < f.r) return true;
     return false;
   }
 
-  /** A Rattle Bomb at (x, z) shaking for `secs` seconds (the boom comes from the server's 'blast'). */
-  lure(x: number, z: number, secs: number): void {
+  /** A Rattle Bomb at (x, z) on the floor at height y, shaking for `secs` seconds (the boom comes from the server's 'blast'). */
+  lure(x: number, z: number, secs: number, y = 0): void {
     const ent = this.shell();
-    this.rattles.push({ ent, x, z, t: secs, snd: 0 });
+    this.rattles.push({ ent, x, y, z, t: secs, snd: 0 });
   }
 
   /** Draw a Snatcher's scarf from `a` to `b` for this frame only (call every frame while it holds someone). */
@@ -203,10 +211,10 @@ export class FX {
       for (let n = Math.random() < dt * 34 * k ? (Math.random() < 0.4 ? 2 : 1) : 0; n > 0; n--) {
         const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * s * 0.92;
         const c = FLAME_COLORS[(Math.random() * FLAME_COLORS.length) | 0];
-        this.spawn(this.blobs, c, f.x + Math.cos(a) * d, 0.1, f.z + Math.sin(a) * d, (Math.random() - 0.5) * 0.5, 1.6 + Math.random() * 1.6, (Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.18, 0.45 + Math.random() * 0.3, -1.5, 0.9);
+        this.spawn(this.blobs, c, f.x + Math.cos(a) * d, f.y + 0.1, f.z + Math.sin(a) * d, (Math.random() - 0.5) * 0.5, 1.6 + Math.random() * 1.6, (Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.18, 0.45 + Math.random() * 0.3, -1.5, 0.9);
       }
-      if (Math.random() < dt * 3 * k) this.spawn(this.blobs, 0x4a4458, f.x + (Math.random() - 0.5) * s, 1.2, f.z + (Math.random() - 0.5) * s, 0, 1.2, 0, 0.3, 0.9, -0.3, 1.5);
-      if ((f.snd -= dt) <= 0) f.snd = this.onCrackle?.(f.x, f.z) ?? 1;
+      if (Math.random() < dt * 3 * k) this.spawn(this.blobs, 0x4a4458, f.x + (Math.random() - 0.5) * s, f.y + 1.2, f.z + (Math.random() - 0.5) * s, 0, 1.2, 0, 0.3, 0.9, -0.3, 1.5);
+      if ((f.snd -= dt) <= 0) f.snd = this.onCrackle?.(f.x, f.y, f.z) ?? 1;
     }
     for (let i = this.rattles.length - 1; i >= 0; i--) {
       const r = this.rattles[i];
@@ -214,12 +222,12 @@ export class FX {
       if (r.t <= 0) { this.dropShell(r.ent); this.rattles.splice(i, 1); continue; }
       // Hops and spins faster as the fuse runs down.
       const rate = 9 + (1 - Math.min(1, r.t / 5)) * 14;
-      r.ent.setPosition(r.x, 0.14 + Math.abs(Math.sin(r.t * rate)) * 0.22, r.z);
+      r.ent.setPosition(r.x, r.y + 0.14 + Math.abs(Math.sin(r.t * rate)) * 0.22, r.z);
       r.ent.setLocalEulerAngles(Math.sin(r.t * rate * 1.3) * 50, r.t * 400, 0);
       if ((r.snd -= dt) <= 0) {
         r.snd = 0.2;
-        this.onRattle?.(r.x, r.z);
-        this.spawn(this.stars, Math.random() < 0.5 ? 0xffd43b : 0x74c0fc, r.x, 0.5, r.z, (Math.random() - 0.5) * 3, 2.5, (Math.random() - 0.5) * 3, 0.16, 0.35, 4);
+        this.onRattle?.(r.x, r.y, r.z);
+        this.spawn(this.stars, Math.random() < 0.5 ? 0xffd43b : 0x74c0fc, r.x, r.y + 0.5, r.z, (Math.random() - 0.5) * 3, 2.5, (Math.random() - 0.5) * 3, 0.16, 0.35, 4);
       }
     }
     // Scarves not redrawn this frame disappear.
@@ -236,16 +244,16 @@ export class FX {
       const g = this.globs[i];
       g.t += dt;
       const s = Math.min(1, g.t / g.flight), h = 1.2 + g.flight * 1.6;
-      const x = g.x0 + (g.x1 - g.x0) * s, z = g.z0 + (g.z1 - g.z0) * s, y = 1.3 + (0.1 - 1.3) * s + 4 * h * s * (1 - s);
+      const x = g.x0 + (g.x1 - g.x0) * s, z = g.z0 + (g.z1 - g.z0) * s, y = g.y0 + 1.3 + (g.y1 + 0.1 - g.y0 - 1.3) * s + 4 * h * s * (1 - s);
       g.ent.setPosition(x, y, z);
       const wob = 0.32 + Math.sin(g.t * 25) * 0.04;
       g.ent.setLocalScale(wob, 0.64 - wob, wob);
       if (Math.random() < dt * 30) this.spawn(this.blobs, GOO, x, y, z, 0, 0, 0, 0.09, 0.35, 2);
       if (s >= 1) {
         this.parkGlob(g); this.globs.splice(i, 1);
-        _p.x = x; _p.y = 0.2; _p.z = z;
+        _p.x = x; _p.y = g.y1 + 0.2; _p.z = z;
         this.burst(_p, GOO, 14, 5, 0.13);
-        this.onSplat?.(x, z);
+        this.onSplat?.(x, g.y1, z);
       }
     }
     for (let i = this.puddles.length - 1; i >= 0; i--) {
@@ -260,14 +268,14 @@ export class FX {
       if (p.bub <= 0) {
         p.bub = 0.12 + Math.random() * 0.2;
         const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * s * 0.85;
-        this.spawn(this.blobs, Math.random() < 0.5 ? GOO : 0xd8ffc0, p.x + Math.cos(a) * d, 0.08, p.z + Math.sin(a) * d, 0, 0.9, 0, 0.1 + Math.random() * 0.08, 0.5, -0.4, 1.2);
+        this.spawn(this.blobs, Math.random() < 0.5 ? GOO : 0xd8ffc0, p.x + Math.cos(a) * d, p.y + 0.08, p.z + Math.sin(a) * d, 0, 0.9, 0, 0.1 + Math.random() * 0.08, 0.5, -0.4, 1.2);
       }
     }
   }
 
-  /** True if (x, z) is inside a live puddle (client-side hint for HUD warnings). */
-  inGoo(x: number, z: number): boolean {
-    for (const p of this.puddles) if (p.age > 0.3 && Math.hypot(x - p.x, z - p.z) < p.r) return true;
+  /** True if (x, z) on the floor at height y is inside a live puddle (client-side hint for HUD warnings). */
+  inGoo(x: number, z: number, y = 0): boolean {
+    for (const p of this.puddles) if (p.age > 0.3 && Math.abs(y - p.y) < 1.5 && Math.hypot(x - p.x, z - p.z) < p.r) return true;
     return false;
   }
 
@@ -278,12 +286,13 @@ export class FX {
       if (pool.items.length > POOL_MAX) return;
       const ent = meshEntity(pool.mesh, pool.mat);
       app.root.addChild(ent);
-      p = { ent, mi: ent.render!.meshInstances[0], vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 1, grav: 0, spin: 0, grow: 0, x: 0, y: 0, z: 0 };
+      p = { ent, mi: ent.render!.meshInstances[0], vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 1, grav: 0, spin: 0, grow: 0, x: 0, y: 0, z: 0, fl: 0 };
       pool.items.push(p);
     }
     p.mi.setParameter('uTint', tintOf(color));
     p.ent.enabled = true;
     p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz;
+    p.fl = grav > 0 && this.groundAt ? this.groundAt(x, y, z) : 0;
     p.life = life; p.max = life; p.size = size; p.grav = grav; p.grow = grow;
     p.spin = (Math.random() - 0.5) * 12;
     // Nothing would ever retire a particle born dead: hand it straight back.
@@ -363,7 +372,7 @@ export class FX {
       if (p.life <= 0) { p.ent.enabled = false; pool.free.push(i); continue; }
       p.vy -= p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.y < 0.05 && p.grav > 0) { p.y = 0.05; p.vy *= -0.35; p.vx *= 0.6; p.vz *= 0.6; }
+      if (p.y < p.fl + 0.05 && p.grav > 0) { p.y = p.fl + 0.05; p.vy *= -0.35; p.vx *= 0.6; p.vz *= 0.6; }
       p.ent.setPosition(p.x, p.y, p.z);
       const k = p.life / p.max;
       // Swell first (for poofs), then shrink to nothing.

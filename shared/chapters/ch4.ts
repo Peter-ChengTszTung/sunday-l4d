@@ -3,8 +3,15 @@
 //
 // Suburb into forest edge. Open streets and cul-de-sacs with tight fenced backyards, a school,
 // a creek culvert, a dark pine trail, the ranger cabin, rock switchbacks up Pinecone Hill to the
-// transmitter compound, then the quiet downhill road and the old river bridge. No verticality:
-// the hill is a winding trail between ROCK walls with the compound on the flat top.
+// transmitter compound, then the quiet downhill road and the old river bridge.
+//
+// Three storeys. Storey 0 is the valley floor. Storey 1 is the rock shelf of Pinecone Hill: the
+// HILL STEPS at the top of the H2 switchback climb onto it, and the switchbacks H3-H5, the fire
+// road, the hilltop compound and the first half of the downhill road sit on it; the OLD STONE
+// STEPS drop the road back to the valley. Storey 2 is the TRANSMITTER DECK on the control shed
+// roof (the Bell, reached by a stair flight from the yard and two ladders: the horde's three
+// routes up) and the fire lookout cab. Ladder side trips: the treehouse on the school path
+// (storey 1), the fire lookout (storey 2), the army watchtower over the boom gate (storey 1).
 //
 //   x: 0     30    46        102      134     159 172 179
 //  z 0  RAIL=BERTHA=PINE   (bulb-north lots)          ~~~~~  river
@@ -24,11 +31,13 @@
 // car on blocks in a Maple backyard, Birch Court golf cart, camper van by the river) → the
 // Henderson basement (checkpoint) → hatch to the school path → across Pinecone Elementary's
 // schoolyard (Brute) → creek flood gate (crescendo 1) → culvert → pine trail with the slipper
-// fork → ranger cabin (checkpoint) → switchbacks up the hill → transmitter compound, ring the
-// Bell (crescendo 2) → downhill road among the sleepers → army boom gate at the old bridge
+// fork → ranger cabin (checkpoint) → switchbacks, up the hill steps (storey 1) → transmitter
+// compound, up the deck stairs (storey 2) to ring the Bell (crescendo 2) → down the downhill road
+// among the sleepers and the stone steps (storey 0) → army boom gate at the old bridge
 // (crescendo 3) → aboard Dot's No. 9 bus on the far span.
 // Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
 import { LevelBuilder, F, WALL, hash2, type PropType, type Theme } from '../level';
+import { STOREY } from '../constants';
 
 export const META = { id: 'ch4', title: 'Morning Bell', subtitle: 'Pinecone Hollow & Pinecone Hill' };
 
@@ -64,7 +73,7 @@ interface LotOpts {
 }
 
 export function build() {
-  const b = new LevelBuilder(180, 180);
+  const b = new LevelBuilder(180, 180, 3);
 
   // Default: dense treeline everywhere that isn't carved (hedge, 6.5–9 m, in 2x2 clumps).
   for (let z = 0; z < 180; z++) for (let x = 0; x < 180; x++) b.walls(x, z, x, z, WALL.HEDGE, 6.5 + Math.floor(hash2(x >> 1, z >> 1) * 4) * 0.85);
@@ -380,10 +389,18 @@ export function build() {
   b.paint(96, 60, 96, 104, F.GRASS);
   b.walls(95, 59, 95, 110, WALL.FENCE, 2.4); b.walls(30, 59, 99, 59, WALL.FENCE, 2.4);
   b.label('SCHOOL PATH', 98, 88, 11, CREAM, N);
-  // Treehouse corner (pocket north) and compost heap (pocket south).
-  b.prop('tree', 98, 61); b.prop('pallet', 96, 62, 1, 2); b.prop('bush', 99, 66);
-  b.pick('ammo', 97, 63); b.pick('medkit', 99, 61); b.pick('armor', 98, 63);   // off-route reward
-  b.label('TREEHOUSE (NO GIRLS, NO ZOMBIES)', 97.5, 67, 8, PEACH, N);
+  // Treehouse corner (pocket north): a plank treehouse (storey 1) over the end of the lane, up a
+  // ladder. Off-route reward. Compost heap (pocket south).
+  b.prop('pallet', 96, 62, 1, 2); b.prop('bush', 99, 66);
+  b.ladder(98, 64, '-z', F.WOOD);
+  b.label('TREEHOUSE (NO GIRLS, NO ZOMBIES)', 97.5, 67, 8, PEACH, N); b.label('LADDER', 98.5, 65.6, 7, CREAM, N);
+  b.level(1);
+  b.carve(96, 60, 99, 63, F.WOOD);
+  b.prop('crate', 96, 60);
+  b.pick('ammo', 97, 61); b.pick('medkit', 99, 60); b.pick('armor', 96, 62);
+  b.label('NO ZOMBIES', 97.5, 62.4, 9, PEACH, N);
+  b.lamp(98, 61.5);
+  b.level(0);
   b.prop('crate', 99, 103); b.prop('barrel', 96, 104);
   b.pick('ammo', 97, 102);
   b.lamp(97.5, 93); b.lamp(97.5, 72);
@@ -522,33 +539,60 @@ export function build() {
   const cabinBack = b.door(23, 168, 23, 170, 'shutter', 'HILL TRAIL');
 
   // ------------------------------------------------------------------
-  // 11. Pinecone Hill: rock switchbacks (long uphill sightlines), the fire road loop
+  // 11. Pinecone Hill. The foot of the hill (H1, H2) is on the ground; the HILL STEPS climb to
+  //     storey 1, the rock shelf the switchbacks (H3-H5), the fire road and the hilltop sit on.
   // ------------------------------------------------------------------
-  b.walls(54, 115, 110, 178, WALL.ROCK, 5.5); b.walls(24, 164, 53, 178, WALL.ROCK, 5.5);
+  b.walls(54, 115, 110, 178, WALL.ROCK, 6.8); b.walls(24, 164, 53, 178, WALL.ROCK, 6.8);
+  b.walls(100, 115, 158, 163, WALL.ROCK, 6.8);                                // the hilltop's cliffs over the creek, river and Bridge Park
   b.walls(9, 164, 23, 174, WALL.BUILDING, 4.6);                               // the cabin (log walls)
+  // Storey 0: the foot of the hill.
   b.carve(24, 167, 84, 170, F.DIRT);                                           // H1 east along the foot of the hill
-  b.carve(81, 152, 84, 170, F.DIRT);                                           // H2 north
-  b.carve(58, 152, 84, 155, F.DIRT);                                           // H3 west
+  b.carve(81, 159, 84, 170, F.DIRT);                                           // H2 north to the steps
+  for (const [x0, z0, x1, z1] of [[40, 166, 44, 166], [66, 171, 70, 171], [85, 160, 85, 163]]) b.carve(x0, z0, x1, z1, F.GRASS);
+  b.stairs(81, 156, 84, 158, '-z');                                            // HILL STEPS: 4 wide, up onto the rock shelf
+  dress(28, 167, 78, 170, 21, ['rock', 'rock', 'pine', 'bush']); dress(81, 162, 84, 166, 22, ['rock', 'pine']);
+  b.label('PINECONE HILL TRAIL', 30, 168.6, 12, MINT, E); b.label('TRANSMITTER 1.2 km', 40, 169.6, 9, CREAM, E);
+  b.label('SWITCHBACK', 82.5, 163, 10, CREAM, N); b.label('HILL STEPS', 82.5, 160.2, 12, GOLD, N);
+  b.pick('ammo', 60, 169);
+  for (const [x, z] of [[24.5, 168], [56, 169.6], [82.5, 168], [81.4, 159.6]]) b.lamp(x, z);
+  b.arrow(30, 168.5, E); b.arrow(82.5, 165, N); b.arrow(82.5, 161, N);
+  zz(50, 168.5, E); zz(82.5, 163.5, N);
+  // Storey 1: the switchbacks and the fire road on the shelf (long uphill sightlines).
+  b.level(1);
+  b.carve(58, 152, 84, 155, F.DIRT);                                           // H3 west from the top of the steps
   b.carve(58, 133, 61, 155, F.DIRT);                                           // H4 north
   b.carve(58, 133, 104, 136, F.DIRT);                                          // H5 east to the hilltop
   b.carve(62, 118, 65, 132, F.DIRT); b.carve(62, 118, 100, 121, F.GRASS);      // fire road (loop to the hilltop)
-  for (const [x0, z0, x1, z1] of [[40, 166, 44, 166], [66, 171, 70, 171], [85, 160, 85, 163], [70, 151, 73, 151], [57, 142, 57, 145], [80, 137, 84, 137], [76, 117, 80, 117]]) b.carve(x0, z0, x1, z1, F.GRASS);
-  dress(28, 167, 78, 170, 21, ['rock', 'rock', 'pine', 'bush']); dress(81, 156, 84, 166, 22, ['rock', 'pine']);
+  for (const [x0, z0, x1, z1] of [[70, 151, 73, 151], [57, 142, 57, 145], [80, 137, 84, 137], [86, 117, 90, 117]]) b.carve(x0, z0, x1, z1, F.GRASS);
   dress(62, 152, 78, 155, 23, ['rock', 'bush', 'pine']); dress(58, 138, 61, 150, 24, ['rock', 'pine']);
-  dress(66, 133, 96, 136, 25, ['rock', 'pine', 'bush']); dress(68, 118, 96, 121, 26, ['pine', 'tree', 'bush']);
-  b.label('PINECONE HILL TRAIL', 30, 168.6, 12, MINT, E); b.label('TRANSMITTER 1.2 km', 40, 169.6, 9, CREAM, E);
-  b.label('SWITCHBACK', 82.5, 160, 10, CREAM, N); b.label('STEEP', 70, 153.6, 10, PEACH, WEST);
-  b.label('FIRE ROAD', 63.5, 126, 10, CREAM, N); b.label('LOOKOUT LOOP', 80, 119.6, 10, CREAM, E);
-  b.pick('ammo', 60, 169); b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('sniper', 60, 146); b.pick('ammo', 82, 135); b.pick('sniper', 83, 135); b.pick('medkit', 64, 119);
-  for (const [x, z] of [[24.5, 168], [56, 169.6], [82.5, 168], [82.5, 154], [59.5, 154], [59.5, 136], [80, 134.6]]) b.lamp(x, z);
-  b.arrow(30, 168.5, E); b.arrow(82.5, 165, N); b.arrow(76, 153.5, WEST); b.arrow(59.5, 148, N); b.arrow(66, 134.5, E); b.arrow(90, 134.5, E);
-  zz(50, 168.5, E); zz(82.5, 158, N); zz(64, 153.5, WEST); zz(59.5, 140, N); zz(76, 134.5, E);
+  dress(66, 133, 96, 136, 25, ['rock', 'pine', 'bush']); dress(66, 118, 77, 121, 26, ['pine', 'tree', 'bush']); dress(84, 118, 96, 121, 27, ['pine', 'tree', 'bush']);
+  b.label('STEEP', 70, 153.6, 10, PEACH, WEST);
+  b.label('FIRE ROAD', 63.5, 126, 10, CREAM, N); b.label('LOOKOUT LOOP', 70, 119.6, 10, CREAM, E);
+  b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('sniper', 60, 146); b.pick('ammo', 82, 135); b.pick('medkit', 64, 119);
+  for (const [x, z] of [[82.5, 154], [59.5, 154], [59.5, 136], [80, 134.6]]) b.lamp(x, z);
+  b.arrow(78, 153.5, WEST); b.arrow(59.5, 148, N); b.arrow(66, 134.5, E); b.arrow(90, 134.5, E);
+  zz(64, 153.5, WEST); zz(59.5, 140, N); zz(76, 134.5, E);
+  // The fire lookout: a timber tower on the fire road, one ladder up to a roofed cab (storey 2).
+  // Optional sniper perch: from the cab you see over the rocks to the transmitter compound.
+  b.fill(80, 123, 83, 126);                                                    // the tower's timber base
+  b.ladder(81, 122, '+z', F.WOOD);
+  b.label('FIRE LOOKOUT', 81.5, 120.6, 10, GOLD, N); b.label('LADDER', 81.5, 121.6, 8, CREAM, N);
+  b.lamp(79.6, 121.6);
+  b.level(2);
+  b.carve(80, 123, 83, 126, F.WOOD);
+  b.prop('desk', 83, 126); b.prop('bench', 80, 126, 1, 1);
+  b.pick('sniper', 82, 125); b.pick('ammo', 80, 124); b.pick('ammo', 81, 126); b.pick('medkit', 83, 124);
+  b.label('FIRE LOOKOUT', 81.5, 124.4, 9, GOLD, 0); b.label('FIRE DANGER: LOW', 81.5, 125.4, 7, CREAM, 0);
+  b.lamp(81.5, 124);
+  b.level(0);
 
   // ------------------------------------------------------------------
-  // 12. The hilltop: transmitter compound (crescendo 2), mast, control shed, river lookout
+  // 12. The hilltop (storey 1): transmitter compound, the control shed with Wren locked inside,
+  //     and on the shed roof the TRANSMITTER DECK (storey 2) round the foot of the mast, where
+  //     the Bell is rung (crescendo 2). The horde comes up the deck stairs and two ladders.
   // ------------------------------------------------------------------
-  b.carve(100, 117, 158, 146, F.GRASS);
-  b.fill(100, 137, 103, 146); b.fill(100, 117, 103, 117);
+  b.level(1);
+  b.carve(104, 117, 158, 146, F.GRASS); b.carve(100, 118, 103, 136, F.GRASS);
   b.paint(101, 133, 110, 136, F.DIRT);
   // Compound fence (gaps west, north and east), concrete yard.
   b.fill(110, 122, 110, 146); b.fill(146, 122, 146, 146); b.fill(110, 122, 146, 122);
@@ -556,63 +600,93 @@ export function build() {
   b.paint(111, 123, 145, 146, F.CONCRETE);
   b.carve(110, 132, 110, 137, F.DIRT); b.carve(125, 122, 130, 122, F.DIRT); b.carve(146, 130, 146, 134, F.DIRT);
   b.label('PINECONE HILL TRANSMITTER', 118, 131.2, 12, GOLD, 0); b.label('AUTHORISED PERSONNEL ONLY', 113, 138.6, 8, RED, E);
-  // The mast (north yard) with its guy anchors.
-  b.prop('pillar', 135, 126, 2, 2, { color: 0xd8dde8 });
-  for (const [x, z] of [[132, 124], [139, 124], [132, 129], [139, 129]]) b.prop('beacon', x, z);
-  b.label('MAST 1 kW', 136, 130.8, 12, GOLD, 0); b.label('( ( (   ) ) )', 136, 127, 18, GOLD, 0);
-  // Control shed: an outer room with the console (doors west and north), Wren behind the window.
-  b.fill(130, 134, 145, 146); b.walls(130, 134, 145, 146, WALL.BUILDING, 4.6);
+  // Guy-wire anchors for the mast in the yard.
+  for (const [x, z] of [[127, 129], [143, 129], [119, 145]]) b.prop('beacon', x, z);
+  // Control shed: an outer room (doors west and north) and Wren's locked room behind the window.
+  b.fill(130, 134, 143, 146);
   b.carve(131, 135, 137, 145, F.INTERIOR);
-  b.carve(130, 138, 130, 142, F.INTERIOR); b.carve(132, 134, 135, 134, F.INTERIOR);
-  const bellConsole = b.obj('terminal', 137, 140, 'Plug in the batteries and RING THE BELL');
+  b.carve(130, 137, 130, 139, F.INTERIOR); b.carve(132, 134, 134, 134, F.INTERIOR);
   b.prop('battery', 131, 145); b.prop('battery', 132, 145); b.prop('gen', 137, 145); b.prop('desk', 137, 136, 1, 2);
-  b.note(136, 138, 'Taped inside the shed window', 'Mum, if you\'re reading this, I\'m fine. I\'ll ring it every morning until I know how to wake them. Save me a seat on the No. 9. W');
+  b.note(137, 141, 'Taped inside the shed window', 'Mum, if you\'re reading this, I\'m fine. I\'ll ring it every morning until I know how to wake them. Save me a seat on the No. 9. W');
   b.label('REINFORCED WINDOW', 136.6, 141.8, 8, SKY, WEST); b.label('WREN ♥', 136.6, 143.6, 10, PINK, WEST);
-  b.label('MORNING BELL', 134, 140, 12, GOLD, WEST); b.label('CONTROL SHED', 128.4, 140, 10, CREAM, WEST);
-  b.lamp(133.5, 140); b.lamp(128.5, 136.5); b.lamp(128.5, 143.5);
+  b.label('CONTROL SHED', 128.4, 138, 10, CREAM, WEST);
+  b.lamp(133.5, 140); b.lamp(128.5, 136.5);
+  b.pick('ammo', 133, 144); b.pick('ammo', 134, 145); b.pick('medkit', 134, 136); b.pick('medkit', 135, 136);
+  b.pick('shotgun', 131, 136); b.pick('launcher', 132, 137); b.pick('autoshotgun', 131, 138);
+  // The way up: a steel stair flight from the west yard (2 wide, cheek walls both sides), and two
+  // ladders up the north and east walls of the shed.
+  b.fill(127, 141, 129, 141); b.fill(127, 144, 129, 144);
+  b.stairs(127, 142, 129, 143, '+x');
+  b.ladder(140, 133, '+z');
+  b.ladder(144, 140, '-x');
+  b.label('TRANSMITTER DECK', 124.6, 142.5, 10, GOLD, E); b.label('STAIRS UP', 125.8, 142.5, 8, CREAM, E);
+  b.label('LADDER', 140.5, 131.8, 8, CREAM, 0); b.label('LADDER', 145.4, 140.5, 8, CREAM, WEST);
+  b.arrow(123.5, 142.5, E);
   // Cover in the yard: cable drums, sandbags, the ranger pickup.
-  b.prop('truck', 115, 139, 2, 5, { color: 0x6f9a6a }); b.prop('barrel', 121, 126); b.prop('barrel', 124, 143);
-  b.prop('barrier', 120, 136, 1, 3); b.prop('barrier', 125, 131, 3, 1); b.prop('crate', 141, 132); b.prop('crate', 116, 125);
-  b.prop('pallet', 127, 144, 2, 1);
-  // Loot before the Bell.
-  b.pick('ammo', 120, 140); b.pick('ammo', 121, 140); b.pick('ammo', 133, 144); b.pick('ammo', 133, 145); b.pick('ammo', 142, 125); b.pick('ammo', 142, 126);
-  b.pick('medkit', 134, 136); b.pick('medkit', 135, 136); b.pick('medkit', 112, 145); b.pick('rifle', 118, 124); b.pick('shotgun', 131, 136); b.pick('launcher', 132, 136); b.pick('autoshotgun', 131, 135);
-  b.pick('rattle', 134, 144);                                    // for the long Bell holdout
-  for (const [x, z] of [[113, 126], [113, 143], [123, 125], [143, 126], [143, 143], [125, 137]]) b.lamp(x, z);
-  b.arrow(106, 134.5, E); b.arrow(120, 134.5, E);
-  // Outer ring: boulders and pines (spawn cover on three sides), the river lookout.
+  b.prop('truck', 115, 139, 2, 5, { color: 0x6f9a6a }); b.prop('barrel', 121, 126); b.prop('barrel', 124, 140);
+  b.prop('barrier', 120, 136, 1, 3); b.prop('barrier', 125, 131, 3, 1); b.prop('crate', 141, 130); b.prop('crate', 116, 125);
+  b.prop('pallet', 121, 144, 2, 1);
+  b.pick('ammo', 120, 140); b.pick('ammo', 121, 140); b.pick('ammo', 142, 125); b.pick('ammo', 142, 126);
+  b.pick('medkit', 112, 145); b.pick('rifle', 118, 124);
+  for (const [x, z] of [[113, 126], [113, 143], [123, 125], [143, 126], [145, 144], [125.5, 137]]) b.lamp(x, z);
+  b.arrow(106, 134.5, E); b.arrow(118, 134.5, E);
+  // Outer ring: boulders and pines (spawn cover on three sides), the river lookout on the cliff edge.
   for (const [x, z] of [[105, 121], [106, 129], [107, 141], [118, 118], [133, 119], [150, 121], [149, 131], [151, 139], [143, 119], [124, 119]]) b.prop(hash2(x, z) < 0.5 ? 'pine' : 'rock', x, z);
   b.prop('bench', 156, 131, 1, 3); b.prop('barrier', 158, 125, 1, 4);
   b.label('LOOKOUT', 154, 130, 12, SKY, E); b.label('OLD BRIDGE: SOUTH', 154, 140, 10, CREAM, 0);
   b.pick('ammo', 155, 144); b.pick('medkit', 157, 120);
   b.lamp(154, 136); b.lamp(104, 125);
-  b.carve(126, 147, 130, 147, F.ASPHALT);
-  const compoundGate = b.door(126, 147, 130, 147, 'fence', 'COMPOUND GATE');
+  b.carve(124, 147, 128, 147, F.ASPHALT);
+  const compoundGate = b.door(124, 147, 128, 147, 'fence', 'COMPOUND GATE');
+  // Storey 2: the transmitter deck on the shed roof, the mast rising from its middle.
+  b.level(2);
+  b.carve(130, 134, 143, 146, F.CONCRETE);
+  b.prop('pillar', 136, 138, 2, 2, { color: 0xd8dde8 });                      // the mast
+  for (const [x, z] of [[134, 136], [139, 136]]) b.prop('beacon', x, z);      // guy-wire collars
+  const bellConsole = b.obj('terminal', 134, 141, 'Plug in the batteries and RING THE BELL');
+  b.prop('battery', 133, 143); b.prop('battery', 134, 143);                   // where the car batteries go
+  // Deck cover: cable drums and sandbags, imperfect on purpose (every route has a firing lane).
+  b.prop('barrier', 132, 139, 1, 2); b.prop('crate', 140, 144); b.prop('barrel', 141, 137); b.prop('barrier', 138, 142, 2, 1);
+  b.pick('ammo', 135, 144); b.pick('ammo', 136, 144); b.pick('ammo', 141, 141); b.pick('medkit', 131, 145); b.pick('rattle', 133, 145);
+  b.label('MORNING BELL', 134.5, 140.2, 12, GOLD, WEST); b.label('MAST 1 kW', 137, 141.4, 10, GOLD, 0);
+  b.label('( ( (   ) ) )', 137, 137.2, 18, GOLD, 0); b.label('TRANSMITTER DECK', 137, 145.4, 10, CREAM, 0);
+  for (const [x, z] of [[131, 135], [142.6, 135], [131, 145.6], [142.6, 145.6]]) b.lamp(x, z);
+  b.level(0);
 
   // ------------------------------------------------------------------
-  // 13. The downhill road at sunrise: sleepers curled up on the verges (quiet beat)
+  // 13. The downhill road at sunrise: sleepers curled up on the verges (quiet beat). The road runs
+  //     along the shelf (storey 1), then the OLD STONE STEPS drop it to the valley floor.
   // ------------------------------------------------------------------
-  b.carve(125, 148, 131, 162, F.GRASS); b.carve(126, 148, 130, 161, F.ASPHALT);
-  b.carve(91, 156, 131, 162, F.GRASS); b.carve(92, 157, 130, 161, F.ASPHALT);
-  b.carve(91, 156, 97, 177, F.GRASS); b.carve(92, 157, 96, 176, F.ASPHALT);
+  b.level(1);
+  b.carve(123, 148, 129, 162, F.GRASS); b.carve(124, 148, 128, 161, F.ASPHALT);
+  b.carve(91, 156, 129, 162, F.GRASS); b.carve(92, 157, 128, 161, F.ASPHALT);
+  b.label('HILL ROAD', 126, 152, 12, PEACH, 0); b.label('SLOW: SLEEPERS', 110, 159, 11, GOLD, E);
+  b.label('STONE STEPS', 94, 161.4, 11, GOLD, 0);
+  sleeper(123, 151, 1, 2); sleeper(123, 155, 1, 2); sleeper(117, 162, 2, 1); sleeper(104, 162, 2, 1); sleeper(99, 162, 2, 1);
+  b.prop('car', 110, 158, 2, 1, { color: CARS[2], rot: E + 0.2 }); b.prop('bush', 123, 161); b.prop('tree', 91, 158);
+  b.prop('pine', 129, 149);
+  b.pick('ammo', 126, 157); b.pick('medkit', 94, 159);
+  for (const [x, z] of [[129.6, 152], [113, 156.4], [97.6, 160]]) b.lamp(x, z);
+  b.arrow(126, 156, S); b.arrow(100, 159, WEST); b.arrow(94, 160.6, S);
+  zz(126, 150, S); zz(96, 159, WEST);
+  b.level(0);
+  b.stairs(92, 163, 96, 165, '-z');                                            // the old stone steps down (5 wide)
+  b.carve(91, 166, 97, 177, F.GRASS); b.carve(92, 166, 96, 176, F.ASPHALT);
   b.carve(91, 171, 132, 177, F.GRASS); b.carve(92, 172, 132, 176, F.ASPHALT);
-  b.label('HILL ROAD', 128, 152, 12, PEACH, 0); b.label('SLOW: SLEEPERS', 110, 159, 11, GOLD, E);
-  b.label('OLD BRIDGE 400 m', 94, 165, 11, CREAM, 0); b.label('SUNRISE', 114, 174, 14, PEACH, E);
-  sleeper(125, 151, 1, 2); sleeper(131, 155, 1, 2); sleeper(117, 156, 2, 1); sleeper(104, 162, 2, 1); sleeper(99, 156, 2, 1);
-  sleeper(91, 164, 1, 2); sleeper(97, 168, 1, 2); sleeper(103, 171, 2, 1); sleeper(112, 177, 2, 1); sleeper(122, 171, 2, 1);
-  b.prop('car', 110, 158, 2, 1, { color: CARS[2], rot: E + 0.2 }); b.prop('bush', 125, 161); b.prop('tree', 91, 158); b.prop('pine', 97, 175);
-  b.prop('pine', 131, 149); b.prop('tree', 108, 171);
+  b.label('OLD BRIDGE 400 m', 94, 168, 11, CREAM, 0); b.label('SUNRISE', 114, 174, 14, PEACH, E);
+  sleeper(91, 167, 1, 2); sleeper(91, 173, 1, 2); sleeper(103, 177, 2, 1); sleeper(112, 177, 2, 1); sleeper(120, 177, 2, 1);
+  b.prop('pine', 97, 175); b.prop('tree', 108, 171);
   // Pell's empty limo on the verge just before the bridge.
   b.prop('car', 126, 177, 3, 1, { color: WHITE });
   b.note(129, 176, 'Back seat of the white limo', 'Gift tag: "G. Pell, Executive Rest Kit: silk eye mask, HX-9 Pillow Mist (complimentary)." The kit is open. The limo is empty.');
   b.label('PELL 1', 127.5, 175.4, 9, CREAM, E);
-  b.pick('ammo', 128, 157); b.pick('medkit', 94, 159); b.pick('ammo', 94, 174);
-  for (const [x, z] of [[131.6, 152], [113, 156.4], [97.6, 160], [91.4, 170], [106, 177.6], [120, 171.4]]) b.lamp(x, z);
-  b.arrow(128, 156, S); b.arrow(100, 159, WEST); b.arrow(94, 168, S); b.arrow(120, 174, E);
-  zz(128, 150, S); zz(96, 159, WEST);
+  b.pick('ammo', 94, 174);
+  for (const [x, z] of [[91.4, 170], [106, 177.6], [120, 171.4]]) b.lamp(x, z);
+  b.arrow(94, 170, S); b.arrow(120, 174, E);
 
   // ------------------------------------------------------------------
-  // 14. The old bridge: army checkpoint plaza (crescendo 3), Bridge Park, the weir, far bank
+  // 14. The old bridge: army checkpoint plaza (crescendo 3) with a sandbagged watchtower (two
+  //     ladders, storey 1) over it, Bridge Park, the weir, far bank
   // ------------------------------------------------------------------
   b.carve(133, 164, 158, 178, F.ASPHALT);
   b.paint(133, 177, 158, 178, F.SIDEWALK);
@@ -632,12 +706,24 @@ export function build() {
   b.prop('barrel', 157, 176); b.prop('crate', 150, 164);
   const boomLever = b.obj('lever', 157, 166, 'Raise the army boom gate');
   b.pick('ammo', 141, 165); b.pick('ammo', 142, 165); b.pick('ammo', 141, 164); b.pick('ammo', 152, 176); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173);
-  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 168); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 168); b.pick('sniper', 137, 169);
+  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 169); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 169);
   b.pick('rattle', 143, 165); b.pick('firebomb', 157, 170);      // for the boom gate holdout
   b.label('ARMY CHECKPOINT', 146, 169.4, 14, OLIVE, 0); b.label('CONVOY ASSEMBLY', 146, 171, 9, CREAM, 0);
   b.label('BOOM GATE', 156, 168.6, 10, GOLD, N);
-  for (const [x, z] of [[134, 166], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152]]) b.lamp(x, z);
+  for (const [x, z] of [[138, 164.4], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152]]) b.lamp(x, z);
   b.arrow(136, 176.7, E); b.arrow(150, 167.5, E);
+  // The watchtower: a sandbagged block in the plaza's north-west corner, a ladder on its east and
+  // south faces (so it is never a one-way cheese spot), a sniper perch over the boom gate.
+  b.fill(133, 164, 136, 167); b.walls(133, 164, 136, 167, WALL.BUILDING, STOREY);
+  b.ladder(137, 165, '-x'); b.ladder(134, 168, '-z');
+  b.label('WATCHTOWER', 134.5, 169.4, 9, OLIVE, 0); b.label('LADDER', 138.2, 165.5, 7, CREAM, WEST);
+  b.level(1);
+  b.carve(133, 164, 136, 167, F.CONCRETE);
+  b.prop('barrier', 133, 164, 1, 1); b.prop('crate', 136, 164);
+  b.pick('sniper', 134, 165); b.pick('ammo', 135, 166); b.pick('ammo', 133, 166);
+  b.label('WATCHTOWER', 134.5, 165.4, 8, OLIVE, 0);
+  b.lamp(134.5, 167.5);
+  b.level(0);
   // The bridge deck, the boom gate and Dot's No. 9 bus on the far span.
   b.carve(159, 164, 171, 171, F.ASPHALT);
   b.label('OLD BRIDGE', 165, 164.5, 12, PEACH, E); b.label('MALLOW RIVER', 165, 158, 14, SKY, E);
@@ -731,14 +817,14 @@ export function build() {
   b.use(cabinLatch, {
     objective: 'Open the cabin back door', opens: [cabinBack],
     radio: [
-      ['Wren', 'Back door\'s on a latch. The trail switchbacks up from there. Mind the rocks.'],
+      ['Wren', 'Back door\'s on a latch. Trail runs east to the hill steps. Mind the rocks.'],
       ['Dot', 'You heard her. Up you go, and bring my daughter a sandwich.'],
     ],
   });
-  b.reach({ x0: 111, z0: 123, x1: 129, z1: 146 }, {
+  b.reach({ x0: 111, z0: 123, x1: 129, z1: 146, lv: 1 }, {
     objective: 'Reach the transmitter on the hill',
     radio: [
-      ['Wren', 'I\'m behind the glass. Locked myself in. Batteries and drive go in the console.'],
+      ['Wren', 'I\'m behind the glass. Locked myself in. The console\'s up on the deck, by the mast.'],
       ['Pip', 'She\'s real! Hi, radio lady!'],
     ],
   });
@@ -746,7 +832,7 @@ export function build() {
     objective: 'Ring the Morning Bell', horde: true, hold: 120, opens: [compoundGate],
     radio: [
       ['Wren', 'When it rings, they\'ll come. Then they\'ll lie down. Hold until it takes.'],
-      ['Mochi', 'Hold this hill, team. Last delivery of the night!'],
+      ['Mochi', 'Hold the deck, team. Watch the stairs and ladders. Last delivery of the night!'],
     ],
   });
   b.reach({ x0: 133, z0: 164, x1: 146, z1: 178 }, {

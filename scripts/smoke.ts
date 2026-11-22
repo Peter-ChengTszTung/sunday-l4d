@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { getLevel } from '../shared/chapters';
 import { F, cellOf } from '../shared/level';
-import { TILE, PSTATE, ZT, WEAPONS, weaponIndex } from '../shared/constants';
+import { TILE, STOREY, PSTATE, ZT, WEAPONS, weaponIndex } from '../shared/constants';
 import type { ClientMsg, GameEvent, ServerMsg } from '../shared/protocol';
 
 // Random port so parallel runs (e.g. several agents) do not collide.
@@ -47,16 +47,16 @@ console.log(`ok: 2 players joined room ${a.room}, ${dormant} wanderers placed`);
 const gun = MAP.pickups.find((p) => p.kind === 'smg' || p.kind === 'shotgun' || p.kind === 'rifle')!;
 const kit = MAP.pickups.find((p) => p.kind === 'medkit' && !a.taken.has(p.id))!;
 if (!kit) fail('no medkit left after loot thinning');
-a.send({ t: 'p', x: gun.x, y: 0, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
+a.send({ t: 'p', x: gun.x, y: gun.y, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
 await sleep(100);
 a.send({ t: 'u', id: gun.id });
-a.send({ t: 'p', x: kit.x, y: 0, z: kit.z, ry: 0, rx: 0, w: 1, a: 0 });
+a.send({ t: 'p', x: kit.x, y: kit.y, z: kit.z, ry: 0, rx: 0, w: 1, a: 0 });
 await sleep(100);
 a.send({ t: 'u', id: kit.id });
 await sleep(200);
 if (!a.events.some((e) => e[0] === 'got' && e[1] === a.id)) fail('pickup not granted');
 if (!b.events.some((e) => e[0] === 'pk' && e[1] === gun.id)) fail('weapon pickup did not disappear for teammates');
-b.send({ t: 'p', x: gun.x, y: 0, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
+b.send({ t: 'p', x: gun.x, y: gun.y, z: gun.z, ry: 0, rx: 0, w: 0, a: 0 });
 await sleep(100);
 b.send({ t: 'u', id: gun.id });
 await sleep(200);
@@ -64,7 +64,7 @@ if (b.events.some((e) => e[0] === 'got' && e[1] === b.id && e[2] === gun.id)) fa
 if (a.snap!.p.find((p) => p[0] === a.id)![9] !== 1) fail('medkit not carried');
 // Ammo piles serve each survivor once and never vanish for teammates.
 const pile = MAP.pickups.find((p) => p.kind === 'ammo' && !a.taken.has(p.id))!;
-a.send({ t: 'p', x: pile.x, y: 0, z: pile.z, ry: 0, rx: 0, w: 1, a: 0 });
+a.send({ t: 'p', x: pile.x, y: pile.y, z: pile.z, ry: 0, rx: 0, w: 1, a: 0 });
 await sleep(100);
 a.send({ t: 'u', id: pile.id }); a.send({ t: 'u', id: pile.id });
 await sleep(200);
@@ -78,7 +78,7 @@ if (first.kind === 'use') {
   const t = MAP.pickups[first.target!];
   for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
     if (L.solidAt(cellOf(t.x) + dx, cellOf(t.z) + dz, 0)) continue;
-    a.send({ t: 'p', x: t.x + dx * TILE, y: 0, z: t.z + dz * TILE, ry: 0, rx: 0, w: 1, a: 0 }); break;
+    a.send({ t: 'p', x: t.x + dx * TILE, y: t.y, z: t.z + dz * TILE, ry: 0, rx: 0, w: 1, a: 0 }); break;
   }
   await sleep(100);
   a.send({ t: 'u', id: t.id });
@@ -86,12 +86,12 @@ if (first.kind === 'use') {
   if (a.snap!.q !== 1) fail('first quest step (use) did not complete');
 }
 // Walk Alpha out of the safe room (a cell ~12 tiles away, not safe floor) and wait for the horde to engage.
-const field = L.distanceField([cellOf(MAP.spawns[0].z) * L.W + cellOf(MAP.spawns[0].x)], L.doorsAfter(1));
+const field = L.distanceField([L.nodeAt(MAP.spawns[0].x, MAP.spawns[0].y ?? 0, MAP.spawns[0].z)], L.doorsAfter(1));
 let outside = -1;
-for (let i = 0; i < field.length; i++) if (field[i] >= 12 && field[i] < 16 && MAP.floor[i] !== F.SAFE && !MAP.solid[i]) { outside = i; break; }
+for (let i = 0; i < field.length; i++) if (field[i] >= 12 && field[i] < 16 && MAP.floor[i] !== F.SAFE && !MAP.solid[i] && !MAP.ramp[i]) { outside = i; break; }
 if (outside < 0) fail('no open cell near the start');
-const pos = { x: (outside % L.W + 0.5) * TILE, z: (Math.floor(outside / L.W) + 0.5) * TILE };
-const walk = setInterval(() => a.send({ t: 'p', x: pos.x, y: 0, z: pos.z, ry: Math.PI, rx: 0, w: 1, a: 0 }), 50);
+const pos = L.centre(outside);
+const walk = setInterval(() => a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: 1, a: 0 }), 50);
 let hurt = false, kills = 0;
 for (let i = 0; i < 400 && !(hurt && kills >= 3); i++) {
   await sleep(50);
@@ -109,9 +109,9 @@ console.log(`ok: zombies attacked, ${kills} killed, shots relayed`);
 
 // New weapons: a Kebabber round through two walkers in a line, then a Bloop Tube grenade.
 const SNIPER = weaponIndex('sniper'), LAUNCHER = weaponIndex('launcher');
-const hold = () => a.send({ t: 'p', x: pos.x, y: 0, z: pos.z, ry: Math.PI, rx: 0, w: SNIPER, a: 0 });
+const hold = () => a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: SNIPER, a: 0 });
 const walkersInSight = () => a.snap!.z
-  .filter((z) => z[1] === ZT.WALKER && Math.hypot(z[2] - pos.x, z[3] - pos.z) < 30 && L.hasLOS(pos.x, pos.z, z[2], z[3], a.snap!.g))
+  .filter((z) => z[1] === ZT.WALKER && Math.hypot(z[2] - pos.x, z[3] - pos.z) < 30 && L.hasLOS(pos.x, pos.y + 1.2, pos.z, z[2], z[6] + 1.2, z[3], a.snap!.g))
   .sort((p, q) => Math.hypot(p[2] - pos.x, p[3] - pos.z) - Math.hypot(q[2] - pos.x, q[3] - pos.z));
 let pierced = false;
 for (let i = 0; i < 80 && !pierced; i++) {
@@ -129,15 +129,15 @@ for (let i = 0; i < 80 && !boomed; i++) {
   hold();
   const t = walkersInSight()[0];
   if (!t) { await sleep(100); continue; }
-  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3] }); // no grenade in flight: ignored
+  a.send({ t: 'g', x: t[2], y: t[6] + 0.1, z: t[3] }); // no grenade in flight: ignored
   await sleep(150);
   if (a.events.some((e) => e[0] === 'blast')) fail('a grenade impact claim without a launch was accepted');
   await sleep(250);
   // Like the real client: number the shell, and claim the impact only after its time of flight.
   const seq = i + 1, flight = Math.hypot(t[2] - pos.x, t[3] - pos.z) / WEAPONS[LAUNCHER].blast!.speed;
-  a.send({ t: 'f', w: LAUNCHER, h: [], e: [t[2], 0.1, t[3]], n: seq });
+  a.send({ t: 'f', w: LAUNCHER, h: [], e: [t[2], t[6] + 0.1, t[3]], n: seq });
   await sleep(flight * 1000 + 80);
-  a.send({ t: 'g', x: t[2], y: 0.1, z: t[3], n: seq });
+  a.send({ t: 'g', x: t[2], y: t[6] + 0.1, z: t[3], n: seq });
   await sleep(250);
   if (!a.events.some((e) => e[0] === 'blast' && e[1] === a.id)) fail('grenade blast not applied');
   boomed = a.events.some((e) => e[0] === 'zdie' && e[1] === t[0] && e[6] === a.id);
@@ -149,16 +149,16 @@ console.log('ok: piercing sniper round and grenade blast validated');
 // Let Alpha go down, then have Beta revive.
 for (let i = 0; i < 600; i++) {
   await sleep(50);
-  a.send({ t: 'p', x: pos.x, y: 0, z: pos.z, ry: Math.PI, rx: 0, w: 1, a: 0 });
+  a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: 1, a: 0 });
   if (a.snap!.p.find((p) => p[0] === a.id)![7] === PSTATE.DOWN) break;
 }
 if (a.snap!.p.find((p) => p[0] === a.id)![7] !== PSTATE.DOWN) fail('player never went down');
-b.send({ t: 'p', x: pos.x + 1, y: 0, z: pos.z, ry: 0, rx: 0, w: 0, a: 0 });
+b.send({ t: 'p', x: pos.x + 1, y: pos.y, z: pos.z, ry: 0, rx: 0, w: 0, a: 0 });
 b.send({ t: 'r', id: a.id });
 let revived = false;
 for (let i = 0; i < 100 && !revived; i++) {
   await sleep(50);
-  b.send({ t: 'p', x: pos.x + 1, y: 0, z: pos.z, ry: 0, rx: 0, w: 0, a: 0 });
+  b.send({ t: 'p', x: pos.x + 1, y: pos.y, z: pos.z, ry: 0, rx: 0, w: 0, a: 0 });
   // Beta keeps the area clear while helping (head-shot claims with the pistol).
   const near = b.snap!.z.filter((z) => Math.hypot(z[2] - pos.x, z[3] - pos.z) < 10)[0];
   if (near) b.send({ t: 'f', w: 0, h: [[near[0], 0, 1]], e: [near[2], 1, near[3]] });
@@ -168,13 +168,14 @@ if (!revived) fail(`revive did not complete: beta state ${b.snap!.p.find((p) => 
 console.log('ok: down + revive work');
 
 // Quest: play every step of the chapter, teleporting the bots where each step needs them.
-const stay = (bot: Bot, x: number, z: number) => bot.send({ t: 'p', x, y: 0, z, ry: 0, rx: 0, w: 0, a: 0 });
-const both = (x: number, z: number) => { stay(a, x, z); stay(b, x + 0.4, z); };
+const stay = (bot: Bot, x: number, z: number, y: number) => bot.send({ t: 'p', x, y, z, ry: 0, rx: 0, w: 0, a: 0 });
+const both = (x: number, z: number, y = 0) => { stay(a, x, z, y); stay(b, x + 0.4, z, y); };
 const curStep = () => a.snap!.q;
-const tileFree = (x: number, z: number) => !L.solidAt(cellOf(x), cellOf(z), a.snap!.g);
-/** A walkable spot next to a solid objective machine. */
-const besideObj = (x: number, z: number) => {
-  for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (tileFree(x + dx * TILE, z + dz * TILE)) return { x: x + dx * TILE, z: z + dz * TILE };
+/** Tile (tx,tz) on storey lv is walkable right now. */
+const tileFree = (x: number, z: number, lv = 0) => !L.solidAt(cellOf(x), cellOf(z), a.snap!.g, lv);
+/** A walkable spot next to a solid objective machine (on its storey). */
+const besideObj = (x: number, z: number, lv: number) => {
+  for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (tileFree(x + dx * TILE, z + dz * TILE, lv)) return { x: x + dx * TILE, z: z + dz * TILE };
   return { x, z };
 };
 let won = false;
@@ -183,19 +184,19 @@ for (let guard = 0; guard < 2000 && !won; guard++) {
   // Keep both bots alive through the quest (revive if a stray zombie downed someone).
   for (const [bot, other] of [[a, b], [b, a]] as const) if (bot.snap!.p.find((p) => p[0] === other.id)?.[7] === PSTATE.DOWN) bot.send({ t: 'r', id: other.id });
   if (s.kind === 'reach' || s.kind === 'gather') {
-    const ar = s.area!;
+    const ar = s.area!, lv = ar.lv ?? 0;
     let x = (ar.x0 + ar.x1 + 1) / 2 * TILE, z = (ar.z0 + ar.z1 + 1) / 2 * TILE;
-    if (!tileFree(x, z)) for (let tz = ar.z0; tz <= ar.z1; tz++) for (let tx = ar.x0; tx <= ar.x1; tx++) if (!L.solidAt(tx, tz, a.snap!.g)) { x = (tx + 0.5) * TILE; z = (tz + 0.5) * TILE; }
-    both(x, z);
+    if (!tileFree(x, z, lv)) for (let tz = ar.z0; tz <= ar.z1; tz++) for (let tx = ar.x0; tx <= ar.x1; tx++) if (!L.solidAt(tx, tz, a.snap!.g, lv)) { x = (tx + 0.5) * TILE; z = (tz + 0.5) * TILE; }
+    both(x, z, lv * STOREY);
   } else if (s.kind === 'use') {
-    const t = MAP.pickups[s.target!], at = besideObj(t.x, t.z);
-    both(at.x, at.z);
+    const t = MAP.pickups[s.target!], at = besideObj(t.x, t.z, L.storeyOf(t.y));
+    both(at.x, at.z, t.y);
     await sleep(60);
     a.send({ t: 'u', id: t.id });
   } else if (s.kind === 'collect') {
     const item = MAP.pickups.find((p) => p.kind === 'item' && p.group === s.group && !a.events.some((e) => e[0] === 'pk' && e[1] === p.id));
-    if (item) { both(item.x, item.z); await sleep(60); a.send({ t: 'u', id: item.id }); }
-  } else both(s.at.x, s.at.z);
+    if (item) { both(item.x, item.z, item.y); await sleep(60); a.send({ t: 'u', id: item.id }); }
+  } else both(s.at.x, s.at.z, s.at.y ?? 0);
   await sleep(80);
   won = a.events.some((e) => e[0] === 'end' && e[1] === 1);
   if (a.events.some((e) => e[0] === 'end' && e[1] === 0)) fail(`squad wiped during quest step ${i + 1}`);
@@ -220,7 +221,7 @@ const c = await new Promise<Bot>((resolve, reject) => {
 });
 await sleep(300);
 const me3 = c.snap!.p.find((p) => p[0] === c.id)!;
-if (!L.inRect(me3[1], me3[3], MAP.steps[cpStep].area!)) fail('safe-room start did not spawn the player inside the safe room');
+if (!L.inRect(me3[1], me3[2], me3[3], MAP.steps[cpStep].area!)) fail('safe-room start did not spawn the player inside the safe room');
 const listed = await fetch(`http://localhost:${PORT}/api/rooms`).then((r) => r.json()) as { code: string; step: number; diff?: string }[];
 if (!listed.some((r) => r.code === c.room && r.step === cpStep + 2 && r.diff === 'hard')) fail(`room list does not show the new room: ${JSON.stringify(listed)}`);
 console.log(`ok: room list works; new Hard room ${c.room} started in safe room (step ${cpStep + 1})`);

@@ -2,13 +2,16 @@
 
 // [id, x, y, z, yaw, pitch, hp, state, weapon, meds (counts per kind, see constants.ts packMeds: a lone medkit is 1), reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables)]
 export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
-// [id, type, x, z, yaw, state]
-export type ZombieSnap = [number, number, number, number, number, number];
+// Player y is the absolute height of their feet (floor height of their storey/stair + any jump).
+// [id, type, x, z, yaw, state, y] (y: floor height under it, metres; multi-storey maps, see shared/level.ts)
+export type ZombieSnap = [number, number, number, number, number, number, number];
+// Every event position below carries a trailing y (metres, the floor height there) so effects and
+// sounds land on the right storey.
 
 export type GameEvent =
   // Fresh start or checkpoint restart: chapter, active step, door mask, taken pickup ids, keep gear (1 = checkpoint restart).
   | ['reset', chapter: number, step: number, doors: number, taken: number[], keepGear: number]
-  | ['tp', pid: number, x: number, z: number, yaw: number]
+  | ['tp', pid: number, x: number, z: number, yaw: number, y: number]
   | ['msg', text: string]
   // `pid` used medical item `med` (index into MEDS).
   | ['heal', pid: number, med: number]
@@ -24,8 +27,8 @@ export type GameEvent =
   | ['step', index: number]
   | ['item', pid: number, pickupId: number, have: number, need: number]
   | ['checkpoint']
-  | ['zdie', zid: number, x: number, z: number, type: number, head: number, killer: number]
-  | ['boom', x: number, z: number]
+  | ['zdie', zid: number, x: number, z: number, type: number, head: number, killer: number, y: number]
+  | ['boom', x: number, z: number, y: number]
   | ['goo', pid: number]
   | ['hurt', pid: number, dmg: number, sx: number, sz: number]
   | ['down', pid: number]
@@ -40,28 +43,28 @@ export type GameEvent =
   | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number]
   // --- Charger / Drooler / Alarm Clock (zombie states CHARGE, PIN, RING travel in ZombieSnap).
   // A charging Charger hit a wall and stunned itself.
-  | ['slam', zid: number, x: number, z: number]
+  | ['slam', zid: number, x: number, z: number, y: number]
   // Survivor `pid` is held at (x, z) by zombie `zid`: pinned to a wall by a Charger, lassoed by a Snatcher or ridden by a
   // Piggyback. Until 'unpin' the server owns their position (the victim follows their own PlayerSnap).
-  | ['pin', pid: number, zid: number, x: number, z: number]
+  | ['pin', pid: number, zid: number, x: number, z: number, y: number]
   | ['unpin', pid: number]
   // A goo glob in flight from (x0, z0) to (x1, z1), landing after `flight` seconds (the server simulates the same arc).
-  | ['spit', zid: number, x0: number, z0: number, x1: number, z1: number, flight: number]
+  | ['spit', zid: number, x0: number, z0: number, x1: number, z1: number, flight: number, y0: number, y1: number]
   // A goo puddle of radius r appeared; it lasts `life` seconds.
-  | ['puddle', id: number, x: number, z: number, r: number, life: number]
+  | ['puddle', id: number, x: number, z: number, r: number, life: number, y: number]
   // Puddle damage (a quiet 'hurt': no knock/slow on the client).
   | ['sizzle', pid: number, dmg: number]
   // An Alarm Clock started ringing (kill it within ALARM.ringTime)…
   | ['ring', zid: number]
   // …and this one rang out: a mini-horde is coming.
-  | ['alarm', zid: number, x: number, z: number]
+  | ['alarm', zid: number, x: number, z: number, y: number]
   // --- Weapons. A launcher grenade from survivor `pid` went off at (x, y, z); power 1 = armed, < 1 = half-armed close-range pop.
   // (pid 0: a Rattle Bomb going off; nobody predicted it, so every client shows it.)
   | ['blast', pid: number, x: number, y: number, z: number, power: number]
   // --- Throwables. A fire patch of radius r burns at (x, z) for `life` seconds.
-  | ['fire', id: number, x: number, z: number, r: number, life: number]
+  | ['fire', id: number, x: number, z: number, r: number, life: number, y: number]
   // A Rattle Bomb landed at (x, z): it rattles for `secs` seconds, then 'blast'.
-  | ['lure', x: number, z: number, secs: number]
+  | ['lure', x: number, z: number, secs: number, y: number]
   // A bullet bounced off Tinpot `zid`'s front.
   | ['clang', zid: number]
   // Survivor `pid`'s armour soaked up part of a hit.
@@ -77,7 +80,7 @@ export interface RosterEntry { id: number; name: string; look: number }
 
 export type ServerMsg =
   // diff: the room's DifficultyId (absent = 'normal').
-  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; debug: number; diff?: string }
+  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; y: number; debug: number; diff?: string }
   | { t: 'ro'; players: RosterEntry[] }
   | { t: 'err'; msg: string }
   // g = open door mask, ho = holdout seconds left (-1 none), q = active step, qc = collected items for a collect step.

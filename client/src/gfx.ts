@@ -67,7 +67,9 @@ const toonFS = (uv: boolean, ink = false) => /* glsl */ `
   uniform vec3 uTint; uniform vec3 uSunDir; uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn; uniform float uTorchUse;
   uniform vec3 uAmbLo; uniform vec3 uAmbHi; uniform vec3 uSunCol; uniform vec3 uGrade; uniform vec3 uLampWarm; uniform vec3 uLampCool;
   // World light map (see atmo.ts): r = open sky, g = warm street lamps, b = cool ceiling fixtures.
-  uniform sampler2D uLightMap; uniform vec2 uLightScale;
+  // With storeys the map holds one copy per storey side by side along u (uLightLv: storeys, storey
+  // height, half a texel in u); alpha says how many storeys down the lit floor is (1 = this one).
+  uniform sampler2D uLightMap; uniform vec2 uLightScale; uniform vec3 uLightLv;
   uniform float uCeil; uniform vec3 uCeilLight;
   ${FOG}
   // Four hard steps: the whole "cel" look lives in this function.
@@ -79,12 +81,19 @@ const toonFS = (uv: boolean, ink = false) => /* glsl */ `
     ${ink ? 'if (vInk > 0.5) { gl_FragColor = vec4(fogged(vC * uInk, vW), 1.0); return; }' : ''}
     vec3 n = normalize(vN);
     vec3 base = vC * uTint${uv ? ' * texture2D(uTex, vUv).rgb' : ''};
-    vec3 lm = mix(vec3(1.0, 0.0, 0.0), texture2D(uLightMap, (vW.xz + n.xz * 0.3) * uLightScale).rgb, uTorchUse);
+    // A floor reads its own storey, a ceiling the storey it hangs over.
+    float lv = min(floor(max(vW.y + n.y * 0.1 + 0.01, 0.0) / uLightLv.y), uLightLv.x - 1.0);
+    vec2 lp = (vW.xz + n.xz * 0.3) * uLightScale;
+    lp.x = clamp(lp.x, uLightLv.z, 1.0 / uLightLv.x - uLightLv.z) + lv / uLightLv.x;
+    vec4 lt = texture2D(uLightMap, lp);
+    vec3 lm = mix(vec3(1.0, 0.0, 0.0), lt.rgb, uTorchUse);
+    // Height above the floor the lamps stand on (street lamps fade up a facade, whatever storey that is).
+    float ly = vW.y - (lv - (1.0 - lt.a) * 3.0) * uLightLv.y;
     vec3 light = mix(uAmbLo, uAmbHi, n.y * 0.5 + 0.5);
     // Moonlight only reaches where the sky does; indoors it is a weak fill so shapes still read.
     light += uSunCol * band(dot(n, uSunDir) * 0.5 + 0.5) * mix(0.42, 1.0, lm.r);
     float facing = 0.8 + 0.2 * n.y;
-    vec3 lamps = uLampWarm * lampBand(lm.g * (1.0 - smoothstep(3.4, 6.5, vW.y))) + uLampCool * lampBand(lm.b);
+    vec3 lamps = uLampWarm * lampBand(lm.g * (1.0 - smoothstep(3.4, 6.5, ly))) + uLampCool * lampBand(lm.b);
     lamps *= 1.0 - uCeil;
     light += lamps * facing;
     // Ceilings take one flat neutral light (no floor-style pools), plus a tight halo right at each fixture.
@@ -254,10 +263,14 @@ sTime.setValue(0);
 scope.resolve('uCeilLight').setValue([0.56, 0.56, 0.58]);
 // Until a world bakes its own, a 1x1 "open sky, no lamps" light map.
 const blankLight = new pc.Texture(device, { width: 1, height: 1, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_NEAREST, magFilter: pc.FILTER_NEAREST, levels: [new Uint8Array([255, 0, 0, 255])] });
-/** World light map covering `w` x `h` metres from the origin; null restores the blank one. */
-export function setLightMap(tex: pc.Texture | null, w = 1, h = 1): void {
+/**
+ * World light map covering `w` x `h` metres from the origin; null restores the blank one. With
+ * `levels` > 1 the texture holds that many storeys side by side along u, each `storey` m tall.
+ */
+export function setLightMap(tex: pc.Texture | null, w = 1, h = 1, levels = 1, storey = 4.2): void {
   scope.resolve('uLightMap').setValue(tex ?? blankLight);
-  scope.resolve('uLightScale').setValue([1 / w, 1 / h]);
+  scope.resolve('uLightScale').setValue([1 / (w * levels), 1 / h]);
+  scope.resolve('uLightLv').setValue([levels, storey, 0.5 / (tex ?? blankLight).width]);
 }
 setLightMap(null);
 /** Per-chapter fog. */

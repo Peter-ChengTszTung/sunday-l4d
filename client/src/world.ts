@@ -1,13 +1,14 @@
 // Turns a chapter's grid into cel-shaded scenery. Everything hangs off one
 // root entity so a chapter change can tear the whole world down.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, WEAPONS } from '../../shared/constants';
+import { TILE, CEIL_H, STOREY, WEAPONS } from '../../shared/constants';
 import { F, hash2, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
 import { type Geo, box, sphere, cylinder, ring, make, merge, trs, toMesh } from './geo';
 import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
 import { worldGun } from './viewmodel';
 import { inkGeo, pickupGeo } from './pickups';
-import { type Ctx, CHUNK, lampIndoor, nightOf } from './worldkit';
+import { type Ctx, CHUNK, lampIndoor, nightOf, storeysOf, storeyOfY } from './worldkit';
+import { buildStoreys } from './storeys';
 import { buildArchitecture } from './arch';
 import { buildGround } from './ground';
 import { buildAtmosphere, type GlowSpot } from './atmo';
@@ -41,12 +42,13 @@ export function buildWorld(L: Level): World {
   /** Upload world-owned geometry; freed in dispose(). */
   const mesh = (g: Geo) => { const m = toMesh(device, g); meshes.push(m); return m; };
   const add = (e: pc.Entity, parent: pc.Entity = root) => { parent.addChild(e); return e; };
-  const floorOf = (x: number, z: number) => (x < 0 || z < 0 || x >= W || z >= H ? F.NONE : def.floor[z * W + x]);
-  const isWall = (x: number, z: number) => floorOf(x, z) === F.NONE;
+  const S = storeysOf(L), WH = W * H;
+  const floorOf = (x: number, z: number, lv = 0) => (x < 0 || z < 0 || x >= W || z >= H ? F.NONE : def.floor[lv * WH + z * W + x]);
+  const isWall = (x: number, z: number, lv = 0) => (lv ? x < 0 || z < 0 || x >= W || z >= H || S.wall[lv * WH + z * W + x] === 1 : floorOf(x, z) === F.NONE);
   const chunks = (fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void) => {
     for (let cz = 0; cz < H; cz += CHUNK) for (let cx = 0; cx < W; cx += CHUNK) fn(cx, cz, Math.min(W, cx + CHUNK), Math.min(H, cz + CHUNK));
   };
-  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, mat, add: (e) => add(e), floorOf, isWall, chunks };
+  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, mat, add: (e) => add(e), floorOf, isWall, chunks, S };
   /** Additive halos (lamps, neon, shop windows), drawn as one mesh by the atmosphere. */
   const glowSpots: GlowSpot[] = [];
 
@@ -61,25 +63,28 @@ export function buildWorld(L: Level): World {
 
   buildArchitecture(ctx, glowSpots); // walls, door frames, ceilings
   const ground = buildGround(ctx, batchFor); // ground textures, curbs, lane paint, water
+  if (S.levels > 1) buildStoreys(ctx, batchFor); // slab edges and undersides, railings, stairs, ladders
 
   // ------------------------------------------------------------------ props
   const cube = box(), cyl = cylinder(14), cone = cylinder(10, 0, 1), ball = sphere(10, 7), shade = cylinder(12, 0.4, 1);
   const glows: Geo[] = [];
   for (const p of def.props) drawProp(batchFor((p.x + p.w / 2) * T, (p.z + p.d / 2) * T), p);
   for (const l of def.lamps) {
-    const b = batchFor(l.x, l.z), at = (m: pc.Mat4) => trs(l.x, 0, l.z).mul(m);
+    // `ly`: the floor the lamp stands on (or hangs over).
+    const ly = l.y ?? 0, b = batchFor(l.x, l.z), at = (m: pc.Mat4) => trs(l.x, ly, l.z).mul(m);
     if (lampIndoor(ctx, l)) {
       // Ceiling fixtures indoors: a pendant in wooden rooms, a fluorescent panel elsewhere.
-      if (floorOf(Math.floor(l.x / T), Math.floor(l.z / T)) === F.WOOD) {
+      if (floorOf(Math.floor(l.x / T), Math.floor(l.z / T), storeyOfY(ly, S.levels)) === F.WOOD) {
         b.add(cyl, 0x2b2840, at(trs(0, CEIL_H - 0.4, 0, 0, 0, 0, 0.02, 0.8, 0.02)), 'none');
         b.add(shade, 0xe8a44f, at(trs(0, CEIL_H - 0.95, 0, 0, 0, 0, 0.42, 0.32, 0.42)), 'smooth', 0.02);
-        glows.push(make(ball, 0xffe9b0, trs(l.x, CEIL_H - 1.12, l.z, 0, 0, 0, 0.15)));
-        glowSpots.push({ x: l.x, y: CEIL_H - 1.15, z: l.z, size: 1.3, color: 0xffd9a0, k: 0.55 });
+        glows.push(make(ball, 0xffe9b0, trs(l.x, ly + CEIL_H - 1.12, l.z, 0, 0, 0, 0.15)));
+        glowSpots.push({ x: l.x, y: ly + CEIL_H - 1.15, z: l.z, size: 1.3, color: 0xffd9a0, k: 0.55 });
       } else {
         const ry = hash2(Math.round(l.x * 3) + 7, Math.round(l.z * 3) + 13) < 0.5 ? 0 : Math.PI / 2;
-        b.add(cube, 0x3a3654, at(trs(0, CEIL_H - 0.045, 0, 0, ry, 0, 1.56, 0.09, 0.56)), 'box', 0.018);
-        glows.push(make(cube, 0xf2fbff, trs(l.x, CEIL_H - 0.1, l.z, 0, ry, 0, 1.4, 0.04, 0.4)));
-        glowSpots.push({ x: l.x, y: CEIL_H - 0.3, z: l.z, size: 1.5, color: 0xcfeaff, k: 0.4 });
+        // (With a floor right above, the panel hangs a hair lower so its ink outline stays out of that floor.)
+        b.add(cube, 0x3a3654, at(trs(0, CEIL_H - 0.045 - (S.levels > 1 ? 0.025 : 0), 0, 0, ry, 0, 1.56, 0.09, 0.56)), 'box', 0.018);
+        glows.push(make(cube, 0xf2fbff, trs(l.x, ly + CEIL_H - 0.1, l.z, 0, ry, 0, 1.4, 0.04, 0.4)));
+        glowSpots.push({ x: l.x, y: ly + CEIL_H - 0.3, z: l.z, size: 1.5, color: 0xcfeaff, k: 0.4 });
       }
     } else {
       // Street lamp: footing, post, a lantern under a flat cap.
@@ -87,8 +92,8 @@ export function buildWorld(L: Level): World {
       b.add(cyl, 0x2b2840, at(trs(0, 1.75, 0, 0, 0, 0, 0.055, 3.1, 0.055)), 'smooth', 0.014);
       b.add(cube, 0x2b2840, at(trs(0, 3.24, 0, 0, 0, 0, 0.34, 0.07, 0.34)), 'none');
       b.add(cube, 0x2b2840, at(trs(0, 3.66, 0, 0, 0, 0, 0.62, 0.09, 0.62)), 'box', 0.018);
-      glows.push(make(cube, 0xffe9b0, trs(l.x, 3.44, l.z, 0, 0, 0, 0.42, 0.34, 0.42)));
-      glowSpots.push({ x: l.x, y: 3.44, z: l.z, size: 1.9, color: 0xffc46b, k: 0.6 });
+      glows.push(make(cube, 0xffe9b0, trs(l.x, ly + 3.44, l.z, 0, 0, 0, 0.42, 0.34, 0.42)));
+      glowSpots.push({ x: l.x, y: ly + 3.44, z: l.z, size: 1.9, color: 0xffc46b, k: 0.6 });
     }
   }
   // Decorative clutter goes into the same per-chunk batches (no extra draw calls).
@@ -100,7 +105,7 @@ export function buildWorld(L: Level): World {
     const cx = (p.x + p.w / 2) * T, cz = (p.z + p.d / 2) * T, r = hash2(p.x * 5 + 3, p.z * 7 + 1);
     const ry = p.rot ?? (p.w > p.d ? Math.PI / 2 : 0);
     const len = Math.max(p.w, p.d) * T, wid = Math.min(p.w, p.d) * T;
-    const at = (m: pc.Mat4, rot = ry) => trs(cx, 0, cz, 0, rot, 0).mul(m);
+    const at = (m: pc.Mat4, rot = ry) => trs(cx, (p.lv ?? 0) * STOREY, cz, 0, rot, 0).mul(m);
     const col = p.color;
     switch (p.type) {
       case 'car': case 'van': {
@@ -351,11 +356,31 @@ export function buildWorld(L: Level): World {
     const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setScale(sx, CEIL_H, sz))), doorMat));
     e.render!.meshInstances[0].setParameter('uTex', tex);
     const x = ((d.x0 + d.x1 + 1) / 2) * T, z = ((d.z0 + d.z1 + 1) / 2) * T;
-    const v = { d, e, x, z, y: CEIL_H / 2, open: false };
-    e.setPosition(x, v.y, z);
+    // A flat map's door slides away whole: a shutter up into the wall above, the others down into the
+    // ground. With storeys that would poke into the room above or below, so there it rolls up (or
+    // folds down) in place: `fold` squashes it against the ceiling (1) or the floor (-1).
+    const lv = d.lv ?? 0, base = lv * STOREY;
+    let fold = 0;
+    if (S.levels > 1) {
+      const up = d.kind === 'shutter', k = up ? lv + 1 : lv - 1;
+      let clear = k >= 0 && k < S.levels;
+      for (let cz = d.z0; cz <= d.z1 && clear; cz++) for (let cx = d.x0; cx <= d.x1; cx++) if (!S.wall[k * WH + cz * W + cx]) { clear = false; break; }
+      if (!clear && !(k < 0)) fold = up ? 1 : -1;
+    }
+    const v = { d, e, x, z, base, fold, y: CEIL_H / 2, open: false };
+    e.setPosition(x, base + v.y, z);
     return v;
   });
-  const doorTarget = (v: (typeof doorViews)[number]) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
+  type DoorView = (typeof doorViews)[number];
+  /** `y` is the door's centre above its own floor, as if it slid: closed at CEIL_H / 2. */
+  const doorTarget = (v: DoorView) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
+  const placeDoor = (v: DoorView): void => {
+    if (!v.fold) { v.e.setPosition(v.x, v.base + v.y, v.z); return; }
+    // How far it has travelled, as the fraction of itself that has rolled away.
+    const k = Math.max(0.05, 1 - Math.abs(v.y - CEIL_H / 2) / (CEIL_H - 0.3));
+    v.e.setLocalScale(1, k, 1);
+    v.e.setPosition(v.x, v.base + (v.fold > 0 ? CEIL_H - (CEIL_H * k) / 2 : (CEIL_H * k) / 2), v.z);
+  };
 
   // ---------------------------------------------------------------- pickups
   const RING: Record<string, number> = { medkit: 0xff6b8a, plaster: 0x63e6be, vitamins: 0x63e6be, cocoa: 0x63e6be, ammo: 0xa9e34b, item: 0xffd43b, armor: 0x74c0fc, firebomb: 0xff7a3a, rattle: 0xff7a3a };
@@ -380,7 +405,7 @@ export function buildWorld(L: Level): World {
 
   function buildPickup(p: Pickup): PickupView {
     const group = new pc.Entity('pickup');
-    group.setPosition(p.x, 0, p.z);
+    group.setPosition(p.x, p.y ?? 0, p.z);
     const float = new pc.Entity('float');
     float.setLocalPosition(0, 0.75, 0);
     switch (p.kind) {
@@ -406,7 +431,7 @@ export function buildWorld(L: Level): World {
   const paperMesh = mesh(make(box(), undefined, trs(0, 0, 0, 0, 0, 0, 0.42, 0.02, 0.55)));
   const notes: NoteView[] = def.notes.map((n) => {
     const group = new pc.Entity('note');
-    group.setPosition(n.x, 0, n.z);
+    group.setPosition(n.x, n.y ?? 0, n.z);
     const paper = meshEntity(paperMesh, noteMat);
     paper.setLocalPosition(0, 0.62, 0); paper.setLocalEulerAngles(-25, hash2(n.id, 3) * 360, 0);
     group.addChild(paper);
@@ -419,10 +444,11 @@ export function buildWorld(L: Level): World {
     const rings: Geo[] = [], peds: Geo[] = [];
     for (const p of pickups) {
       if (!p.shown || p.taken || p.def.kind === 'obj') continue;
-      rings.push(make(ringGeo, ringColor(p.def.kind), trs(p.def.x, 0.04, p.def.z)));
-      if (p.def.kind !== 'item') peds.push(make(pedGeo, undefined, trs(p.def.x, 0, p.def.z)));
+      const py = p.def.y ?? 0;
+      rings.push(make(ringGeo, ringColor(p.def.kind), trs(p.def.x, py + 0.04, p.def.z)));
+      if (p.def.kind !== 'item') peds.push(make(pedGeo, undefined, trs(p.def.x, py, p.def.z)));
     }
-    for (const n of def.notes) { rings.push(make(ringGeo, 0xfff6e0, trs(n.x, 0.04, n.z))); peds.push(make(notePedGeo, undefined, trs(n.x, 0, n.z))); }
+    for (const n of def.notes) { const ny = n.y ?? 0; rings.push(make(ringGeo, 0xfff6e0, trs(n.x, ny + 0.04, n.z))); peds.push(make(notePedGeo, undefined, trs(n.x, ny, n.z))); }
     for (const [e, list] of [[ringsEnt, rings], [pedsEnt, peds]] as const) {
       e.enabled = list.length > 0;
       // Unpinned: the mesh instance owns it, and frees the one it replaces.
@@ -443,7 +469,7 @@ export function buildWorld(L: Level): World {
     setDoors(mask, instant) {
       for (const v of doorViews) {
         v.open = !!(mask & (1 << v.d.id));
-        if (instant) { v.y = doorTarget(v); v.e.setPosition(v.x, v.y, v.z); }
+        if (instant) { v.y = doorTarget(v); placeDoor(v); }
       }
     },
     setTaken(id, taken) { const p = pickups[id]; if (p) { if (p.taken !== taken) basesDirty = true; p.taken = taken; p.group.enabled = p.shown && !taken; } },
@@ -458,14 +484,14 @@ export function buildWorld(L: Level): World {
       basesDirty = true;
       const o = pickups[activeObj];
       beacon.enabled = !!o;
-      if (o) beacon.setPosition(o.def.x, 2.2, o.def.z);
+      if (o) beacon.setPosition(o.def.x, (o.def.y ?? 0) + 2.2, o.def.z);
     },
     setNoteRead(id) { const n = notes[id]; if (n) n.read = true; },
     update(t, dt, camX, camY, camZ) {
       if (basesDirty) rebuildBases();
       for (const v of doorViews) {
         const target = doorTarget(v);
-        if (Math.abs(target - v.y) > 0.001) { v.y += (target - v.y) * Math.min(1, dt * 1.8); v.e.setPosition(v.x, v.y, v.z); }
+        if (Math.abs(target - v.y) > 0.001) { v.y += (target - v.y) * Math.min(1, dt * 1.8); placeDoor(v); }
       }
       // Pickups are many small draw calls each: skip the ones the fog has already swallowed.
       const far = theme.fogFar + 12;

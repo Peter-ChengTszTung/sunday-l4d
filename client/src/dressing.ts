@@ -610,13 +610,23 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
       rectMask(x - 1 + ax * 0, z - 1, x + 1 + ax, z + 1 + az, NO_FLOOR); mask[i] |= NO_WALL; mask[(z + az) * W + x + ax] |= NO_WALL;
     }
   }
-  for (const p of def.pickups) stamp(p.x / T, p.z / T, 2.0, p.kind === 'obj' ? NO_FLOOR | NO_WALL : NO_FLOOR);
-  for (const p of def.notes) stamp(p.x / T, p.z / T, 2.0, NO_FLOOR);
-  for (const s of def.steps) stamp(s.at.x / T, s.at.z / T, 2.0, NO_FLOOR);
-  for (const s of def.spawns) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
-  for (const k in def.checkpointSpawns) for (const s of def.checkpointSpawns[k]) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
-  for (const a of def.arrows) { stamp(a.x, a.z, 1.1, NO_FLOOR); stamp(a.x, a.z, 0.75, NO_PAINT); }
+  // Storeys: this pass dresses the ground storey only, so only what stands on the ground keeps clutter away.
+  const onGround = (o: { y?: number }): boolean => (o.y ?? 0) < 1;
+  if (ctx.S.levels > 1) {
+    const { WH, wall } = ctx.S;
+    // Nothing on stairs or ladders, or in the way at their foot...
+    for (const r of def.ramps) if (r.lv === 0) rectMask(r.x0 - 1, r.z0 - 1, r.x1 + 1, r.z1 + 1, NO_FLOOR | NO_WALL);
+    // ...and nothing under a slab outdoors (a skybridge, a balcony), where trees, poles and wall signs would poke through it.
+    for (let i = 0; i < n; i++) if (def.floor[i] !== F.NONE && !isIndoor(def.floor[i]) && (def.floor[i + WH] !== F.NONE || wall[i + WH])) mask[i] |= NO_FLOOR | NO_WALL;
+  }
+  for (const p of def.pickups) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, p.kind === 'obj' ? NO_FLOOR | NO_WALL : NO_FLOOR);
+  for (const p of def.notes) if (onGround(p)) stamp(p.x / T, p.z / T, 2.0, NO_FLOOR);
+  for (const s of def.steps) if (onGround(s.at)) stamp(s.at.x / T, s.at.z / T, 2.0, NO_FLOOR);
+  for (const s of def.spawns) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
+  for (const k in def.checkpointSpawns) for (const s of def.checkpointSpawns[k]) if (onGround(s)) stamp(s.x / T, s.z / T, 1.2, NO_FLOOR);
+  for (const a of def.arrows) if (onGround(a)) { stamp(a.x, a.z, 1.1, NO_FLOOR); stamp(a.x, a.z, 0.75, NO_PAINT); }
   for (const l of def.labels) {
+    if (!onGround(l)) continue;
     const across = Math.abs(Math.sin(l.rot)) > 0.7, hw = (l.text.length * l.size * 0.62) / 80 + 0.2, hh = (l.size * 1.1) / 80 + 0.1;
     rectMask(l.x - (across ? hh : hw), l.z - (across ? hw : hh), l.x + (across ? hh : hw), l.z + (across ? hw : hh), NO_FLOOR | NO_PAINT);
     for (const [re, id, rad] of HINTS) if (re.test(l.text)) {
@@ -625,7 +635,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     }
   }
   const last = def.steps[def.steps.length - 1];
-  if (last?.area) rectMask(last.area.x0 - 1, last.area.z0 - 1, last.area.x1 + 1, last.area.z1 + 1, NO_FLOOR);
+  if (last?.area && !last.area.lv) rectMask(last.area.x0 - 1, last.area.z0 - 1, last.area.x1 + 1, last.area.z1 + 1, NO_FLOOR);
 
   // Free run lengths through each cell (walls and props both narrow a passage).
   const runX = new Uint8Array(n), runZ = new Uint8Array(n);
@@ -640,7 +650,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     for (let k = s; k < z; k++) runZ[k * W + x] = Math.min(255, z - s);
     s = z + 1;
   }
-  const lampNear = (x: number, z: number, r: number): boolean => { for (const l of def.lamps) if (Math.abs(l.x - x) < r && Math.abs(l.z - z) < r) return true; return false; };
+  const lampNear = (x: number, z: number, r: number): boolean => { for (const l of def.lamps) if (onGround(l) && Math.abs(l.x - x) < r && Math.abs(l.z - z) < r) return true; return false; };
 
   // ---------------------------------------------- hospital corridors (ch2)
   // Long 2-5 tile wide passages on the hospital's tiled floors get their own treatment: a steady

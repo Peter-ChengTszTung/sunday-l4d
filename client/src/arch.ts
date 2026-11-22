@@ -1,10 +1,17 @@
 // Architecture: wall faces (interior trim, exterior shopfronts, windows,
 // cornices), door frames at floor changes, and ceilings. Built per chunk as
 // three merged meshes (toon, flat/unlit, ink strokes) plus one ceiling mesh.
-import { TILE, CEIL_H } from '../../shared/constants';
+//
+// Storeys: a wall column shows a face wherever the space beside it is open at that height, so each
+// (cell, direction) yields a list of `Piece`s: one per storey band, with outdoor bands that have
+// nothing between them joined into one tall facade. On a flat map that is exactly one piece per
+// face, from the ground to the wall's top (or the ceiling indoors), as it always was. Maps with
+// storeys also get the taller wall's face above a lower neighbour, flat roofs on wall tops that
+// can be looked down on, and a roof over rooms with nothing built on them.
+import { TILE, CEIL_H, STOREY } from '../../shared/constants';
 import { F, WALL, isIndoor, hash2 } from '../../shared/level';
 import { meshEntity, toonMat, ceilMat, flatMat, inkLineMat, canvasTexture, rgb, type V3 } from './gfx';
-import { type Ctx, newGeo, beam, quad, aabb, mul, mix3 } from './worldkit';
+import { type Ctx, newGeo, beam, quad, sideQuad, aabb, mul, mix3, ROOF_T } from './worldkit';
 import type { GlowSpot } from './atmo';
 
 const T = TILE;
@@ -17,12 +24,24 @@ const ROOM_WALL: Record<number, number[]> = {
   [F.SAFE]: [SAFE_WALL],
 };
 const CEILING: Record<number, number> = { [F.TILES]: 0xe6eef2, [F.WOOD]: 0xd8c4a4, [F.SAFE]: 0xf0dcb4, [F.INTERIOR]: 0xbcb8d4 };
+/** Roofing felt: the flat roofs you can look down on. */
+const ROOF_C = 0x4a4662;
 const NEON = [0xff7ac8, 0x5ff0e0, 0xffd45e, 0x9d8cff, 0xff8a6a];
 const SHOP_LIGHT = [0xffe2a0, 0xffc98a, 0xa8f0e8, 0xffb8dc];
 const WINDOW_LIT = [0xffd98a, 0xff9e6d, 0xffe9b8];
 const WINDOW_DARK = 0x2a2452;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const WHITE: V3 = [1, 1, 1];
+/** One visible stretch of a wall face: absolute y0..y1, and what it looks out on. */
+interface Piece {
+  y0: number; y1: number;
+  /** Look of the open cell it faces (NONE: open air, or the top of a lower wall). */ nf: number;
+  indoor: boolean;
+  /** It stands on a floor (not hanging over air or a lower roof). */ ground: boolean;
+  /** Its top is the top of the wall (a roofline), not the underside of something. */ roof: boolean;
+  /** The wall's node at the piece's base. */ n: number;
+}
+const NO_PIECES: Piece[] = [];
 
 /** A 2 m ceiling tile: four acoustic panels with a thin grid, drawn once and repeated. */
 function ceilingTexture(): HTMLCanvasElement {
@@ -40,37 +59,86 @@ function ceilingTexture(): HTMLCanvasElement {
 }
 
 export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
-  const { def, W, H, theme, floorOf, isWall, night } = ctx;
+  const { def, W, H, theme, night } = ctx;
+  const { levels, WH, wall, look, top: segTop, base: segBase } = ctx.S, N = WH * levels, multi = levels > 1;
+  const inb = (x: number, z: number) => x >= 0 && z >= 0 && x < W && z < H;
+  /** Wall (or off the map) at tile (x,z) of storey k. */
+  const wallAt = (x: number, z: number, k: number) => !inb(x, z) || wall[k * WH + z * W + x] === 1;
+  // The highest an eye gets (top storey, mid-jump): wall tops above this are never seen from above.
+  const eyeMax = (levels - 1) * STOREY + 2.6;
   // Under a bright sky, lit glass and neon fall back towards unlit colours.
   const dim = (c: V3, k = 0.65): V3 => mix3(mix3(c, rgb(0x4a4470), k), c, night);
 
   // Rooms: connected indoor cells of one floor type share a wall colour.
-  const room = new Int32Array(W * H).fill(-1);
+  const room = new Int32Array(N).fill(-1);
   const stack: number[] = [];
-  for (let i = 0; i < W * H; i++) {
-    if (room[i] >= 0 || !isIndoor(def.floor[i])) continue;
+  for (let i = 0; i < N; i++) {
+    if (room[i] >= 0 || !isIndoor(look[i])) continue;
     room[i] = i; stack.push(i);
+    const o = i - (i % WH);
     while (stack.length) {
-      const c = stack.pop()!, cx = c % W, cz = (c / W) | 0;
+      const c = stack.pop()! - o, cx = c % W, cz = (c / W) | 0;
       for (const [ox, oz] of DIRS) {
         const nx = cx + ox, nz = cz + oz;
         if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
-        const n = nz * W + nx;
-        if (room[n] < 0 && def.floor[n] === def.floor[i]) { room[n] = i; stack.push(n); }
+        const n = o + nz * W + nx;
+        if (room[n] < 0 && look[n] === look[i]) { room[n] = i; stack.push(n); }
       }
     }
   }
   const interiorPalette = theme.buildings.map((c) => mix3(rgb(c), rgb(0xa9bccb), 0.55));
-  const roomColor = (x: number, z: number): V3 => {
-    const f = floorOf(x, z), id = room[z * W + x], pal = ROOM_WALL[f];
+  /** Wall colour of the room node `n` is in. */
+  const roomColor = (n: number): V3 => {
+    const f = look[n], id = room[n], pal = ROOM_WALL[f];
     const k = hash2(id % 9973, (id / 9973) | 0);
     return pal ? rgb(pal[Math.floor(k * pal.length)]) : interiorPalette[Math.floor(k * interiorPalette.length)];
   };
-  const faceHeight = (x: number, z: number, dx: number, dz: number): number => {
-    if (x < 0 || z < 0 || x >= W || z >= H || !isWall(x, z)) return 0;
-    const nf = floorOf(x + dx, z + dz);
-    if (nf === F.NONE) return 0;
-    return isIndoor(nf) ? CEIL_H : def.wallH[z * W + x];
+  /** The visible stretches of the wall column at (x,z) on its side facing DIRS[di], bottom to top. */
+  const pieceCache = new Map<number, Piece[]>();
+  const pieces = (x: number, z: number, di: number): Piece[] => {
+    if (!inb(x, z)) return NO_PIECES;
+    const c = z * W + x, key = c * 4 + di;
+    let out = pieceCache.get(key);
+    if (out) return out;
+    const bx = x + DIRS[di][0], bz = z + DIRS[di][1];
+    if (!inb(bx, bz)) { pieceCache.set(key, NO_PIECES); return NO_PIECES; }
+    out = [];
+    const cb = bz * W + bx;
+    for (let k = 0; k < levels; k++) {
+      const nA = k * WH + c;
+      if (!wall[nA]) continue;
+      const yb = k * STOREY, aTop = k === levels - 1 ? segTop[nA] : Math.min(segTop[nA], yb + STOREY), nB = k * WH + cb;
+      let p: Piece;
+      if (wall[nB]) {
+        // Wall against wall: only the taller one's face above the lower one's top (maps with storeys).
+        if (!multi || segTop[nB] >= aTop - 0.05) continue;
+        p = { y0: Math.max(segTop[nB], yb), y1: aTop, nf: F.NONE, indoor: false, ground: false, roof: false, n: nA };
+      } else {
+        const f = look[nB];
+        if (isIndoor(f)) p = { y0: yb, y1: yb + CEIL_H, nf: f, indoor: true, ground: true, roof: false, n: nA };
+        else if (aTop > yb) p = { y0: yb, y1: aTop, nf: f, indoor: false, ground: def.floor[nB] !== F.NONE, roof: false, n: nA };
+        else continue;
+      }
+      // Open air straight above an outdoor stretch of the same wall: one tall facade.
+      const last = out[out.length - 1];
+      if (last && !last.indoor && !p.indoor && !p.ground && p.y0 === yb && Math.abs(last.y1 - yb) < 0.01 && segBase[last.n] === segBase[nA]) last.y1 = p.y1;
+      else out.push(p);
+    }
+    for (const p of out) p.roof = p.y1 >= segTop[p.n] - 0.01;
+    pieceCache.set(key, out);
+    return out;
+  };
+  /** Height of the neighbouring face stretch that starts at the same level (0 = none): where runs end, edges get inked. */
+  const sideHeight = (x: number, z: number, di: number, y0: number): number => {
+    for (const p of pieces(x, z, di)) if (Math.abs(p.y0 - y0) < 0.01) return p.y1 - y0;
+    return 0;
+  };
+
+  /** An indoor node (not a stair) whose ceiling is a roof: there is a storey above, and nothing of it stands here. */
+  const roofed = (nd: number): boolean => {
+    if (!multi || nd + WH >= N || !isIndoor(look[nd]) || def.ramp[nd] || wall[nd]) return false;
+    const up = nd + WH;
+    return def.floor[up] === F.NONE && !wall[up] && !isIndoor(look[up]);
   };
 
   const ceilTex = canvasTexture(ceilingTexture, true, true);
@@ -79,32 +147,35 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
   ctx.chunks((cx0, cz0, cx1, cz1) => {
     const walls = newGeo(), flat = newGeo(), ink = newGeo(), ceil = newGeo();
     for (let z = cz0; z < cz1; z++) for (let x = cx0; x < cx1; x++) {
-      const here = floorOf(x, z);
-      if (here !== F.NONE) { openCell(x, z, here); continue; }
-      const kind = def.wallKind[z * W + x];
-      for (let di = 0; di < 4; di++) {
+      const c = z * W + x;
+      let anyWall = false;
+      for (let k = 0; k < levels; k++) {
+        const nd = k * WH + c;
+        if (wall[nd]) anyWall = true; else if (look[nd] !== F.NONE) openCell(x, z, k, nd);
+      }
+      if (!anyWall) continue;
+      if (multi) roofTops(x, z);
+      for (let di = 0; di < 4; di++) for (const piece of pieces(x, z, di)) {
         const [dx, dz] = DIRS[di];
-        const h = faceHeight(x, z, dx, dz);
-        if (!h) continue;
-        const nf = floorOf(x + dx, z + dz);
+        const yb = piece.y0, h = piece.y1 - yb, nf = piece.nf, kind = def.wallKind[piece.n], ground = piece.ground;
         const tx = -dz, tz = dx, n: V3 = [dx, 0, dz];
         const mx = (x + 0.5 + dx * 0.5) * T, mz = (z + 0.5 + dz * 0.5) * T;
-        // Face-local frame: u along the wall (-1..1 m), y up, o out of the wall.
-        const P = (u: number, y: number, o: number) => [mx + tx * u + dx * o, y, mz + tz * u + dz * o];
+        // Face-local frame: u along the wall (-1..1 m), y up from the stretch's base, o out of the wall.
+        const P = (u: number, y: number, o: number) => [mx + tx * u + dx * o, yb + y, mz + tz * u + dz * o];
         const rect = (c: V3, u0: number, u1: number, y0: number, y1: number, o = 0, c2: V3 = c) => quad(walls, c, n, [...P(u1, y0, o), ...P(u0, y0, o), ...P(u0, y1, o), ...P(u1, y1, o)], c2);
         const lit = (c: V3, u0: number, u1: number, y0: number, y1: number, o = 0.03) => quad(flat, c, null, [...P(u1, y0, o), ...P(u0, y0, o), ...P(u0, y1, o), ...P(u1, y1, o)]);
         const lbox = (c: V3, u0: number, u1: number, y0: number, y1: number, o0: number, o1: number) => { const a = P(u0, y0, o0), b = P(u1, y1, o1); aabb(walls, c, a[0], a[1], a[2], b[0], b[1], b[2]); };
         const line = (u0: number, y0: number, u1: number, y1: number, o = 0.02, t = 0.016) => { const a = P(u0, y0, o), b = P(u1, y1, o); beam(ink, a[0], a[1], a[2], b[0], b[1], b[2], t); };
         const frame = (u0: number, u1: number, y0: number, y1: number, o = 0.035, t = 0.018) => { line(u0, y0, u1, y0, o, t); line(u1, y0, u1, y1, o, t); line(u1, y1, u0, y1, o, t); line(u0, y1, u0, y0, o, t); };
         const y0 = nf === F.WATER ? -0.4 : 0;
-        const hL = faceHeight(x - tx, z - tz, dx, dz), hR = faceHeight(x + tx, z + tz, dx, dz);
+        const hL = sideHeight(x - tx, z - tz, di, yb), hR = sideHeight(x + tx, z + tz, di, yb);
         if (hL !== h) line(-1, y0, -1, h, 0, 0.022);
         if (hR !== h) line(1, y0, 1, h, 0, 0.022);
         line(-1, 0.02, 1, 0.02, 0, 0.022);
 
-        if (isIndoor(nf)) {
+        if (piece.indoor) {
           // ---- interior: skirting, darker dado with panel seams, rail, wall, shadowed crown.
-          const c = roomColor(x + dx, z + dz), safe = nf === F.SAFE;
+          const c = roomColor(Math.round(yb / STOREY) * WH + (z + dz) * W + x + dx), safe = nf === F.SAFE;
           const trim = safe ? rgb(0xfff1c9) : mix3(c, WHITE, 0.5), skirt = mul(mix3(c, rgb(0x2a2440), 0.6), 0.9);
           lbox(skirt, -1, 1, 0, 0.2, 0, 0.045);
           rect(mul(c, 0.66), -1, 1, 0.2, 1.1, 0, mul(c, 0.74));
@@ -121,8 +192,10 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const block = hash2(Math.floor(x / 3) + 91, Math.floor(z / 3) + 17);
         const outside = kind === WALL.BUILDING ? theme.buildings : WALL_COLOR[kind];
         const c = rgb(outside[Math.floor(block * outside.length)]);
+        // Walls shade from dark at the ground to full colour at the top; a stretch that starts higher up picks the gradient up where it is.
+        const shade0 = yb > 0 ? 0.72 + 0.28 * Math.min(1, yb / piece.y1) : 0.72;
         if (kind !== WALL.BUILDING) {
-          rect(mul(c, 0.72), -1, 1, y0, h, 0, c);
+          rect(mul(c, shade0), -1, 1, y0, h, 0, c);
           line(-1, h, 1, h, 0, 0.022);
           if (kind === WALL.FENCE) {
             // Chain-link suggested with a few horizontal ink strokes and a post per tile.
@@ -140,14 +213,16 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         }
 
         // ---- building exterior.
-        const street = nf === F.ASPHALT || nf === F.SIDEWALK;
+        const street = ground && (nf === F.ASPHALT || nf === F.SIDEWALK);
         const bx = Math.floor(x / 3), bz = Math.floor(z / 3), along = (x * Math.abs(tx) + z * Math.abs(tz)) % 3;
         const shopK = hash2(bx * 3 + di, bz * 5 + 7), shop = street && h >= 6.5 && shopK < 0.6;
         const accent = rgb(NEON[Math.floor(hash2(bx + 5, bz + di * 3) * NEON.length)]);
-        rect(mul(c, 0.5), -1, 1, y0, 0.35);
-        rect(mul(c, 0.72), -1, 1, 0.35, h, 0, c);
-        line(-1, 0.35, 1, 0.35, 0.012, 0.01);
-        if (h >= 2.5) {
+        if (ground) {
+          rect(mul(c, 0.5), -1, 1, y0, 0.35);
+          rect(mul(c, 0.72), -1, 1, 0.35, h, 0, c);
+          line(-1, 0.35, 1, 0.35, 0.012, 0.01);
+        } else rect(mul(c, shade0), -1, 1, 0, h, 0, c);
+        if (!piece.roof) { /* the top meets a floor above: no roofline */ } else if (h >= 2.5) {
           // Cornice: a lighter lip along the roofline, mitred past the ends of the run.
           const top = mix3(c, WHITE, 0.3);
           lbox(top, hL !== h ? -1.14 : -1, hR !== h ? 1.14 : 1, h - 0.42, h, 0, 0.14);
@@ -171,7 +246,7 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
             lit(glass, -0.82, 0.82, 0.6, 2.5); lit(mul(glass, 0.82), -0.82, 0.82, 0.6, 0.95, 0.035);
             frame(-0.82, 0.82, 0.6, 2.5); line(0, 0.6, 0, 2.5, 0.035, 0.012);
             lbox(mix3(c, WHITE, 0.25), -0.9, 0.9, 0.5, 0.6, 0, 0.09);
-            if (shopK < 0.42 && along === 0 && night > 0.3) glows.push({ x: P(0, 1.6, 0.3)[0], y: 1.6, z: P(0, 1.6, 0.3)[2], size: 1.7, color: 0xffe2a0, k: 0.35 });
+            if (shopK < 0.42 && along === 0 && night > 0.3) glows.push({ x: P(0, 1.6, 0.3)[0], y: yb + 1.6, z: P(0, 1.6, 0.3)[2], size: 1.7, color: 0xffe2a0, k: 0.35 });
           }
           // Fascia band, then a striped awning on most shops.
           rect(mul(c, 0.45), -1, 1, 3.0, 3.55, 0.012);
@@ -195,7 +270,7 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
             const gp = P(0, 3.28, 0.25);
             glows.push({ x: gp[0], y: gp[1], z: gp[2], size: 1.5, color: NEON[Math.floor(hash2(bx * 3 + di, bz + 9) * NEON.length)], k: 0.6 });
           }
-        } else if (h >= 4 && along === 1 && hash2(bx * 5 + di, bz * 3 + 1) < 0.35 && nf !== F.WATER) {
+        } else if (ground && h >= 4 && along === 1 && hash2(bx * 5 + di, bz * 3 + 1) < 0.35 && nf !== F.WATER) {
           // Plain back door with a little lamp-lit step.
           lit(rgb(0x2b2444), -0.5, 0.5, 0.05, 2.2); frame(-0.5, 0.5, 0.05, 2.2);
           lit(mul(accent, 0.9), 0.22, 0.34, 1.0, 1.12, 0.04);
@@ -203,6 +278,8 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
           firstRow = 4.1;
         }
 
+        // Above the ground, window rows keep to the building's own grid so neighbouring stretches line up.
+        if (yb > 0) { let gy = 2.7 + 2.3 * Math.ceil((yb + 0.7 - 2.7) / 2.3) - yb; while (gy < firstRow - 0.01) gy += 2.3; firstRow = gy; }
         // Upper windows: one of three styles per building, a few of them lit.
         const style = Math.floor(hash2(bx + 31, bz + 57) * 3), wh = style === 2 ? 1.5 : 1.2;
         const sill = mix3(c, WHITE, 0.3);
@@ -225,30 +302,48 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
       }
     }
 
-    function openCell(x: number, z: number, f: number): void {
+    /** An open node: its ceiling (and, with storeys, the roof over that), and door frames towards +x / +z. */
+    function openCell(x: number, z: number, k: number, nd: number): void {
+      const f = look[nd], yb = k * STOREY, yc = yb + CEIL_H, ramp = def.ramp[nd] !== 0;
       const indoor = isIndoor(f);
-      if (indoor) {
+      // Stairs and ladders have the hole above them instead of a ceiling.
+      if (indoor && !ramp) {
         const c = mix3(rgb(CEILING[f] ?? 0xbcb8d4), rgb(theme.fog), f === F.INTERIOR ? 0.12 : 0.04);
         const b = ceil.pos.length / 3, x0 = x * T, x1 = x0 + T, z0 = z * T, z1 = z0 + T;
-        ceil.pos.push(x0, CEIL_H, z0, x1, CEIL_H, z0, x1, CEIL_H, z1, x0, CEIL_H, z1);
+        ceil.pos.push(x0, yc, z0, x1, yc, z0, x1, yc, z1, x0, yc, z1);
         ceil.uv.push(x, z, x + 1, z, x + 1, z + 1, x, z + 1);
         for (let i = 0; i < 4; i++) { ceil.nor.push(0, -1, 0); ceil.col.push(c[0], c[1], c[2]); }
         ceil.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
         // Structural beams: concrete every 4 tiles in plain interiors, timber every 3 in wooden rooms.
-        if (f === F.INTERIOR && x % 4 === 0) aabb(walls, mul(c, 0.72), x0 - 0.16, CEIL_H - 0.3, z0, x0 + 0.16, CEIL_H, z1);
-        if (f === F.WOOD && z % 3 === 0) aabb(walls, rgb(0x8a5f3f), x0, CEIL_H - 0.22, z0 - 0.1, x1, CEIL_H, z0 + 0.1);
+        if (f === F.INTERIOR && x % 4 === 0) aabb(walls, mul(c, 0.72), x0 - 0.16, yc - 0.3, z0, x0 + 0.16, yc, z1);
+        if (f === F.WOOD && z % 3 === 0) aabb(walls, rgb(0x8a5f3f), x0, yc - 0.22, z0 - 0.1, x1, yc, z0 + 0.1);
+        // A roof slab over rooms with nothing built on them, for whoever is a storey higher.
+        if (roofed(nd)) {
+          const yr = yc + ROOF_T, rc = rgb(ROOF_C);
+          quad(walls, rc, [0, 1, 0], [x0, yr, z0, x0, yr, z1, x1, yr, z1, x1, yr, z0]);
+          for (let di = 0; di < 4; di++) {
+            const [dx, dz] = DIRS[di], ax = x + dx, az = z + dz;
+            if (!inb(ax, az)) continue;
+            const m = k * WH + az * W + ax;
+            if (roofed(m) || (wall[m] && segTop[m] >= yr - 0.01)) continue;
+            sideQuad(walls, mul(rc, 0.8), x, z, di, yc, yr);
+          }
+        }
       }
-      if (f === F.WATER) return;
+      if (def.floor[nd] === F.NONE || f === F.WATER || ramp) return;
       // Door frames and headers where the floor type changes (room thresholds, building entrances).
       for (const [ox, oz] of [[1, 0], [0, 1]]) {
-        const g = floorOf(x + ox, z + oz);
+        if (!inb(x + ox, z + oz)) continue;
+        const md = nd + oz * W + ox, g = def.floor[md] === F.NONE || def.ramp[md] ? F.NONE : look[md];
         if (g === F.NONE || g === F.WATER || g === f || !(indoor || isIndoor(g))) continue;
         const entrance = indoor !== isIndoor(g);
         const ix = indoor ? x : x + ox, iz = indoor ? z : z + oz; // the indoor side
-        const wallC = (() => { const c = room[iz * W + ix] >= 0 ? rgbRoom(ix, iz) : rgb(0x8f8aa8); return c; })();
+        const wallC = (() => { const ni = k * WH + iz * W + ix; return room[ni] >= 0 ? roomColor(ni) : rgb(0x8f8aa8); })();
         const col = entrance ? mix3(rgb(theme.buildings[Math.floor(hash2(Math.floor(ix / 3) + 91, Math.floor(iz / 3) + 17) * theme.buildings.length)]), WHITE, 0.2) : mul(mix3(wallC, WHITE, 0.25), 0.8);
         const ex = (x + ox) * T, ez = (z + oz) * T; // edge origin
-        const th = 0.15, ylo = entrance ? CEIL_H - 0.55 : CEIL_H - 0.4, yhi = entrance ? CEIL_H + 0.95 : CEIL_H;
+        // An entrance's header stands proud of the ceiling line, unless a floor is laid over either side of it.
+        const floored = multi && k + 1 < levels && (def.floor[nd + WH] !== F.NONE || def.floor[md + WH] !== F.NONE);
+        const th = 0.15, ylo = yb + (entrance ? CEIL_H - 0.55 : CEIL_H - 0.4), yhi = yb + (entrance && !floored ? CEIL_H + 0.95 : CEIL_H);
         const a0 = ox ? z * T : x * T, a1 = a0 + T; // extent along the edge
         const bx0 = ox ? ex - th : a0, bx1 = ox ? ex + th : a1, bz0 = ox ? a0 : ez - th, bz1 = ox ? a1 : ez + th;
         aabb(walls, col, bx0, ylo, bz0, bx1, yhi, bz1);
@@ -260,15 +355,28 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         // Jambs where the opening ends at a wall.
         for (const side of [-1, 1]) {
           const sx = ox ? 0 : side, sz = ox ? side : 0;
-          if (!(isWall(x + sx, z + sz) || isWall(x + ox + sx, z + oz + sz))) continue;
+          if (!(wallAt(x + sx, z + sz, k) || wallAt(x + ox + sx, z + oz + sz, k))) continue;
           const q = side < 0 ? a0 : a1, q0 = side < 0 ? q : q - 0.14, q1 = side < 0 ? q + 0.14 : q;
-          if (ox) aabb(walls, col, ex - th, 0, q0, ex + th, ylo, q1); else aabb(walls, col, q0, 0, ez - th, q1, ylo, ez + th);
+          if (ox) aabb(walls, col, ex - th, yb, q0, ex + th, ylo, q1); else aabb(walls, col, q0, yb, ez - th, q1, ylo, ez + th);
           const qi = side < 0 ? q1 + 0.005 : q0 - 0.005;
-          for (const s of [-e, e]) { if (ox) beam(ink, ex + s, 0, qi, ex + s, ylo, qi, 0.014); else beam(ink, qi, 0, ez + s, qi, ylo, ez + s, 0.014); }
+          for (const s of [-e, e]) { if (ox) beam(ink, ex + s, yb, qi, ex + s, ylo, qi, 0.014); else beam(ink, qi, yb, ez + s, qi, ylo, ez + s, 0.014); }
         }
       }
     }
-    function rgbRoom(x: number, z: number): V3 { return roomColor(x, z); }
+    /** Flat roofs on the wall stacks of column (x,z) that end in open air low enough to be looked down on. */
+    function roofTops(x: number, z: number): void {
+      const c = z * W + x;
+      for (let k = 0; k < levels; k++) {
+        const nd = k * WH + c;
+        if (!wall[nd] || (k + 1 < levels && wall[nd + WH] && segBase[nd + WH] === segBase[nd])) continue; // not the top of its stack
+        const t = segTop[nd];
+        if (t > eyeMax || (k + 1 < levels && !def.air[nd + WH] && t >= (k + 1) * STOREY - 0.01)) continue; // out of sight, or something stands on it
+        const kind = def.wallKind[nd], x0 = x * T, z0 = z * T;
+        const pal = kind === WALL.BUILDING ? theme.buildings : WALL_COLOR[kind];
+        const col = rgb(pal[Math.floor(hash2(Math.floor(x / 3) + 91, Math.floor(z / 3) + 17) * pal.length)]);
+        quad(walls, kind === WALL.BUILDING ? mix3(col, rgb(ROOF_C), 0.7) : mul(col, 1.08), [0, 1, 0], [x0, t, z0, x0, t, z0 + T, x0 + T, t, z0 + T, x0 + T, t, z0]);
+      }
+    }
 
     if (walls.idx.length) ctx.add(meshEntity(ctx.mesh(walls), toonMat));
     if (flat.idx.length) ctx.add(meshEntity(ctx.mesh(flat), flatMat));

@@ -1,8 +1,8 @@
 // Shared bits for the world builders (world.ts, arch.ts, ground.ts, atmo.ts):
 // the build context, raw geometry writers and a few colour helpers.
 import * as pc from 'playcanvas';
-import { TILE } from '../../shared/constants';
-import { F, isIndoor, type Level, type ChapterDef, type Theme, type Vec2 } from '../../shared/level';
+import { TILE, STOREY } from '../../shared/constants';
+import { F, isIndoor, RAMP_DX, RAMP_DZ, type Level, type ChapterDef, type Theme, type Vec2 } from '../../shared/level';
 import { type Geo, box } from './geo';
 import { rgb, type V3 } from './gfx';
 
@@ -18,8 +18,11 @@ export interface Ctx {
   /** Registers a material made for this world so `dispose()` can destroy it. Returns it. */
   mat<M extends pc.Material>(m: M): M;
   add(e: pc.Entity): pc.Entity;
-  floorOf(x: number, z: number): number;
-  isWall(x: number, z: number): boolean;
+  /** Floor type of tile (x,z) on storey `lv` (default 0); NONE outside the map, in walls and in air. */
+  floorOf(x: number, z: number, lv?: number): number;
+  /** Tile (x,z) on storey `lv` (default 0) is wall, or off the map. Upstairs, air is not wall. */
+  isWall(x: number, z: number, lv?: number): boolean;
+  /** Per-node render facts for multi-storey maps (wall stacks, looks). */ S: Storeys;
   chunks(fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void): void;
 }
 
@@ -42,6 +45,13 @@ export function quad(g: Geo, c: V3, n: V3 | null, p: number[], c2: V3 = c): void
   g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
 }
 
+/** Vertical quad on the side of tile (x,z) facing direction `di` (+x, -x, +z, -z), from height ya up to yb. */
+const SIDE = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+export function sideQuad(g: Geo, c: V3, x: number, z: number, di: number, ya: number, yb: number): void {
+  const [dx, dz] = SIDE[di], tx = -dz, tz = dx, mx = (x + 0.5 + dx * 0.5) * TILE, mz = (z + 0.5 + dz * 0.5) * TILE;
+  quad(g, c, [dx, 0, dz], [mx + tx, ya, mz + tz, mx - tx, ya, mz - tz, mx - tx, yb, mz - tz, mx + tx, yb, mz + tz]);
+}
+
 const UNIT = box();
 /** Axis-aligned box with outward faces (so an inflated copy works as an ink hull). */
 export function aabb(g: Geo, c: V3, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, normals = true): void {
@@ -59,11 +69,58 @@ export const mix3 = (a: V3, b: V3, k: number): V3 => [a[0] + (b[0] - a[0]) * k, 
 export const mixHex = (a: number, b: number, k: number): V3 => mix3(rgb(a), rgb(b), k);
 export const css = (c: V3, a = 1): string => `rgba(${Math.round(Math.min(1, c[0]) * 255)},${Math.round(Math.min(1, c[1]) * 255)},${Math.round(Math.min(1, c[2]) * 255)},${a})`;
 
+/** Storey a thing standing at floor height `y` is on. */
+export const storeyOfY = (y: number | undefined, levels: number): number => Math.max(0, Math.min(levels - 1, Math.round((y ?? 0) / STOREY)));
+
+/** How thick a floor slab is drawn where its edge or underside shows, and the roof over a room with nothing built on it. */
+export const SLAB_T = 0.3, ROOF_T = 0.3;
+
+/**
+ * Render-side facts per node (shared/level.ts: `lv * W * H + z * W + x`).
+ * - `wall`: the node is inside a wall stack; `base`/`top` are that stack's absolute bottom and top
+ *   (a storey-0 wall, or an authored upper wall, plus the auto walls above it; cut off where the
+ *   next storey has something else).
+ * - `look`: the floor type to dress the node as. `def.floor`, except that stairs and ladders take
+ *   the room they belong to (so a stairwell is not a patch of "street"), and the hole above an
+ *   indoor stair takes the room it lands in.
+ */
+export interface Storeys { levels: number; WH: number; wall: Uint8Array; base: Float32Array; top: Float32Array; look: Uint8Array }
+export function storeysOf(L: Level): Storeys {
+  const def = L.def, { W, H, WH, levels, N } = L;
+  const wall = new Uint8Array(N), base = new Float32Array(N), top = new Float32Array(N), look = Uint8Array.from(def.floor);
+  const isWallNode = (n: number) => def.floor[n] === F.NONE && !def.air[n];
+  for (let c = 0; c < WH; c++) {
+    for (let k = 0; k < levels;) {
+      const n = k * WH + c;
+      if (!(isWallNode(n) && (k === 0 || def.wallH[n] > 0))) { k++; continue; }
+      let j = k + 1;
+      while (j < levels && isWallNode(j * WH + c) && def.wallH[j * WH + c] === 0) j++;
+      const t = j < levels ? Math.min(def.wallH[n], j * STOREY) : def.wallH[n];
+      for (let i = k; i < j; i++) { wall[i * WH + c] = 1; base[i * WH + c] = k * STOREY; top[i * WH + c] = t; }
+      k = j;
+    }
+  }
+  const at = (x: number, z: number, lv: number) => (x < 0 || z < 0 || x >= W || z >= H || lv >= levels ? F.NONE : def.floor[lv * WH + z * W + x]);
+  for (const r of def.ramps) {
+    const dx = RAMP_DX[r.dir], dz = RAMP_DZ[r.dir];
+    for (let z = r.z0; z <= r.z1; z++) for (let x = r.x0; x <= r.x1; x++) {
+      // The cell before the low end (same storey) and the landing past the high end (storey above).
+      const ex = dx > 0 ? r.x0 - 1 : dx < 0 ? r.x1 + 1 : x, ez = dz > 0 ? r.z0 - 1 : dz < 0 ? r.z1 + 1 : z;
+      const lx = dx > 0 ? r.x1 + 1 : dx < 0 ? r.x0 - 1 : x, lz = dz > 0 ? r.z1 + 1 : dz < 0 ? r.z0 - 1 : z;
+      const ef = at(ex, ez, r.lv), lf = at(lx, lz, r.lv + 1), n = r.lv * WH + z * W + x;
+      if (isIndoor(ef)) look[n] = ef; else if (isIndoor(lf)) look[n] = lf;
+      if (r.lv + 1 < levels && def.air[n + WH] && isIndoor(lf)) look[n + WH] = lf;
+    }
+  }
+  return { levels, WH, wall, base, top, look };
+}
+
 /** Is this lamp a ceiling fixture? (Lamps sit on tile corners, so ask the cells around it.) */
 export function lampIndoor(ctx: Ctx, l: Vec2): boolean {
   let inside = 0, outside = 0;
+  const lv = storeyOfY(l.y, ctx.S.levels);
   for (const [ox, oz] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) {
-    const f = ctx.floorOf(Math.floor((l.x + ox) / TILE), Math.floor((l.z + oz) / TILE));
+    const f = ctx.floorOf(Math.floor((l.x + ox) / TILE), Math.floor((l.z + oz) / TILE), lv);
     if (f === F.NONE) continue;
     if (isIndoor(f)) inside++; else outside++;
   }

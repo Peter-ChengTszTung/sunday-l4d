@@ -1,8 +1,8 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, HEAL_MIN } from '../../shared/constants';
-import { F, isIndoor, cellOf, type Level } from '../../shared/level';
+import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, HEAL_MIN } from '../../shared/constants';
+import { isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
@@ -65,11 +65,31 @@ function useLevel(next: Level): void {
 }
 const fx = new FX();
 const sfx = new Sfx();
-fx.onSplat = (x, z) => sfx.splat(x, z);
-fx.onCrackle = (x, z) => sfx.fireCrackle(x, z);
-fx.onRattle = (x, z) => sfx.rattle(x, z);
-// Walls between you and a sound muffle it.
-sfx.occluded = (x, z) => !L.hasLOS(cam.x, cam.z, x, z, doors);
+fx.onSplat = (x, y, z) => sfx.at(y).splat(x, z);
+fx.onCrackle = (x, y, z) => sfx.at(y).fireCrackle(x, z);
+fx.onRattle = (x, y, z) => sfx.at(y).rattle(x, z);
+fx.groundAt = (x, y, z) => floorBelow(x, y, z);
+// Walls (and floors) between you and a sound muffle it. A sound with no known floor is taken to be on the
+// floor nearest your own height there.
+sfx.occluded = (x, z, y) => !L.hasLOS(cam.x, cam.y, cam.z, x, (y ?? floorBelow(x, cam.y - 0.4, z)) + 1, z, doors);
+/**
+ * Floor height under (x, z) for something at height y: the highest floor at or just below y there (over
+ * air, the first storey below that has one; inside a wall or a prop, or under a stair flight, that
+ * storey's floor). Flat maps: 0.
+ */
+function floorBelow(x: number, y: number, z: number): number {
+  if (L.levels === 1) return 0;
+  const tx = Math.min(L.W - 1, Math.max(0, cellOf(x))), tz = Math.min(L.H - 1, Math.max(0, cellOf(z)));
+  for (let k = Math.min(L.levels - 1, Math.floor((y + 0.05) / STOREY)); k >= 0; k--) {
+    const n = L.node(tx, tz, k);
+    if (L.def.air[n]) continue;
+    // Under a stair flight (its surface is above y) or inside a wall: that storey's floor.
+    if (!L.walkable(n) && L.def.doorCell[n] < 0) return k * STOREY;
+    const h = L.heightAt(n, x, z);
+    return h <= y + 0.05 ? h : k * STOREY;
+  }
+  return 0;
+}
 const hud = new Hud();
 // Radio chatter: crackle under each subtitle line and a sign-off when it ends; the speaker picks the handset.
 hud.onRadioLine = (who, _text, sec) => sfx.radioLine(who === t('Voice') ? 'voice' : who === t('Dot') ? 'dot' : 'team', sec);
@@ -85,11 +105,17 @@ interface Mate {
   /** Seconds left of the close-in swing pose. */ swing: number;
 }
 /** `sfxT`: alarm-ring timer; `vox`: seconds until a special's next presence cue. */
-interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry: number; tx: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
-interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; z: number; scale: number }
+/** `y`/`ty`: the floor height it stands on (shown / latest snapshot). */
+interface Zed { id: number; type: number; chibi: Chibi; x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
+interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; y: number; z: number; scale: number }
 
 const me = {
-  id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
+  /**
+   * `gy`: the floor height you stand on (follows stairs and ladders through `L.moveSlide`); `jy`: how far a
+   * jump or knockback has lifted your feet off it; `y` = gy + jy, your feet (sent to the server, and the
+   * camera is PLAYER.eye above it).
+   */
+  id: 0, x: L.def.spawns[0].x, y: L.def.spawns[0].y ?? 0, z: L.def.spawns[0].z, gy: L.def.spawns[0].y ?? 0, jy: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
   hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, respawn: 0, rev: 0,
   /**
    * Medical items carried (per kind, MEDS order), the one Q uses (Z picks the next; -1 = none carried), and
@@ -115,11 +141,24 @@ const me = {
    * Held by a zombie of type `pinType` (Charger pin, Snatcher lasso, Piggyback ride): no moving, shooting or
    * healing until 'unpin'. The server owns your position meanwhile: (pinX, pinZ) follows your own snapshot.
    */
-  pinned: false, pinX: 0, pinZ: 0, pinType: 0,
+  pinned: false, pinX: 0, pinY: 0, pinZ: 0, pinType: 0,
   /** Right mouse held (a scoped weapon aims while it is), and how far the scope has zoomed in (0..1). */
   scopeHeld: false, zoom: 0,
   /** Metres since the last footstep sound. */ stride: 0,
 };
+/** Eye-height offset that eases a sudden floor change (a step onto a ledge) out of the camera; 0 on smooth stairs. */
+let camDip = 0;
+/** Put yourself at (x, z) on the floor at height y, feet down (spawn, teleport, checkpoint). */
+function placeMe(x: number, y: number, z: number): void {
+  me.x = x; me.z = z; me.gy = y; me.jy = 0; me.y = y; me.vy = 0; me.onGround = true; camDip = 0;
+}
+const _mv = { x: 0, y: 0, z: 0 };
+/** Slide yourself by (dx, dz) with collision; your floor height follows stairs and ladders. */
+function slideMe(dx: number, dz: number): void {
+  _mv.x = me.x; _mv.y = me.gy; _mv.z = me.z;
+  L.moveSlide(_mv, dx, dz, PLAYER.radius, doors);
+  me.x = _mv.x; me.z = _mv.z; me.gy = _mv.y;
+}
 /** The scope of the weapon in hand while it is up (held, and not reloading/healing/pinned), else null. */
 function scopeUp(): NonNullable<(typeof WEAPONS)[number]['scope']> | null {
   const s = WEAPONS[me.weapon].scope;
@@ -241,12 +280,8 @@ interface ShotHit { zed: Zed; head: boolean; t: number }
  * zombies (nearest first) and stops at a Brute; `t` is where it stopped.
  */
 function castShot(o: V3, d: V3, range: number, pierce = 1): { t: number; hits: ShotHit[] } {
-  const h = Math.hypot(d.x, d.z);
-  let t = range;
-  if (h > 1e-5) t = Math.min(t, L.rayGrid(o.x, o.z, d.x / h, d.z / h, range * h, doors) / h);
-  if (d.y < -1e-5) t = Math.min(t, -o.y / d.y);
-  const f = L.floorAt(o.x, o.z);
-  if (d.y > 1e-5 && isIndoor(f)) t = Math.min(t, (CEIL_H - o.y) / d.y);
+  // Walls, props, closed doors, floors, slabs and ceilings.
+  let t = L.ray(o.x, o.y, o.z, d.x, d.y, d.z, range, doors);
   const hits: ShotHit[] = [];
   const sphere = (cx: number, cy: number, cz: number, r: number): number => {
     const ox = cx - o.x, oy = cy - o.y, oz = cz - o.z;
@@ -259,8 +294,8 @@ function castShot(o: V3, d: V3, range: number, pierce = 1): { t: number; hits: S
     const s = ZTYPES[z.type].scale, fat = z.type === ZT.PUFFER ? 1.35 : z.type === ZT.BRUTE ? 1.25 : z.type === ZT.CHARGER ? 1.4 : 1;
     // Chargers duck their (smaller) head when winding up and rushing.
     const headY = z.type === ZT.PUFFER ? 1.16 : z.type === ZT.CHARGER && (z.st === ZSTATE.WINDUP || z.st === ZSTATE.CHARGE) ? ZHIT.headY * 0.84 : ZHIT.headY;
-    const th = sphere(z.x, headY * s, z.z, ZHIT.headR * s * (z.type === ZT.BRUTE ? 0.85 : z.type === ZT.CHARGER ? 0.9 : 1));
-    const tb = sphere(z.x, ZHIT.bodyY * s, z.z, ZHIT.bodyR * s * fat);
+    const th = sphere(z.x, z.y + headY * s, z.z, ZHIT.headR * s * (z.type === ZT.BRUTE ? 0.85 : z.type === ZT.CHARGER ? 0.9 : 1));
+    const tb = sphere(z.x, z.y + ZHIT.bodyY * s, z.z, ZHIT.bodyR * s * fat);
     const tz = Math.min(th, tb);
     if (tz < t) hits.push({ zed: z, head: th <= tb, t: tz });
   }
@@ -320,6 +355,8 @@ function flushOwnShots(): void {
   if (ownNade) { ownNade.mx = mx; ownNade.my = my; ownNade.mz = mz; placeNade(ownNade); ownNade = null; }
 }
 
+/** Close-in swings and shoves only reach zombies whose floor is within this height of yours (m). */
+const MELEE_DY = 1.6;
 /**
  * Close-in swing: everything in the weapon's cone and reach, nearest first, up to its cleave. Same
  * rule as the server's check (room.ts meleeHits), from where you stand and face.
@@ -331,14 +368,14 @@ function swing(wi: number): void {
   const near: { z: Zed; d: number }[] = [];
   for (const z of zeds.values()) {
     const dx = z.x - me.x, dz = z.z - me.z, d = Math.hypot(dx, dz);
-    if (d > M.reach + ZTYPES[z.type].radius || (d > 0.6 && (dx * fxd + dz * fzd) / d < M.arc)) continue;
-    if (L.hasLOS(me.x, me.z, z.x, z.z, doors)) near.push({ z, d });
+    if (d > M.reach + ZTYPES[z.type].radius || (d > 0.6 && (dx * fxd + dz * fzd) / d < M.arc) || Math.abs(z.y - me.gy) > MELEE_DY) continue;
+    if (L.hasLOS(me.x, me.gy + 1.2, me.z, z.x, z.y + 1.2, z.z, doors)) near.push({ z, d }); // eye to eye, as the server checks
   }
   near.sort((a, b) => a.d - b.d);
   near.length = Math.min(near.length, M.cleave);
   for (const { z } of near) {
     z.chibi.punch = 1;
-    const p = { x: z.x, y: 0.9 * ZTYPES[z.type].scale, z: z.z };
+    const p = { x: z.x, y: z.y + 0.9 * ZTYPES[z.type].scale, z: z.z };
     fx.burst(p, 0xb4f05a, 4, 4, 0.09);
     fx.burst(p, 0xffffff, 3, 4, 0.14, true, 0.25, 3);
   }
@@ -503,19 +540,41 @@ function flyNade(n: Nade, dt: number, hitZeds: boolean): boolean {
   const steps = Math.max(1, Math.ceil((Math.hypot(n.vx, n.vy, n.vz) * dt) / 0.35)), h = dt / steps;
   for (let i = 0; i < steps; i++) {
     n.vy -= B.grav * h; n.t += h;
-    const x = n.x + n.vx * h, y = n.y + n.vy * h, z = n.z + n.vz * h;
-    if (y <= 0.06) { n.x = x; n.z = z; n.y = 0.06; return true; }
+    const mx = n.vx * h, my = n.vy * h, mz = n.vz * h, len = Math.hypot(mx, my, mz);
+    // Walls, tall props, closed doors, the ground, floor slabs and ceilings along this step: stop just short of it.
+    const hit = len > 1e-6 ? L.ray(n.x, n.y, n.z, mx / len, my / len, mz / len, len, doors) : len;
+    if (hit < len) {
+      const k = Math.max(0, hit - 0.04) / len;
+      n.x += mx * k; n.y += my * k; n.z += mz * k;
+      settleNade(n);
+      return true;
+    }
+    const x = n.x + mx, y = n.y + my, z = n.z + mz;
+    // Low props (barriers, benches, bushes) and water don't block sight, but a grenade under a metre up still hits them.
     const tx = cellOf(x), tz = cellOf(z);
-    if (L.opaqueAt(tx, tz, doors) || (y < 1 && L.solidAt(tx, tz, doors))) return true;
-    if (y >= CEIL_H - 0.1 && isIndoor(L.floorAt(x, z))) return true;
+    if (L.inBounds(tx, tz)) {
+      const lv = L.storeyOf(y), nd = L.node(tx, tz, lv), base = lv * STOREY;
+      if (L.def.solid[nd] && !L.def.air[nd] && L.def.doorCell[nd] < 0 && y >= base - 0.05 && y < base + 1) return true;
+    }
+    // Stair steps and ladders aren't in the ray's solid columns: dropping below a ramp's surface lands on it.
+    if (L.levels > 1) {
+      const nd = L.nodeAt(x, y, z), g = L.heightAt(nd, x, z);
+      if (L.def.ramp[nd] && y < g && y > g - STEP_UP) { n.x = x; n.z = z; n.y = g + 0.06; return true; }
+    }
     n.x = x; n.y = y; n.z = z;
     if (hitZeds) for (const zd of zeds.values()) {
-      const T = ZTYPES[zd.type], r = T.radius * 1.2 + 0.2;
-      if (y < T.scale * 1.5 && Math.abs(zd.x - x) < r && Math.abs(zd.z - z) < r && Math.hypot(zd.x - x, zd.z - z) < r) return true;
+      const T = ZTYPES[zd.type], r = T.radius * 1.2 + 0.2, dy = y - zd.y;
+      if (dy > -0.3 && dy < T.scale * 1.5 && Math.abs(zd.x - x) < r && Math.abs(zd.z - z) < r && Math.hypot(zd.x - x, zd.z - z) < r) return true;
     }
     if (n.t >= B.fuse) return true;
   }
   return false;
+}
+
+/** A grenade that stopped just above a floor lies on it. */
+function settleNade(n: Nade): void {
+  const g = floorBelow(n.x, n.y + 0.1, n.z);
+  if (n.y - g < 0.35 && n.y > g - 0.1) n.y = g + 0.06;
 }
 
 /** Fire a grenade along `_d` from the eye. Returns the predicted landing point (walls only) for teammates. */
@@ -542,8 +601,8 @@ function placeNade(n: Nade): void {
 
 function boomFx(x: number, y: number, z: number, power: number): void {
   fx.blast({ x, y, z }, power);
-  const d = Math.hypot(x - me.x, z - me.z);
-  sfx.blast(x, z, power);
+  const d = Math.hypot(x - me.x, y - me.y, z - me.z);
+  sfx.at(floorBelow(x, y, z)).blast(x, z, power);
   me.trauma = Math.min(1, me.trauma + (power < 1 ? 0.5 : 1) / (1 + d * 0.15));
 }
 
@@ -598,7 +657,7 @@ function shove(): void {
   const fxd = -Math.sin(me.yaw), fzd = -Math.cos(me.yaw);
   for (const z of zeds.values()) {
     const dx = z.x - me.x, dz = z.z - me.z, d = Math.hypot(dx, dz);
-    if (d < PLAYER.shoveRange + 0.4 && d > 0.01 && (dx * fxd + dz * fzd) / d > 0.3) { z.chibi.punch = 1; fx.burst({ x: z.x, y: 0.9, z: z.z }, 0xffffff, 2, 3, 0.1, true, 0.25, 3); }
+    if (d < PLAYER.shoveRange + 0.4 && d > 0.01 && (dx * fxd + dz * fzd) / d > 0.3 && Math.abs(z.y - me.gy) < MELEE_DY) { z.chibi.punch = 1; fx.burst({ x: z.x, y: z.y + 0.9, z: z.z }, 0xffffff, 2, 3, 0.1, true, 0.25, 3); }
   }
 }
 
@@ -611,17 +670,17 @@ function findTarget(): Target {
   let best: Target = null, bestD = PLAYER.useRange;
   for (const m of mates.values()) {
     if (m.st !== PSTATE.DOWN) continue;
-    const d = Math.hypot(m.x - me.x, m.z - me.z);
+    const d = Math.hypot(m.x - me.x, m.y - me.gy, m.z - me.z);
     if (d < bestD) { bestD = d; best = { kind: 'revive', mate: m }; }
   }
   if (best) return best;
   for (const nv of world.notes) {
-    const d = Math.hypot(nv.def.x - me.x, nv.def.z - me.z);
+    const d = Math.hypot(nv.def.x - me.x, (nv.def.y ?? 0) - me.gy, nv.def.z - me.z);
     if (d < bestD) { bestD = d; best = { kind: 'note', nv }; }
   }
   for (const pv of world.pickups) {
     if (pv.taken || !pv.shown) continue;
-    const d = Math.hypot(pv.def.x - me.x, pv.def.z - me.z);
+    const d = Math.hypot(pv.def.x - me.x, (pv.def.y ?? 0) - me.gy, pv.def.z - me.z);
     if (d >= bestD) continue;
     const k = pv.def.kind;
     let usable = true, text = '';
@@ -733,16 +792,16 @@ function applyPlayers(list: PlayerSnap[]): void {
       // agrees (or, after a few seconds, accept that the throw never counted and it is still yours).
       const thr = unpackThrowables(p[14] ?? 0);
       for (let k = 0; k < thr.length; k++) if (!(time - me.thrAt[k] < 3 && thr[k] > me.thr[k])) { me.thr[k] = thr[k]; me.thrAt[k] = -99; }
-      if (me.pinned) { me.pinX = x; me.pinZ = z; }
+      if (me.pinned) { me.pinX = x; me.pinY = y; me.pinZ = z; }
       // A hold just ended: stand exactly where the server dragged you to.
-      if (me.snapPos) { me.snapPos = false; me.x = x; me.z = z; }
+      if (me.snapPos) { me.snapPos = false; placeMe(x, L.groundY(x, y, z), z); }
       continue;
     }
     const m = mates.get(id);
     if (!m) continue;
     const fresh = !m.chibi.group.enabled && st !== PSTATE.DEAD;
     m.tx = x; m.ty = y; m.tz = z; m.tr = ry; m.hp = hp; m.st = st; m.rev = rev; m.respawn = respawn;
-    if (fresh || Math.hypot(x - m.x, z - m.z) > 8) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
+    if (fresh || Math.hypot(x - m.x, z - m.z) > 8 || Math.abs(y - m.y) > STOREY) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
     m.chibi.group.enabled = st !== PSTATE.DEAD;
     if (m.gunW !== w) {
       // The gun meshes are shared per weapon (see worldGun), so swapping only replaces a small entity.
@@ -758,31 +817,32 @@ function applyPlayers(list: PlayerSnap[]): void {
 
 function applyZombies(list: ZombieSnap[]): void {
   const seen = new Set<number>();
-  for (const [id, type, x, z, ry, st] of list) {
+  for (const zs of list) {
+    const [id, type, x, z, ry, st] = zs, y = zs[6] ?? 0;
     seen.add(id);
     let zd = zeds.get(id);
     if (!zd) {
       const chibi = new Chibi(zombieLook(type, id));
       const sc = ZTYPES[type].scale;
       chibi.group.setLocalScale(sc, sc, sc);
-      chibi.group.setPosition(x, 0, z);
+      chibi.group.setPosition(x, y, z);
       app.root.addChild(chibi.group);
-      zd = { id, type, chibi, x, z, ry, tx: x, tz: z, tr: ry, st, sfxT: 0, vox: Math.random() * 3 };
+      zd = { id, type, chibi, x, y, z, ry, tx: x, ty: y, tz: z, tr: ry, st, sfxT: 0, vox: Math.random() * 3 };
       zeds.set(id, zd);
     }
-    zd.tx = x; zd.tz = z; zd.tr = ry;
+    zd.tx = x; zd.ty = y; zd.tz = z; zd.tr = ry;
     if (st !== zd.st) {
-      const dist = Math.hypot(x - me.x, z - me.z);
+      const dist = Math.hypot(x - me.x, y - me.gy, z - me.z);
       if (st === ZSTATE.WINDUP) {
-        if (type === ZT.CHARGER) { sfx.chargeTell(x, z); if (dist < 24) fx.poof({ x, y: 0.1, z }, 0xd8cfe8, 4, 0.22); }
-        else if (type === ZT.DROOLER) sfx.gurgle(x, z);
-        else if (type === ZT.SNATCHER) sfx.lasso(x, z);
-        else if (type === ZT.WEEPER) sfx.weeperWarn(x, z);
-        else sfx.leap(x, z);
+        if (type === ZT.CHARGER) { sfx.at(y).chargeTell(x, z); if (dist < 24) fx.poof({ x, y: y + 0.1, z }, 0xd8cfe8, 4, 0.22); }
+        else if (type === ZT.DROOLER) sfx.at(y).gurgle(x, z);
+        else if (type === ZT.SNATCHER) sfx.at(y).lasso(x, z);
+        else if (type === ZT.WEEPER) sfx.at(y).weeperWarn(x, z);
+        else sfx.at(y).leap(x, z);
       }
-      if (st === ZSTATE.CHARGE) sfx.chargeGo(x, z);
+      if (st === ZSTATE.CHARGE) sfx.at(y).chargeGo(x, z);
       // Swipes: at most ~7 a second however big the crowd around you is.
-      if (st === ZSTATE.ATTACK && dist < 14 && time - lastSwipe > 0.14) { lastSwipe = time; sfx.swipe(x, z); }
+      if (st === ZSTATE.ATTACK && dist < 14 && time - lastSwipe > 0.14) { lastSwipe = time; sfx.at(y).swipe(x, z); }
     }
     zd.st = st;
   }
@@ -795,10 +855,10 @@ function killZed(id: number, head: boolean): void {
   zeds.delete(id);
   const dx = zd.x - me.x, dz = zd.z - me.z, d = Math.hypot(dx, dz) || 1;
   const s = ZTYPES[zd.type].scale;
-  corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3, x: zd.x, z: zd.z, scale: s });
-  if (head) fx.burst({ x: zd.x, y: 1.1 * s, z: zd.z }, 0xffd43b, 5, 4, 0.14, true, 0.4, 5);
-  fx.burst({ x: zd.x, y: 0.8 * s, z: zd.z }, 0xb4f05a, zd.type === ZT.BRUTE ? 16 : zd.type === ZT.CHARGER ? 9 : 4, 4, 0.1 * s);
-  sfx.pop(zd.x, zd.z, zd.type);
+  corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3, x: zd.x, y: zd.y, z: zd.z, scale: s });
+  if (head) fx.burst({ x: zd.x, y: zd.y + 1.1 * s, z: zd.z }, 0xffd43b, 5, 4, 0.14, true, 0.4, 5);
+  fx.burst({ x: zd.x, y: zd.y + 0.8 * s, z: zd.z }, 0xb4f05a, zd.type === ZT.BRUTE ? 16 : zd.type === ZT.CHARGER ? 9 : 4, 4, 0.1 * s);
+  sfx.at(zd.y).pop(zd.x, zd.z, zd.type);
 }
 
 /** Zombie id -> survivor id it has hold of (from 'pin'), for the Snatcher's scarf. */
@@ -853,9 +913,9 @@ function onEvent(ev: GameEvent): void {
       if (keep) {
         // Checkpoint restart: keep your gun, top the ammo back up.
         for (let i = 0; i < WEAPONS.length; i++) { me.mag[i] = WEAPONS[i].mag; me.reserve[i] = WEAPONS[i].reserve; }
-        Object.assign(me, { reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0 });
+        Object.assign(me, { reloadT: 0, vy: 0, jy: 0, y: me.gy, onGround: true, kx: 0, kz: 0 });
       } else {
-        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
+        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, jy: 0, y: me.gy, onGround: true, kx: 0, kz: 0, pitch: 0 });
         clearThrowables();
         vm.setWeapon(0);
       }
@@ -870,7 +930,7 @@ function onEvent(ev: GameEvent): void {
       hud.pause(inGame && !locked && !DEBUG);
       break;
     }
-    case 'tp': if (ev[1] === me.id) { me.x = ev[2]; me.z = ev[3]; me.yaw = ev[4]; me.y = 0; me.vy = 0; me.vx = me.vz = 0; } break;
+    case 'tp': if (ev[1] === me.id) { placeMe(ev[2], ev[5] ?? 0, ev[3]); me.yaw = ev[4]; me.vx = me.vz = 0; } break;
     case 'msg': hud.feed(tMsg(ev[1])); break;
     case 'heal': if (ev[1] === me.id) { sfx.heal(); if (MEDS[ev[2]]?.steady) me.lastLegs = false; if (range) rangeHeal(ev[2]); } break;
     case 'shot': {
@@ -889,7 +949,7 @@ function onEvent(ev: GameEvent): void {
       }
       if (w?.melee) {
         // A swing: no tracer, just the pose and the whoosh.
-        m.swing = w.id === 'axe' ? 0.6 : w.id === 'machete' ? 0.3 : 0.45; sfx.shoot(ev[2], m.x, m.z);
+        m.swing = w.id === 'axe' ? 0.6 : w.id === 'machete' ? 0.3 : 0.45; sfx.at(m.y).shoot(ev[2], m.x, m.z);
         break;
       }
       if (w?.blast) {
@@ -900,7 +960,7 @@ function onEvent(ev: GameEvent): void {
           t: 0, w: ev[2], mine: false, ox: 0, oz: 0, shell: fx.shell(), trail: 0, mx: 0, my: 0, mz: 0, life });
       } else fx.tracer(_muz, _end, w?.pierce > 2 ? 0.05 : 0.03);
       if (!w?.thrown) fx.burst(_muz, 0xffd43b, 1, 0.5, 0.16, true, 0.08, 0);
-      sfx.shoot(ev[2], m.x, m.z);
+      sfx.at(m.y).shoot(ev[2], m.x, m.z);
       break;
     }
     case 'shove': { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.6; break; }
@@ -926,17 +986,18 @@ function onEvent(ev: GameEvent): void {
       break;
     }
     case 'checkpoint': me.lastLegs = false; hud.banner(t('Checkpoint saved')); sfx.heal(); break;
+    // The corpse falls where the zombie is shown (its own y); ev[7] is the floor it died on.
     case 'zdie': killZed(ev[1], ev[5] === 1); if (ev[6] === me.id) hud.hitmark(ev[5] === 1, true); break;
     case 'boom': {
-      const p = { x: ev[1], y: 0.9, z: ev[2] };
+      const y = ev[3] ?? 0, p = { x: ev[1], y: y + 0.9, z: ev[2] };
       fx.burst(p, 0xc8f25a, 26, 8, 0.22); fx.poof(p, 0xe9f76a, 10, 0.5);
-      const d = Math.hypot(ev[1] - me.x, ev[2] - me.z);
-      sfx.boom(ev[1], ev[2]); me.trauma = Math.min(1, me.trauma + 1 / (1 + d * 0.2));
+      const d = Math.hypot(ev[1] - me.x, y - me.gy, ev[2] - me.z);
+      sfx.at(y).boom(ev[1], ev[2]); me.trauma = Math.min(1, me.trauma + 1 / (1 + d * 0.2));
       break;
     }
     case 'goo': if (ev[1] === me.id) hud.goo(); break;
     case 'hurt':
-      if (ev[1] !== me.id) { const m = mates.get(ev[1]); if (m) { m.chibi.punch = 0.8; sfx.oof(m.x, m.z); } break; }
+      if (ev[1] !== me.id) { const m = mates.get(ev[1]); if (m) { m.chibi.punch = 0.8; sfx.at(m.y).oof(m.x, m.z); } break; }
       {
         const dx = ev[3] - me.x, dz = ev[4] - me.z;
         hud.hurt(Math.atan2(dx * Math.cos(me.yaw) - dz * Math.sin(me.yaw), -dx * Math.sin(me.yaw) - dz * Math.cos(me.yaw)));
@@ -955,18 +1016,18 @@ function onEvent(ev: GameEvent): void {
     case 'horde': hud.banner(t('HORDE INCOMING!'), true); sfx.horde(); break;
     case 'brute': hud.banner(t('A BRUTE approaches…'), true); sfx.brute(); break;
     case 'slam': {
-      const d = Math.hypot(ev[2] - me.x, ev[3] - me.z);
-      fx.burst({ x: ev[2], y: 0.6, z: ev[3] }, 0xffffff, 6, 4, 0.14, true, 0.35, 4);
-      fx.poof({ x: ev[2], y: 0.3, z: ev[3] }, 0xd8cfe8, 7, 0.35);
-      sfx.thud(ev[2], ev[3]); me.trauma = Math.min(1, me.trauma + 0.8 / (1 + d * 0.25));
+      const y = ev[4] ?? 0, d = Math.hypot(ev[2] - me.x, y - me.gy, ev[3] - me.z);
+      fx.burst({ x: ev[2], y: y + 0.6, z: ev[3] }, 0xffffff, 6, 4, 0.14, true, 0.35, 4);
+      fx.poof({ x: ev[2], y: y + 0.3, z: ev[3] }, 0xd8cfe8, 7, 0.35);
+      sfx.at(y).thud(ev[2], ev[3]); me.trauma = Math.min(1, me.trauma + 0.8 / (1 + d * 0.25));
       break;
     }
     case 'pin': {
       pinned.add(ev[1]); pinBy.set(ev[2], ev[1]);
       const type = zeds.get(ev[2])?.type ?? ZT.CHARGER;
       if (ev[1] === me.id) {
-        Object.assign(me, { pinned: true, pinType: type, pinX: ev[3], pinZ: ev[4], kx: 0, kz: 0, vx: 0, vz: 0, reloadT: 0, healT: 0, trauma: 1 });
-        if (type === ZT.CHARGER) { me.x = ev[3]; me.z = ev[4]; }
+        Object.assign(me, { pinned: true, pinType: type, pinX: ev[3], pinY: ev[5] ?? me.gy, pinZ: ev[4], kx: 0, kz: 0, vx: 0, vz: 0, reloadT: 0, healT: 0, trauma: 1 });
+        if (type === ZT.CHARGER) placeMe(ev[3], ev[5] ?? me.gy, ev[4]);
         hud.banner(t(type === ZT.SNATCHER ? 'LASSOED! Hang on…' : type === ZT.PIGGYBACK ? 'Something is on your back!' : 'PINNED! Hang on…'), true);
       } else {
         const who = roster.get(ev[1])?.name ?? t('A teammate');
@@ -974,7 +1035,7 @@ function onEvent(ev: GameEvent): void {
         else if (type === ZT.PIGGYBACK) { hud.banner(t('A Piggyback is riding {who} — shove it off!', { who }), true); hud.feed(t('A Piggyback jumped on {who}!', { who })); }
         else { hud.banner(t('{who} is PINNED — shoot the Charger!', { who }), true); hud.feed(t('A Charger slammed {who} into a wall!', { who })); }
       }
-      if (type === ZT.SNATCHER) { const zd = zeds.get(ev[2]); sfx.snatch(zd?.x ?? ev[3], zd?.z ?? ev[4]); } else sfx.down();
+      if (type === ZT.SNATCHER) { const zd = zeds.get(ev[2]); sfx.at(zd?.y ?? ev[5] ?? 0).snatch(zd?.x ?? ev[3], zd?.z ?? ev[4]); } else sfx.down();
       break;
     }
     case 'unpin':
@@ -985,31 +1046,31 @@ function onEvent(ev: GameEvent): void {
         if (me.st === PSTATE.ALIVE) hud.feed(t(me.pinType === ZT.SNATCHER ? 'Free from the Snatcher!' : me.pinType === ZT.PIGGYBACK ? 'The Piggyback is off you!' : 'Free from the Charger!'));
       }
       break;
-    case 'fire': fx.fire(ev[1], ev[2], ev[3], ev[4], ev[5]); sfx.fireStart(ev[2], ev[3]); break;
-    case 'lure': fx.lure(ev[1], ev[2], ev[3]); break;
-    case 'clang': { const zd = zeds.get(ev[1]); if (zd) { zd.chibi.punch = 0.5; sfx.clang(zd.x, zd.z); if (range === null && Math.hypot(zd.x - me.x, zd.z - me.z) < 12) tinpotTip(); } break; }
+    case 'fire': fx.fire(ev[1], ev[2], ev[3], ev[4], ev[5], ev[6] ?? 0); sfx.at(ev[6] ?? 0).fireStart(ev[2], ev[3]); break;
+    case 'lure': fx.lure(ev[1], ev[2], ev[3], ev[4] ?? 0); break;
+    case 'clang': { const zd = zeds.get(ev[1]); if (zd) { zd.chibi.punch = 0.5; sfx.at(zd.y).clang(zd.x, zd.z); if (range === null && Math.hypot(zd.x - me.x, zd.z - me.z) < 12) tinpotTip(); } break; }
     case 'armor':
       if (ev[1] === me.id) { sfx.armorHit(); fx.burst({ x: cam.x + cam.fx * 0.8, y: cam.y - 0.35, z: cam.z + cam.fz * 0.8 }, 0xffffff, 5, 2, 0.07, false, 0.5, 3); }
-      else { const m = mates.get(ev[1]); if (m) fx.burst({ x: m.x, y: 0.8, z: m.z }, 0xffffff, 5, 2.5, 0.07, false, 0.5, 3); }
+      else { const m = mates.get(ev[1]); if (m) fx.burst({ x: m.x, y: m.y + 0.8, z: m.z }, 0xffffff, 5, 2.5, 0.07, false, 0.5, 3); }
       break;
     case 'weeper': {
       const zd = zeds.get(ev[1]);
       if (ev[2] === 1) { if (zd && Math.hypot(zd.x - me.x, zd.z - me.z) < 14) hud.banner(t('The Weeper is stirring — back away!'), true); }
       else {
-        if (zd) { sfx.weeperScream(zd.x, zd.z); me.trauma = Math.min(1, me.trauma + 0.6 / (1 + Math.hypot(zd.x - me.x, zd.z - me.z) * 0.1)); }
+        if (zd) { sfx.at(zd.y).weeperScream(zd.x, zd.z); me.trauma = Math.min(1, me.trauma + 0.6 / (1 + Math.hypot(zd.x - me.x, zd.z - me.z) * 0.1)); }
         hud.banner(ev[3] === me.id ? t('You woke the Weeper — RUN or shoot!') : t('The Weeper is awake!'), true);
       }
       break;
     }
     case 'spit': {
-      const [, , x0, z0, x1, z1, flight] = ev;
-      fx.glob(x0, z0, x1, z1, flight);
-      sfx.spit(x0, z0);
+      const [, , x0, z0, x1, z1, flight] = ev, y0 = ev[7] ?? 0, y1 = ev[8] ?? 0;
+      fx.glob(x0, z0, x1, z1, flight, y0, y1);
+      sfx.at(y0).spit(x0, z0);
       // Warn whoever is about to be gooed: the target spot is where they stand.
-      if (Math.hypot(x1 - me.x, z1 - me.z) < 3.5 && me.st !== PSTATE.DEAD) hud.feed(t('Goo incoming — move!'));
+      if (Math.hypot(x1 - me.x, z1 - me.z) < 3.5 && Math.abs(y1 - me.gy) < 2 && me.st !== PSTATE.DEAD) hud.feed(t('Goo incoming — move!'));
       break;
     }
-    case 'puddle': fx.puddle(ev[1], ev[2], ev[3], ev[4], ev[5]); break;
+    case 'puddle': fx.puddle(ev[1], ev[2], ev[3], ev[4], ev[5], ev[6] ?? 0); break;
     case 'sizzle':
       if (ev[1] === me.id) { sfx.sizzle(); me.trauma = Math.min(1, me.trauma + 0.08); }
       else { const m = mates.get(ev[1]); if (m) m.chibi.punch = 0.4; }
@@ -1024,7 +1085,7 @@ function onEvent(ev: GameEvent): void {
     case 'alarm': {
       hud.banner(t('The alarm rang out — sleepers incoming!'), true);
       sfx.alarmOut();
-      fx.burst({ x: ev[2], y: 1.4, z: ev[3] }, 0xffd43b, 10, 5, 0.16, true, 0.5, 2);
+      fx.burst({ x: ev[2], y: (ev[4] ?? 0) + 1.4, z: ev[3] }, 0xffd43b, 10, 5, 0.16, true, 0.5, 2);
       break;
     }
     case 'end': {
@@ -1045,7 +1106,7 @@ net.onMessage = (m: ServerMsg) => {
   switch (m.t) {
     case 'w':
       loadChapter(m.ch);
-      me.id = m.id; me.x = m.x; me.z = m.z;
+      me.id = m.id; placeMe(m.x, m.y ?? 0, m.z);
       // A new room starts you with the pistol only, whatever you carried in the last one.
       Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, pinned: false });
       clearThrowables();
@@ -1183,9 +1244,10 @@ function enterRange(): void {
   useLevel(rangeLevel());
   const s = L.def.spawns[0];
   Object.assign(me, {
-    id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, meds: MEDS.map(() => 0), medSel: -1, lastLegs: false,
+    id: RANGE_PID, vx: 0, vz: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, meds: MEDS.map(() => 0), medSel: -1, lastLegs: false,
     weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
   });
+  placeMe(s.x, s.y ?? 0, s.z);
   clearThrowables();
   vm.setWeapon(0);
   range = new ShootingRange(L, RANGE_PID, (m) => net.onMessage(m));
@@ -1302,20 +1364,20 @@ function enterStep(i: number, announce: boolean): void {
   if (announce) { hud.flashObjective(); sfx.pickup(); }
 }
 
-/** Where the quest marker should point right now (world metres). */
-function waypointTarget(): { x: number; z: number } | null {
+/** Where the quest marker should point right now (world metres; `y` = the floor height there). */
+function waypointTarget(): { x: number; z: number; y?: number } | null {
   const s = L.def.steps[step];
   if (!s || serverState !== 'play') return null;
   if (s.kind === 'collect') {
-    let best: { x: number; z: number } | null = null, bd = Infinity;
+    let best: { x: number; z: number; y?: number } | null = null, bd = Infinity;
     for (const pv of world.pickups) {
       if (pv.def.kind !== 'item' || pv.def.group !== s.group || pv.taken) continue;
-      const d = Math.hypot(pv.def.x - me.x, pv.def.z - me.z);
+      const d = Math.hypot(pv.def.x - me.x, (pv.def.y ?? 0) - me.gy, pv.def.z - me.z);
       if (d < bd) { bd = d; best = pv.def; }
     }
     return best;
   }
-  if ((s.kind === 'reach' || s.kind === 'gather') && s.area && L.inRect(me.x, me.z, s.area)) return null;
+  if ((s.kind === 'reach' || s.kind === 'gather') && s.area && L.inRect(me.x, me.gy, me.z, s.area)) return null;
   if (holdout >= 0 && s.kind !== 'holdout') return null;
   return s.at;
 }
@@ -1324,10 +1386,12 @@ const _wp = new pc.Vec3(), _scr = new pc.Vec3();
 function updateWaypoint(): void {
   const t = me.st === PSTATE.DEAD ? null : waypointTarget();
   if (!t) { hud.waypoint(null); return; }
-  const dist = Math.hypot(t.x - me.x, t.z - me.z);
-  _wp.set(t.x, 1.6, t.z);
+  const dist = Math.hypot(t.x - me.x, t.z - me.z), ty = (t.y ?? 0) + 1.6;
+  // A storey or more above or below you: say so next to the distance.
+  const dy = (t.y ?? 0) - me.gy, vert = dy > STOREY / 2 ? 1 : dy < -STOREY / 2 ? -1 : 0;
+  _wp.set(t.x, ty, t.z);
   const w = canvas.clientWidth, h = canvas.clientHeight, m = 36;
-  const ahead = (t.x - cam.x) * cam.fx + (1.6 - cam.y) * cam.fy + (t.z - cam.z) * cam.fz;
+  const ahead = (t.x - cam.x) * cam.fx + (ty - cam.y) * cam.fy + (t.z - cam.z) * cam.fz;
   camera.camera!.worldToScreen(_wp, _scr);
   let x = _scr.x, y = _scr.y;
   let edge = false;
@@ -1339,7 +1403,7 @@ function updateWaypoint(): void {
     const k = Math.min((w / 2 - m) / Math.max(1e-3, Math.abs(dx)), (h / 2 - m) / Math.max(1e-3, Math.abs(dy)));
     x = cx + dx * k; y = cy + dy * k; edge = true;
   }
-  hud.waypoint(x, y, dist, edge);
+  hud.waypoint(x, y, dist, edge, vert);
 }
 
 // ---------------------------------------------------------------- simulation
@@ -1357,32 +1421,44 @@ function updateMe(dt: number): void {
   const sc = scopeUp();
   me.zoom += ((sc ? 1 : 0) - me.zoom) * Math.min(1, dt * 14);
   if (me.zoom < 0.01) me.zoom = 0;
-  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1);
+  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1)
+    * L.speedAt(me.x, me.gy, me.z, LADDER_SPEED); // slow on a ladder
   const sin = Math.sin(me.yaw), cos = Math.cos(me.yaw);
   const wx = ((-sin * f + cos * s) / len) * speed, wz = ((-cos * f - sin * s) / len) * speed;
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
   me.vx += (wx - me.vx) * k; me.vz += (wz - me.vz) * k;
+  const gy0 = me.gy, x0 = me.x, z0 = me.z;
   if (alive) {
     // Held: the server moves you (dragged by a Snatcher, steered by a Piggyback); ease toward where it has you.
-    if (me.pinned) { const pk = Math.min(1, dt * 14); me.x += (me.pinX - me.x) * pk; me.z += (me.pinZ - me.z) * pk; me.vx = me.vz = me.kx = me.kz = 0; }
-    else L.moveSlide(me, (me.vx + me.kx) * dt, (me.vz + me.kz) * dt, PLAYER.radius, doors);
+    if (me.pinned) {
+      const pk = Math.min(1, dt * 14);
+      me.x += (me.pinX - me.x) * pk; me.z += (me.pinZ - me.z) * pk; me.gy += (me.pinY - me.gy) * pk;
+      me.vx = me.vz = me.kx = me.kz = 0;
+    } else slideMe((me.vx + me.kx) * dt, (me.vz + me.kz) * dt);
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
+    // Jumps (and knockback) lift you off whatever floor you are on; you land back on it.
     if (on && keys.has('Space') && me.onGround) { me.vy = 6.4; me.onGround = false; }
-    me.vy -= 19 * dt; me.y += me.vy * dt;
-    if (me.y <= 0) { if (!me.onGround) sfx.land(-me.vy, indoorAt(me.x, me.z)); me.y = 0; me.vy = 0; me.onGround = true; }
+    me.vy -= 19 * dt; me.jy += me.vy * dt;
+    if (me.jy <= 0) { if (!me.onGround) sfx.land(-me.vy, indoorAt(me.x, me.gy, me.z)); me.jy = 0; me.vy = 0; me.onGround = true; }
     // Footsteps every stride on the ground.
     if (me.onGround) {
       me.stride += Math.hypot(me.vx, me.vz) * dt;
-      if (me.stride > 1.8) { me.stride = 0; sfx.step(indoorAt(me.x, me.z)); }
+      if (me.stride > 1.8) { me.stride = 0; sfx.step(indoorAt(me.x, me.gy, me.z)); }
     }
-    // Zombies are solid: get shouldered out of them (not while one has hold of you).
+    // Zombies are solid: get shouldered out of them (not while one has hold of you; only on your floor).
     if (!me.pinned) for (const z of zeds.values()) {
       const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
-      if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
+      if (Math.abs(dx) > min || Math.abs(dz) > min || Math.abs(z.y - me.gy) > 1.2) continue;
       const d = Math.hypot(dx, dz);
-      if (d < min && d > 0.001) L.moveSlide(me, (dx / d) * (min - d), (dz / d) * (min - d), PLAYER.radius, doors);
+      if (d < min && d > 0.001) slideMe((dx / d) * (min - d), (dz / d) * (min - d));
     }
-  } else { me.vx = me.vz = 0; me.y = 0; }
+  } else { me.vx = me.vz = 0; me.jy = 0; me.vy = 0; me.onGround = true; }
+  // Stairs and ladders are smooth slopes and the camera rides them as they are; a sudden floor change
+  // (stepping up onto a ledge) is eased out of the camera instead of snapping it.
+  const dg = me.gy - gy0;
+  if (Math.abs(dg) > 2.2 * Math.hypot(me.x - x0, me.z - z0) + 0.05 && Math.abs(dg) < STOREY / 2) camDip -= dg;
+  camDip *= Math.exp(-dt * 14);
+  me.y = me.gy + me.jy;
 
   // Weapons. The range never runs dry: reserves stay full.
   if (range) for (let i = 0; i < WEAPONS.length; i++) me.reserve[i] = WEAPONS[i].reserve;
@@ -1437,6 +1513,7 @@ function updateMe(dt: number): void {
 }
 function sendPos(): void {
   sendT = 0.05;
+  // y: your feet (floor height plus any jump).
   net.send({ t: 'p', x: +me.x.toFixed(2), y: +me.y.toFixed(2), z: +me.z.toFixed(2), ry: +me.yaw.toFixed(3), rx: +me.pitch.toFixed(3), w: me.weapon, a: 0 });
 }
 
@@ -1481,8 +1558,8 @@ function updateCamera(dt: number): void {
       if (!alt && q.st !== PSTATE.DEAD) alt = q;
     }
     m ??= alt;
-    if (m) { cam.x = m.x + Math.sin(m.ry) * 3.2; cam.y = 2.6; cam.z = m.z + Math.cos(m.ry) * 3.2; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(m.x, 1.0, m.z); }
-    else { cam.x = me.x; cam.y = 6; cam.z = me.z + 4; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(me.x, 0, me.z); }
+    if (m) { cam.x = m.x + Math.sin(m.ry) * 3.2; cam.y = m.y + 2.6; cam.z = m.z + Math.cos(m.ry) * 3.2; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(m.x, m.y + 1.0, m.z); }
+    else { cam.x = me.x; cam.y = me.y + 6; cam.z = me.z + 4; camera.setPosition(cam.x, cam.y, cam.z); camera.lookAt(me.x, me.y, me.z); }
     cam.rot.copy(camera.getRotation());
     setTorch(false, 0, 0, 0, 0, 0, -1);
     rideCam = 0; updateSelfBody(dt, false);
@@ -1490,17 +1567,20 @@ function updateCamera(dt: number): void {
   }
   const down = me.st === PSTATE.DOWN;
   const pitch = me.pitch + me.recoil;
-  cam.x = me.x; cam.y = me.y + (down ? 0.42 : PLAYER.eye); cam.z = me.z;
+  cam.x = me.x; cam.y = me.y + camDip + (down ? 0.42 : PLAYER.eye); cam.z = me.z;
   cam.fx = -Math.sin(me.yaw) * Math.cos(pitch); cam.fy = Math.sin(pitch); cam.fz = -Math.cos(me.yaw) * Math.cos(pitch);
   // Piggyback ride: ease out behind your own shoulders (not through a wall), and back in when it is off.
   const riding = me.pinned && me.pinType === ZT.PIGGYBACK && !down;
   rideCam = Math.max(0, Math.min(1, rideCam + (riding ? dt : -dt) / RIDE_CAM.secs));
   if (rideCam > 0) {
-    const e = rideCam * rideCam * (3 - 2 * rideCam), h = Math.hypot(cam.fx, cam.fz) || 1;
-    const room = L.rayGrid(me.x, me.z, -cam.fx / h, -cam.fz / h, RIDE_CAM.dist, doors) - 0.35;
-    const back = Math.max(0.6, Math.min(RIDE_CAM.dist, room / h)) * e;
-    cam.x -= cam.fx * back; cam.z -= cam.fz * back;
-    cam.y = Math.max(0.45, Math.min(CEIL_H - 0.35, cam.y - cam.fy * back + RIDE_CAM.lift * e));
+    // Back along the view and up a little, stopped short of walls, floors and ceilings (always at least
+    // 0.6 m back, behind your own head).
+    const e = rideCam * rideCam * (3 - 2 * rideCam), want = RIDE_CAM.dist * e;
+    const ox = -cam.fx * want, oy = -cam.fy * want + RIDE_CAM.lift * e, oz = -cam.fz * want, len = Math.hypot(ox, oy, oz) || 1;
+    const room = L.ray(cam.x, cam.y, cam.z, ox / len, oy / len, oz / len, len + 0.35, doors) - 0.35;
+    const k = Math.max(Math.min(1, (0.6 * e) / len), Math.min(1, room / len));
+    cam.x += ox * k; cam.z += oz * k;
+    cam.y = Math.max(me.gy + 0.45, Math.min(me.gy + CEIL_H - 0.35, cam.y + oy * k));
   }
   updateSelfBody(dt, rideCam > 0.2);
   quatYXZ(pitch + (Math.random() - 0.5) * shake, me.yaw + (Math.random() - 0.5) * shake, down ? 0.35 : (Math.random() - 0.5) * shake, cam.rot);
@@ -1516,9 +1596,12 @@ function updateEntities(dt: number): void {
     const px = m.x, pz = m.z;
     m.x += (m.tx - m.x) * k; m.y += (m.ty - m.y) * k; m.z += (m.tz - m.z) * k; m.ry = lerpAngle(m.ry, m.tr, k);
     m.speed += (Math.hypot(m.x - px, m.z - pz) / Math.max(dt, 1e-4) - m.speed) * 0.2;
-    if (m.st === PSTATE.ALIVE && m.y < 0.05 && m.speed > 1 && m.speed < 12) {
-      m.stride += m.speed * dt;
-      if (m.stride > 1.8) { m.stride = 0; if (Math.hypot(m.x - cam.x, m.z - cam.z) < 16) sfx.step(indoorAt(m.x, m.z), m.x, m.z); }
+    if (m.st === PSTATE.ALIVE && m.speed > 1 && m.speed < 12) {
+      const fl = floorBelow(m.x, m.y + 0.3, m.z);
+      if (Math.abs(m.y - fl) < 0.1) {
+        m.stride += m.speed * dt;
+        if (m.stride > 1.8) { m.stride = 0; if (Math.hypot(m.x - cam.x, m.y + PLAYER.eye - cam.y, m.z - cam.z) < 16) sfx.at(fl).step(indoorAt(m.x, fl, m.z), m.x, m.z); }
+      }
     }
     m.chibi.group.setPosition(m.x, m.y, m.z);
     m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
@@ -1528,7 +1611,7 @@ function updateEntities(dt: number): void {
     m.tag.setRotation(cam.rot);
   }
   for (const z of zeds.values()) {
-    z.x += (z.tx - z.x) * k; z.z += (z.tz - z.z) * k; z.ry = lerpAngle(z.ry, z.tr, k);
+    z.x += (z.tx - z.x) * k; z.y += (z.ty - z.y) * k; z.z += (z.tz - z.z) * k; z.ry = lerpAngle(z.ry, z.tr, k);
     // A riding Piggyback clings to its victim's back: just behind their shoulders, facing the way they face
     // (whichever way it is steering them), so it is never drawn in front of their face.
     const riding = z.type === ZT.PIGGYBACK && z.st === ZSTATE.PIN;
@@ -1538,7 +1621,7 @@ function updateEntities(dt: number): void {
       z.chibi.group.setPosition(host.x + Math.sin(hry) * RIDE_BACK, host.y + 0.62, host.z + Math.cos(hry) * RIDE_BACK);
       z.chibi.group.setLocalEulerAngles(0, hry * RAD, 0);
     } else {
-      z.chibi.group.setPosition(z.x, riding ? 0.62 : 0, z.z);
+      z.chibi.group.setPosition(z.x, z.y + (riding ? 0.62 : 0), z.z);
       z.chibi.group.setLocalEulerAngles(0, z.ry * RAD, 0);
     }
     z.chibi.animate(z.type === ZT.WEEPER && z.st === ZSTATE.IDLE ? 'sit' : POSE[z.st] ?? 'idle', time, dt);
@@ -1546,7 +1629,7 @@ function updateEntities(dt: number): void {
     if (z.type === ZT.SNATCHER && z.st === ZSTATE.PIN) {
       const pid = pinBy.get(z.id), v = pid === me.id ? me : pid !== undefined ? mates.get(pid) : undefined;
       if (v) {
-        _muz.x = z.x - Math.sin(z.ry) * 0.4; _muz.y = 0.95; _muz.z = z.z - Math.cos(z.ry) * 0.4;
+        _muz.x = z.x - Math.sin(z.ry) * 0.4; _muz.y = z.y + 0.95; _muz.z = z.z - Math.cos(z.ry) * 0.4;
         _end.x = v.x; _end.y = v.y + (pid === me.id ? 0.75 : 0.8); _end.z = v.z;
         fx.rope(_muz, _end);
       }
@@ -1555,17 +1638,17 @@ function updateEntities(dt: number): void {
     // A ringing Alarm Clock keeps rattling until it is shot (or rings out).
     if (z.st === ZSTATE.RING) {
       z.sfxT -= dt;
-      if (z.sfxT <= 0) { z.sfxT = 0.3; sfx.ring(z.x, z.z); if (Math.random() < 0.5) fx.burst({ x: z.x, y: 1.45 * ZTYPES[z.type].scale, z: z.z }, 0xffd43b, 1, 2, 0.1, true, 0.25, 0); }
+      if (z.sfxT <= 0) { z.sfxT = 0.3; sfx.at(z.y).ring(z.x, z.z); if (Math.random() < 0.5) fx.burst({ x: z.x, y: z.y + 1.45 * ZTYPES[z.type].scale, z: z.z }, 0xffd43b, 1, 2, 0.1, true, 0.25, 0); }
     }
   }
   for (let i = corpses.length - 1; i >= 0; i--) {
     const c = corpses[i];
     c.t += dt;
     c.x += c.vx * dt; c.z += c.vz * dt;
-    c.chibi.group.setPosition(c.x, 0, c.z);
+    c.chibi.group.setPosition(c.x, c.y, c.z);
     c.chibi.tumble(Math.min(1.5, c.t * 6), Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35, Math.min(1, c.t / 0.4), dt);
     if (c.t > 0.4) {
-      fx.poof({ x: c.x, y: 0.2 * c.scale, z: c.z }, 0xf3f0ff, c.scale > 1.5 ? 14 : 6, 0.3 * c.scale);
+      fx.poof({ x: c.x, y: c.y + 0.2 * c.scale, z: c.z }, 0xf3f0ff, c.scale > 1.5 ? 14 : 6, 0.3 * c.scale);
       c.chibi.dispose();
       corpses.splice(i, 1);
     }
@@ -1582,49 +1665,54 @@ let threat = 0;
  */
 function zedAudio(dt: number): void {
   let awake = 0;
+  const ly = listenY;
   for (const z of zeds.values()) {
-    const d = Math.hypot(z.x - cam.x, z.z - cam.z);
+    const d = Math.hypot(z.x - cam.x, z.y - ly, z.z - cam.z);
     if (z.st !== ZSTATE.IDLE && d < 22) awake++;
     if (!isCommon(z.type) && z.st !== ZSTATE.RING && d < 40) {
       z.vox -= dt;
-      if (z.vox <= 0) z.vox = sfx.special(z.type, z.x, z.z, z.st);
+      if (z.vox <= 0) z.vox = sfx.at(z.y).special(z.type, z.x, z.z, z.st);
     }
   }
   threat = awake;
   groanT -= dt;
   if (groanT <= 0 && zeds.size) {
     groanT = (0.4 + Math.random() * 1.3) / Math.min(2.5, 1 + awake / 8);
-    const near = [...zeds.values()].filter((z) => isCommon(z.type) && Math.hypot(z.x - cam.x, z.z - cam.z) < (z.st === ZSTATE.IDLE ? 14 : 26));
+    const near = [...zeds.values()].filter((z) => isCommon(z.type) && Math.hypot(z.x - cam.x, z.y - ly, z.z - cam.z) < (z.st === ZSTATE.IDLE ? 14 : 26));
     if (near.length) {
       const z = near[(Math.random() * near.length) | 0];
-      if (z.st === ZSTATE.IDLE) sfx.snore(z.x, z.z); else sfx.groan(z.x, z.z);
+      if (z.st === ZSTATE.IDLE) sfx.at(z.y).snore(z.x, z.z); else sfx.at(z.y).groan(z.x, z.z);
     }
   }
 }
 
 /** Radio sets in the current level, each with its own timer until it next crackles. */
-let radioSets: { x: number; z: number; t: number }[] = [], radioLevel: Level | null = null;
+let radioSets: { x: number; y: number; z: number; t: number }[] = [], radioLevel: Level | null = null;
 /** The nearest radio set within earshot hisses and crackles to itself, so it draws you over. */
 function radioAudio(dt: number): void {
   if (radioLevel !== L) {
     radioLevel = L;
-    radioSets = L.def.props.filter((p) => p.type === 'radio').map((p) => ({ x: (p.x + p.w / 2) * TILE, z: (p.z + p.d / 2) * TILE, t: Math.random() * 2 }));
+    radioSets = L.def.props.filter((p) => p.type === 'radio').map((p) => ({ x: (p.x + p.w / 2) * TILE, y: (p.lv ?? 0) * STOREY, z: (p.z + p.d / 2) * TILE, t: Math.random() * 2 }));
   }
   let near: (typeof radioSets)[number] | null = null, best = 18;
-  for (const r of radioSets) { const d = Math.hypot(r.x - cam.x, r.z - cam.z); if (d < best) { best = d; near = r; } }
-  if (near && (near.t -= dt) <= 0) near.t = sfx.radioProp(near.x, near.z);
+  for (const r of radioSets) { const d = Math.hypot(r.x - cam.x, r.y - listenY, r.z - cam.z); if (d < best) { best = d; near = r; } }
+  if (near && (near.t -= dt) <= 0) near.t = sfx.at(near.y).radioProp(near.x, near.z);
 }
 
-const indoorAt = (x: number, z: number): boolean => isIndoor(L.floorAt(x, z));
+/** Indoors at (x, z) on the floor at about height y (footsteps, landings, the listener's room). */
+const indoorAt = (x: number, y: number, z: number): boolean => isIndoor(L.floorAt(x, y, z));
 const _fwd = new pc.Vec3();
+/** Floor height under the listener (the camera), updated every frame by `listen`. */
+let listenY = 0;
 /** Feed the audio listener: where you hear from (the camera, so spectating works), and how you are. */
 function listen(dt: number): void {
+  listenY = floorBelow(cam.x, cam.y - 0.4, cam.z); // eye height less a little: also right while down (eye 0.42 up)
   _fwd.copy(camera.forward);
   const h = Math.hypot(_fwd.x, _fwd.z) || 1;
   sfx.setScene(range ? -1 : chapter);
   if (inGame && !range) radioAudio(dt);
   sfx.update(dt, {
-    x: cam.x, z: cam.z, fx: _fwd.x / h, fz: _fwd.z / h, indoor: indoorAt(cam.x, cam.z),
+    x: cam.x, z: cam.z, y: listenY, fx: _fwd.x / h, fz: _fwd.z / h, indoor: indoorAt(cam.x, listenY, cam.z),
     hurt: inGame && me.st === PSTATE.ALIVE ? 1 - me.hp / PLAYER.hp : 0,
     down: inGame && me.st === PSTATE.DOWN, dead: !inGame || me.st === PSTATE.DEAD, pinned: inGame && me.pinned,
     threat: inGame ? threat : 0, holdout: inGame && holdout >= 0,
@@ -1654,7 +1742,7 @@ function updateHud(dt: number): void {
   const s = L.def.steps[step];
   hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
-  if (openNote && Math.hypot(openNote.def.x - me.x, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
+  if (openNote && Math.hypot(openNote.def.x - me.x, (openNote.def.y ?? 0) - me.gy, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
   hud.crosshair(me.st === PSTATE.ALIVE && me.zoom < 0.5);
   hud.scope(me.st === PSTATE.ALIVE && me.zoom >= 0.5);
   hud.spread(6 + shotSpread() * 260);
@@ -1673,8 +1761,8 @@ function updateHud(dt: number): void {
     hud.ring(null);
     hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
       : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> ${t('Read: {title}', { title: t(target.nv.def.title) })}`
-        : me.st !== PSTATE.DEAD && fx.inFire(me.x, me.z) ? t('You are standing in the fire!')
-          : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z) ? t('Get out of the goo!') : null);
+        : me.st !== PSTATE.DEAD && fx.inFire(me.x, me.z, me.gy) ? t('You are standing in the fire!')
+          : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z, me.gy) ? t('Get out of the goo!') : null);
   }
   hud.update(dt);
 }
@@ -1701,7 +1789,7 @@ app.on('update', (dt: number) => {
     orbit += dt * 0.12;
     const cpSel = Number(startSelect.value);
     const look = (cpSel >= 0 ? L.def.steps[cpSel]?.at : L.def.steps[0]?.at) ?? L.def.spawns[0];
-    cam.x = look.x + Math.sin(orbit) * 4; cam.y = 3.2; cam.z = look.z + Math.cos(orbit * 0.7) * 4;
+    cam.x = look.x + Math.sin(orbit) * 4; cam.y = (look.y ?? 0) + 3.2; cam.z = look.z + Math.cos(orbit * 0.7) * 4;
     quatYXZ(-0.05, Math.PI + Math.sin(orbit * 0.5) * 0.5, 0, cam.rot);
     camera.setPosition(cam.x, cam.y, cam.z);
     camera.setRotation(cam.rot);

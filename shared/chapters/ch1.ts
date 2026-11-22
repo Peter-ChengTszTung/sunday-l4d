@@ -3,12 +3,15 @@
 //
 // Route (a clockwise spiral through downtown):
 //   Laundromat (NW) → Marshmallow Avenue south → Tony's Pizza → Pell Plaza Parking
-//   forecourt (crescendo 1) → garage ramps → roof deck overlooking City Hall Square →
-//   stair tower → across the square → Library (checkpoint) → Library Row alleys
-//   (fuse sweep) → Cherry Street tram stop (crescendo 2) → rail underpass →
+//   forecourt (crescendo 1) → garage: ground deck, ramp to level 2, ramp to the roof deck
+//   (storey 2) and its viewpoint pier over City Hall Square → stair tower down → across the
+//   square → Library (checkpoint) → Library Row alleys (fuse sweep: laundry storeroom upstairs,
+//   fire escape by ladder; optional rooftops by ladder) → Cherry Street tram stop (crescendo 2,
+//   footbridge perch) → rail underpass →
 //   Clocktower Corner → Kettle Corner Diner (checkpoint) → Depot Square (Gerald) →
 //   depot maintenance bay (finale) → Shuttle No. 4.
 // Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
+// Storeys: 0 street, 1 garage level 2 / rooftops / fire escape / storeroom / footbridge, 2 garage roof.
 import { LevelBuilder, F, WALL, type Theme } from '../level';
 
 export const META = { id: 'ch1', title: 'Last Stop', subtitle: 'Downtown Mallow Bay' };
@@ -32,7 +35,7 @@ const THEME: Theme = {
 const INTRO = '3:00 a.m. A sweet lavender fog rolled through Mallow Bay, and everyone asleep got out of bed and kept walking. You four were awake. Lucky you. Now the radio is crackling: a night dispatcher called Dot says there\'s a way out of town, and she\'ll talk you there. First, you have to get out of the laundromat.';
 
 export function build() {
-  const b = new LevelBuilder(176, 180);
+  const b = new LevelBuilder(176, 180, 3);
   let ci = 0;
   /** Abandoned car (1x2, facing north unless rotated). */
   const car = (x: number, z: number, rot = N, w = 1, d = 2) => b.prop('car', x, z, w, d, { color: CAR[ci++ % CAR.length], rot });
@@ -125,8 +128,6 @@ export function build() {
   // Attendant booth with the barrier lever.
   b.fill(44, 88, 48, 92); b.carve(45, 89, 47, 91, F.INTERIOR); b.carve(44, 90, 44, 91, F.INTERIOR);
   const garageLever = b.obj('lever', 47, 89, 'Raise the garage barrier (ALARM!)');
-  b.carve(36, 105, 41, 105, F.CONCRETE);
-  const garageDoor = b.door(36, 105, 41, 105, 'shutter', 'PELL PLAZA PARKING');
   b.prop('barrier', 35, 95, 3, 1); b.prop('barrier', 40, 99, 3, 1); b.prop('barrier', 49, 97, 1, 3);
   b.prop('bush', 33, 88, 2, 1); b.prop('bush', 38, 88, 2, 1); b.prop('terminal', 42, 103);
   car(34, 101, E, 2, 1); b.prop('crate', 50, 86);
@@ -136,48 +137,88 @@ export function build() {
   b.arrow(46.5, 86, S); b.arrow(41.5, 92, E);
 
   // ------------------------------------------------------------------
-  // 5. The garage: ground level east, level 2 west, roof deck east
+  // 5. Pell Plaza Parking: three stacked decks (ground, level 2, roof deck)
+  //    joined by wide ramps, the viewpoint pier and the stair tower
   // ------------------------------------------------------------------
-  b.carve(22, 106, 78, 115, F.INTERIOR);                 // ground
-  b.carve(72, 116, 78, 119, F.CONCRETE);                 // ramp up
-  b.carve(22, 120, 78, 129, F.INTERIOR);                 // level 2
-  b.fill(46, 120, 50, 129);                              // collapsed slab: detour through the pay office
-  b.carve(42, 117, 54, 119, F.INTERIOR);
-  b.carve(22, 130, 28, 133, F.CONCRETE);                 // ramp up
-  b.carve(22, 134, 79, 143, F.CONCRETE);                 // roof deck (open air)
-  b.carve(80, 104, 86, 143, F.CONCRETE);                 // overlook strip along the square
-  for (let x = 26; x <= 74; x += 6) { b.prop('pillar', x, 110, 1, 2); if (x < 46 || x > 50) b.prop('pillar', x, 124, 1, 2); }
-  for (const x of [24, 27, 30, 33, 44, 47, 53, 59, 62, 68]) car(x, 106, S);
-  for (const x of [23, 29, 35, 41, 50, 56, 62, 65]) car(x, 114, N);
-  for (const x of [24, 30, 36, 56, 62, 71]) car(x, 120, S);
-  for (const x of [27, 33, 39, 53, 59, 65, 74]) car(x, 128, N);
-  b.prop('desk', 44, 117, 2, 1); b.prop('desk', 50, 118, 2, 1); b.prop('shelf', 54, 117);
-  b.pick('medkit', 48, 117); b.pick('ammo', 43, 119);
-  b.pick('ammo', 23, 108);                               // dead-end corner west of the gate
-  b.label('RAMP UP: LEVEL 2', 75, 117.5, 20, GOLD);
-  b.label('PAY STATION', 48, 118.4, 18, TEAL);
-  b.label('RAMP UP: ROOF', 25, 131.5, 20, GOLD);
-  b.lamp(75, 117.5); b.lamp(25, 131.5);                  // the only light in the garage marks the ramps
-  b.arrow(41.5, 111, E); b.arrow(64, 111, E); b.arrow(75, 113, S); b.arrow(71.5, 124, WEST);
-  b.arrow(53, 121.5, N); b.arrow(44, 121.5, S); b.arrow(34, 124, WEST); b.arrow(25, 127, S);
-  b.arrow(36, 138.5, E); b.arrow(60, 138.5, E); b.arrow(83, 136, N);
-  // Roof deck: open sky, a few parked cars, light poles, the rifle stash at the overlook.
-  for (const x of [30, 42, 54, 66]) { car(x, 134, S); b.lamp(x + 3, 142.5); }
-  car(48, 142, N); car(72, 142, N);
-  b.prop('barrier', 82, 140, 2, 1);
-  for (let z = 104; z <= 140; z += 4) b.prop('barrier', 86, z, 1, 4);   // parapet: see over, can't walk over
-  b.pick('rifle', 81, 122); b.pick('shotgun', 81, 123); b.pick('rifle', 81, 124); b.pick('smg', 82, 123); b.pick('ammo', 84, 123); b.pick('ammo', 83, 123);
-  b.label('SWEET DREAMS NIGHT VIEWPOINT', 83, 128, 16, LAV, WEST);
-  b.lamp(80.6, 114); b.lamp(80.6, 132);
-  // Stair tower down to the square.
-  b.carve(81, 97, 83, 103, F.INTERIOR); b.carve(81, 94, 92, 96, F.INTERIOR); b.carve(90, 97, 92, 104, F.INTERIOR);
-  b.label('STAIRS', 82, 101, 18, CREAM, N); b.label('EXIT: CITY HALL SQ', 91, 102, 14, CREAM, S);
-  b.arrow(82.5, 106, N); b.arrow(86, 95.5, E); b.arrow(91.5, 99, S);
+  // The garage is two storeys of concrete; the roof deck (storey 2) is carved on top of it. The
+  // offices to the south and west stand taller, so the deck reads as a roof between buildings, and
+  // its north and east edges look out over open ground (the forecourt and City Hall Square).
+  b.walls(21, 105, 85, 122, WALL.BUILDING, 8.4);
+  b.walls(80, 123, 85, 145, WALL.BUILDING, 8.4);          // pier block and stair tower
+  b.walls(14, 123, 79, 150, WALL.BUILDING, 12.6);
+  b.walls(14, 103, 20, 122, WALL.BUILDING, 12.6);
+  // Ground deck (storey 0): in through the gate, east along the north lane to ramp 1.
+  b.carve(22, 106, 84, 121, F.INTERIOR);
+  b.paint(46, 106, 50, 117, F.CONCRETE);                  // under the collapsed level-2 slab: open to the roof
+  b.carve(36, 105, 41, 105, F.CONCRETE);
+  const garageDoor = b.door(36, 105, 41, 105, 'shutter', 'PELL PLAZA PARKING');
+  for (let x = 28; x <= 76; x += 6) { b.prop('pillar', x, 110); b.prop('pillar', x, 117); }
+  for (const x of [24, 27, 30, 33, 44, 53, 59, 62, 68, 74]) car(x, 106, S);
+  for (const x of [25, 31, 37, 43, 55, 61, 67, 73]) car(x, 113, N);
+  for (const x of [23, 29, 35, 41, 53, 59, 65, 71, 77]) car(x, 120, N);
+  b.prop('crate', 47, 109); b.prop('barrel', 49, 111); b.prop('pallet', 46, 114); b.prop('crate', 49, 116);  // fallen slab
+  b.pick('ammo', 23, 108);                                // dead-end corner west of the gate
+  // Ramp 1: four lanes wide, rising south along the east wall to level 2.
+  b.fill(80, 112, 80, 114); b.fill(81, 115, 84, 121);
+  b.stairs(81, 112, 84, 114, '+z');
+  b.label('RAMP UP: LEVEL 2', 82.5, 110.3, 18, GOLD);
+  b.lamp(82.5, 110.6);                                    // the garage is dark: lamps only mark the ramps
+  b.arrow(41.5, 108.5, E); b.arrow(62, 108.5, E); b.arrow(79, 109, E); b.arrow(82.5, 111.4, S);
+  // Level 2 (storey 1): back west. The slab has caved in mid-deck, so the way round is the pay office.
+  b.level(1);
+  b.carve(22, 106, 84, 121, F.INTERIOR);
+  b.fill(36, 105, 41, 105);                               // lintel over the gate
+  b.open(46, 106, 50, 117);                               // collapsed slab: look down onto the ground deck
+  b.fill(43, 118, 55, 118); b.fill(43, 119, 43, 119); b.fill(55, 119, 55, 119);   // pay office, doorways at z 120-121
+  b.fill(26, 113, 26, 115); b.fill(22, 106, 25, 112);
+  b.stairs(22, 113, 25, 115, '-z');                       // ramp 2, rising north to the roof deck
+  for (let x = 28; x <= 76; x += 6) if (x !== 46) { b.prop('pillar', x, 110); b.prop('pillar', x, 117); }
+  for (const x of [28, 31, 34, 38, 56, 62, 65, 71, 74]) car(x, 106, S);
+  for (const x of [31, 37, 58, 64, 70]) car(x, 113, N);
+  for (const x of [30, 36, 59, 65, 71]) car(x, 120, N);
+  b.prop('desk', 45, 119, 2, 1); b.prop('desk', 50, 119, 2, 1); b.prop('shelf', 54, 119);
+  b.pick('medkit', 48, 121); b.pick('ammo', 44, 121);
+  b.label('LEVEL 2', 82.5, 117.6, 22, GOLD);
+  b.label('PAY STATION', 49, 120.6, 16, TEAL, WEST);
+  b.label('RAMP UP: ROOF', 23.5, 117.6, 18, GOLD, N);
+  b.lamp(49, 120); b.lamp(23.5, 116.8);
+  b.arrow(80, 118.5, WEST); b.arrow(62, 118.5, WEST); b.arrow(57, 120.5, WEST); b.arrow(40, 118.5, WEST); b.arrow(28, 117, WEST); b.arrow(23.5, 116.4, N);
+  // Roof deck (storey 2): open sky, parked cars, light poles; east to the viewpoint pier over the square.
+  b.level(2);
+  b.carve(21, 105, 85, 122, F.CONCRETE);
+  b.carve(80, 123, 84, 136, F.CONCRETE);                  // viewpoint pier
+  for (const x of [30, 42, 54, 66]) car(x, 106, S);
+  car(48, 120, N); car(72, 120, N); car(36, 114, E, 2, 1); car(60, 116, WEST, 2, 1);
+  for (const x of [33, 45, 57, 69]) b.lamp(x, 121.6);
+  b.lamp(24, 110.6);
+  b.label('ROOF DECK', 34, 110, 26, GOLD, WEST);
+  b.arrow(27, 109.5, E); b.arrow(45, 110, E); b.arrow(66, 110, E); b.arrow(82.5, 114, S); b.arrow(82.5, 124, S);
+  b.pick('rifle', 81, 124); b.pick('shotgun', 81, 125); b.pick('rifle', 81, 126); b.pick('smg', 82, 125); b.pick('ammo', 84, 124); b.pick('ammo', 83, 124);
+  b.label('SWEET DREAMS NIGHT VIEWPOINT', 83.5, 129.5, 14, LAV, WEST);
+  b.label('STAIR TOWER', 81, 134.6, 14, CREAM);
+  b.lamp(80.6, 127); b.lamp(84.4, 133);
+  b.arrow(81, 133, S);
+  // Stair tower: from the pier down to storey 1 (flight A), along the landing, then down to the
+  // street (flight B) and out to the square.
+  b.level(1);
+  b.carve(80, 140, 84, 141, F.INTERIOR);                  // landing
+  b.fill(82, 137, 82, 139);                               // between the flights
+  b.fill(83, 135, 84, 136);                               // over the street passage
+  b.stairs(80, 137, 81, 139, '-z');                       // flight A: landing -> pier
+  b.label('EXIT: CITY HALL SQ', 82.2, 141.6, 11, CREAM, E);
+  b.lamp(82.5, 140.8);
+  b.arrow(81.5, 140.5, E); b.arrow(84, 140.5, N);
+  b.level(0);
+  b.carve(83, 135, 84, 136, F.INTERIOR);                  // passage out to the square
+  b.stairs(83, 137, 84, 139, '+z');                       // flight B: street -> landing
+  b.label('STAIR TOWER', 87.3, 134, 14, CREAM, WEST);
+  b.arrow(85.5, 135.5, E);
 
   // ------------------------------------------------------------------
   // 6. City Hall Square (open fight) and the fog machines
   // ------------------------------------------------------------------
-  b.carve(87, 105, 122, 158, F.SIDEWALK);
+  b.carve(86, 105, 122, 158, F.SIDEWALK);
+  b.carve(85, 123, 85, 136, F.SIDEWALK);                 // kerb under the viewpoint pier (open sky above it)
   b.carve(97, 120, 112, 142, F.GRASS); b.paint(97, 130, 112, 131, F.SIDEWALK); b.paint(104, 120, 105, 142, F.SIDEWALK);
   b.prop('fountain', 112, 110, 3, 3);
   // Trees (opaque) stay off the overlook's sightline to the steps; bushes and benches are see-through.
@@ -194,7 +235,7 @@ export function build() {
   b.note(116, 152, 'Clipboard by fog unit #12', 'Fog units calibrated to Dreamwell spec. Dr. W. Lowell requested postponement: "HX-9 not ready." Request denied. G. Pell. Proceed 3:00 a.m.');
   b.pick('ammo', 105, 131); b.pick('ammo', 95, 149);
   for (const [x, z] of [[92, 106], [104, 106], [121, 120], [88, 122], [88, 140], [121, 146], [96, 147], [114, 147], [104, 127], [104, 138]]) b.lamp(x, z);
-  b.arrow(92, 109, E); b.arrow(104.5, 117, S); b.arrow(118, 151.5, E);
+  b.arrow(89, 135.5, E); b.arrow(104.5, 143.5, S); b.arrow(118, 151.5, E);
   // Council Lane: optional dead-end side street off the square.
   b.carve(70, 150, 86, 155, F.ASPHALT);
   car(74, 151, E, 2, 1); b.prop('dumpster', 70, 155); b.pick('medkit', 71, 152); b.pick('ammo', 71, 153);
@@ -234,22 +275,55 @@ export function build() {
   b.carve(168, 56, 172, 176, F.ASPHALT);                 // Wash Alley
   b.carve(147, 92, 167, 95, F.ASPHALT);                  // middle cut-through
   b.carve(147, 172, 167, 176, F.ASPHALT);                // south cross alley
-  // Fuse 1: Lather Laundry basement (dark, off Library Row).
+  // Fuse 1: Lather Laundry, up the back stairs in the storeroom (storey 1, dark).
   b.carve(147, 143, 149, 145, F.INTERIOR); b.carve(150, 136, 163, 150, F.INTERIOR);
   for (const z of [138, 142, 146]) b.prop('counter', 153, z, 8, 1, { color: 0xe8e6f2 });
   b.prop('crate', 163, 136); b.prop('barrel', 150, 150);
-  b.item('fuse', 'fuse', 162, 149, 'fuse');
-  b.pick('medkit', 151, 137); b.pick('armor', 152, 137);       // off-route reward
-  b.label('LATHER LAUNDRY', 148, 141.5, 16, TEAL, E);
+  b.fill(161, 139, 161, 141);                                    // stair wall
+  b.stairs(162, 139, 163, 141, '-z');
+  b.pick('medkit', 151, 149);
+  b.label('LATHER LAUNDRY', 148, 144, 16, TEAL, E);
+  b.label('STAIRS UP: STOREROOM', 162.5, 143.3, 10, GOLD, N);
+  b.lamp(162.5, 142.6);
+  b.arrow(156, 144, E); b.arrow(162.5, 142.4, N);
+  b.level(1);
+  b.fill(149, 135, 164, 142); b.carve(150, 136, 163, 141, F.INTERIOR);
+  b.prop('shelf', 153, 136, 6, 1); b.prop('shelf', 150, 139, 1, 3); b.prop('crate', 157, 140); b.prop('crate', 158, 140);
+  b.item('fuse', 'fuse', 151, 137, 'fuse');
+  b.pick('armor', 152, 141);                                    // off-route reward
+  b.label('STOREROOM', 157, 138.4, 14, CREAM, WEST);
+  b.arrow(160, 138, WEST);
+  b.level(0);
   // Fuse 2: on a dumpster lid in the south cross alley.
   b.prop('dumpster', 157, 172, 2, 1); b.item('fuse', 'fuse', 159, 172, 'fuse');
   // Fuse 3: alley junction box on Wash Alley.
   b.prop('terminal', 172, 119); b.item('fuse', 'fuse', 171, 119, 'fuse');
   b.label('JUNCTION BOX', 170, 121.5, 14, GOLD, N);
-  // Fuse 4: fire-escape landing in a nook off Wash Alley.
-  b.carve(173, 68, 174, 79, F.CONCRETE);
-  b.prop('pallet', 173, 68); b.item('fuse', 'fuse', 174, 69, 'fuse');
-  b.label('FIRE ESCAPE', 173.5, 75, 14, CREAM, N);
+  // Fuse 4: on the fire-escape landing over Wash Alley (storey 1), two drop ladders up to it.
+  b.ladder(172, 69, '+x'); b.ladder(172, 77, '+x');
+  b.label('FIRE ESCAPE', 170.6, 73, 14, CREAM, N);
+  b.label('LADDER', 171, 70.6, 9, GOLD, N); b.label('LADDER', 171, 78.6, 9, GOLD, N);
+  b.level(1);
+  b.carve(173, 67, 174, 78, F.CONCRETE);
+  b.prop('pallet', 174, 68); b.prop('crate', 174, 76);
+  b.item('fuse', 'fuse', 174, 73, 'fuse');
+  b.level(0);
+  // Optional: the Library Row rooftops (storey 1), a ladder up from each alley. Sniper perch over
+  // Library Row, Wash Alley and the cut-through, with a rifle and the pigeon keeper's log.
+  b.ladder(146, 114, '+x'); b.ladder(168, 102, '-x');
+  b.label('LADDER', 145, 114.5, 9, GOLD, E); b.label('LADDER', 169, 102.5, 9, GOLD, WEST);
+  b.level(1);
+  b.carve(147, 96, 167, 134, F.CONCRETE);
+  b.prop('gen', 151, 101, 2, 2); b.prop('gen', 162, 110, 2, 2); b.prop('gen', 150, 127, 2, 2);   // air-con units
+  b.prop('tank', 157, 117, 2, 2, { color: 0x8a8a99 });                                         // water tank
+  b.prop('pillar', 165, 99); b.prop('pillar', 148, 112); b.prop('pillar', 160, 131);            // chimneys
+  b.prop('container', 158, 125, 4, 2, { color: 0xe8e3f0 });                                      // pigeon loft
+  b.prop('pallet', 155, 104, 2, 2); b.prop('pallet', 163, 122, 2, 2);                            // skylights
+  b.pick('rifle', 148, 97); b.pick('ammo', 149, 97); b.pick('medkit', 166, 133); b.pick('ammo', 165, 133); b.pick('firebomb', 157, 124);
+  b.note(157, 127, 'Pigeon loft logbook', '3:04 a.m. The whole block came out in pyjamas, eyes shut, slippers on. Walked right under the loft. Not one of them looked up. Birds are fine.');
+  b.label('ROOFTOPS', 157, 108, 22, LAV);
+  b.lamp(150, 98); b.lamp(158, 128);
+  b.level(0);
   // Noodle bar: side pocket with supplies before the tram.
   b.carve(134, 72, 141, 78, F.TILES);
   b.prop('counter', 135, 74, 1, 4); b.pick('medkit', 137, 73); b.pick('ammo', 137, 77);
@@ -272,7 +346,7 @@ export function build() {
   b.paint(118, 40, 175, 41, F.SIDEWALK); b.paint(118, 52, 142, 55, F.CONCRETE);
   b.prop('bus', 122, 46, 12, 3, { color: CHERRY });                     // the cream-and-cherry tram
   const tramLever = b.obj('lever', 128, 52, 'Power up the tram (the bell is LOUD)');
-  b.prop('bench', 131, 54, 3, 1); b.prop('bench', 136, 54, 3, 1); b.prop('barrier', 140, 51, 1, 3);
+  b.prop('bench', 131, 54, 3, 1); b.prop('bench', 139, 55, 3, 1); b.prop('barrier', 140, 51, 1, 3);
   car(150, 43, E, 2, 1); car(160, 49, WEST, 2, 1); b.prop('van', 165, 42, 3, 1, { color: 0x63e6be }); b.prop('crate', 156, 52); b.prop('barrier', 147, 47, 1, 3);
   b.pick('medkit', 123, 54); b.pick('medkit', 124, 54); b.pick('ammo', 125, 55); b.pick('ammo', 126, 55); b.pick('ammo', 134, 55); b.pick('ammo', 133, 55);
   b.pick('launcher', 125, 54); // before the big tram holdout
@@ -281,6 +355,19 @@ export function build() {
   b.label('CHERRY STREET', 158, 47.5, 30, CREAM);
   for (const [x, z] of [[121, 52], [134, 51.6], [146, 40.6], [158, 55], [170, 40.6], [126, 40.6]]) b.lamp(x, z);
   b.arrow(144, 54, N); b.arrow(165, 48.5, WEST); b.arrow(140, 48.5, WEST);
+  // Footbridge over Cherry Street (storey 1): a perch over the tram-stop fight. Stairs come up from
+  // the platform and a ladder from the north kerb, so the horde climbs at both ends.
+  b.fill(136, 42, 138, 42);                                     // bridge pier at the north kerb
+  b.prop('barrier', 135, 52, 1, 3); b.prop('barrier', 138, 52, 1, 3);   // stair rails
+  b.stairs(136, 52, 137, 54, '-z');
+  b.ladder(137, 41, '+z');
+  b.label('FOOTBRIDGE', 136.5, 55.6, 12, GOLD, N); b.label('LADDER', 137.5, 40.4, 9, GOLD);
+  b.level(1);
+  b.carve(136, 42, 138, 51, F.CONCRETE);
+  b.pick('ammo', 136, 45); b.pick('ammo', 138, 48);
+  b.label('TRAM FOOTBRIDGE', 137.5, 47, 10, PINK, E);
+  b.lamp(137.5, 44); b.lamp(137.5, 50);
+  b.level(0);
   // Pie Lane: a loop north of Cherry Street (more ways in for the horde).
   b.carve(128, 24, 131, 39, F.ASPHALT); b.carve(128, 24, 153, 27, F.ASPHALT); b.carve(150, 24, 153, 39, F.ASPHALT);
   car(129, 30); b.prop('dumpster', 140, 24); b.pick('ammo', 141, 26); b.lamp(140, 27.4);
@@ -418,7 +505,7 @@ export function build() {
       ['Nori', 'Your middle name is Bartholomew.'],
     ],
   });
-  b.reach({ x0: 80, z0: 112, x1: 85, z1: 130 }, {
+  b.reach({ x0: 80, z0: 123, x1: 84, z1: 134, lv: 2 }, {
     objective: 'Climb to the garage roof', opens: [libraryEntry],
     radio: [
       ['Taro', 'Look there. The fog\'s pouring out of City Hall.'],
@@ -429,6 +516,7 @@ export function build() {
   b.gather({ x0: 125, z0: 112, x1: 137, z1: 119 }, {
     objective: 'Get everyone into the library', checkpoint: true, closes: [libraryEntry],
     radio: [
+      ['Dot', 'Stair tower at the end of that pier goes down to the square. Library\'s across it.'],
       ['Dot', 'Library\'s got a safe room. Shush in there, it\'s a library.'],
       ['Mochi', 'Ten-minute delivery. Go go go!'],
     ],
@@ -444,13 +532,15 @@ export function build() {
     objective: 'Find fuses for the old tram',
     radio: [
       ['Dot', 'The heritage tram on Cherry Street runs on fuses. Check the alley junction boxes.'],
+      ['Dot', 'Lather Laundry keeps spares up in the storeroom. And there\'s one on a fire escape.'],
       ['Pip', 'A fetch quest. In the apocalypse. Classic.'],
+      ['Taro', 'Ladders, at my age. Well. Slowly does it.'],
     ],
   });
   b.use(tramLever, {
     objective: 'Power up the heritage tram', horde: true, hold: 90, opens: [underpass],
     radio: [
-      ['Dot', 'Fuses in, pull the lever, and hold tight. That bell rings till she\'s clear.'],
+      ['Dot', 'Fuses in, pull the lever, then get up on that footbridge. Bell rings till she\'s clear.'],
       ['Taro', 'Ah. A dinner bell.'],
       ['Mochi', 'We ARE dinner. Everybody face out!'],
     ],

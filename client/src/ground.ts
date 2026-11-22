@@ -2,11 +2,11 @@
 // shadows, puddles, litter, floor signage), plus the geometry that sits on it:
 // curbs, lane dashes, sunken animated water and its banks.
 import * as pc from 'playcanvas';
-import { TILE } from '../../shared/constants';
+import { TILE, STOREY } from '../../shared/constants';
 import { F, isIndoor, hash2, type PropType } from '../../shared/level';
 import { type Geo } from './geo';
 import { Batch, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
-import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css } from './worldkit';
+import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css, storeyOfY } from './worldkit';
 import { t } from './i18n';
 
 const T = TILE;
@@ -24,7 +24,12 @@ const LOAD = 12, DROP = 30;
 // Slack on the camera-to-chunk distance: metres, and screen pixels (see `update`; half a pixel is the true bound).
 const SLACK_M = 1, SLACK_PX = 0.75;
 
-interface Chunk { mi: pc.MeshInstance; x0: number; z0: number; x1: number; z1: number; tex: pc.Texture | null; paint: () => HTMLCanvasElement }
+interface Chunk {
+  mi: pc.MeshInstance; x0: number; z0: number; x1: number; z1: number; tex: pc.Texture | null; paint: () => HTMLCanvasElement;
+  /** The floors of the storeys above the ground (one atlas for the chunk): streamed by horizontal distance. */ upper?: boolean;
+}
+/** Base colour of each floor type under a chapter's theme. */
+export const floorColors = (theme: { floors?: Partial<Record<number, number>> }) => (f: number): V3 => rgb(theme.floors?.[f] ?? FLOOR_BASE[f] ?? 0x9d8fa5);
 export interface Ground {
   /** Loads / frees chunk textures around the camera. Call every frame before rendering. */
   update(camX: number, camY: number, camZ: number): void;
@@ -60,11 +65,11 @@ const waterFS = /* glsl */ `
   }`;
 
 export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch): Ground {
-  const { def, W, H, theme, floorOf } = ctx;
-  const floorBase = (f: number): V3 => rgb(theme.floors?.[f] ?? FLOOR_BASE[f] ?? 0x9d8fa5);
+  const { def, W, H, theme } = ctx, { levels, WH } = ctx.S;
+  const floorBase = floorColors(theme);
   const rainy = (theme.floors?.[F.ASPHALT] ?? 0x5a5d84) < 0x404060; // dark wet asphalt: more puddles
   let hasWater = false;
-  for (let i = 0; i < def.floor.length && !hasWater; i++) hasWater = def.floor[i] === F.WATER;
+  for (let i = 0; i < WH && !hasWater; i++) hasWater = def.floor[i] === F.WATER;
   const skyTint = rgb(theme.sky[0]);
 
   const waterMat = ctx.mat(new pc.ShaderMaterial({ uniqueName: 'Water', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR }, vertexGLSL: waterVS, fragmentGLSL: waterFS }));
@@ -79,6 +84,17 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
     const g = cv.getContext('2d')!;
     g.fillStyle = '#1a1730'; g.fillRect(0, 0, cv.width, cv.height);
     g.translate(-cx0 * PX, -cz0 * PX);
+    paintTiles(g, 0, cx0, cz0, cx1, cz1);
+    return cv;
+  };
+  /**
+   * Paints the floor of storey `lv` over a tile rect into `g`, whose transform maps tile (x, z) to
+   * pixel (x * PX, z * PX). Also paints one tile of margin around the rect.
+   */
+  const paintTiles = (g: CanvasRenderingContext2D, lv: number, cx0: number, cz0: number, cx1: number, cz1: number): void => {
+    const floorOf = (x: number, z: number) => ctx.floorOf(x, z, lv), o = lv * WH;
+    // What casts a contact shadow: walls (upstairs, open air does not).
+    const wallish = (x: number, z: number) => (lv ? ctx.isWall(x, z, lv) : floorOf(x, z) === F.NONE);
     const s = PX / 40; // signage strokes were authored for 40 px tiles
     const hl = (x0: number, y: number, x1: number) => g.fillRect(x0, y, x1 - x0, 1);
     const vl = (x: number, y0: number, y1: number) => g.fillRect(x, y0, 1, y1 - y0);
@@ -161,19 +177,20 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       const px = x * PX, pz = z * PX, a = Math.round(PX * 0.11), b = Math.round(PX * 0.27);
       for (const [w, alpha] of [[b, 0.13], [a, 0.17]] as const) {
         g.fillStyle = `rgba(20,12,44,${alpha})`;
-        const l = floorOf(x - 1, z) === F.NONE, rr = floorOf(x + 1, z) === F.NONE, u = floorOf(x, z - 1) === F.NONE, d = floorOf(x, z + 1) === F.NONE;
+        const l = wallish(x - 1, z), rr = wallish(x + 1, z), u = wallish(x, z - 1), d = wallish(x, z + 1);
         if (l) g.fillRect(px, pz, w, PX);
         if (rr) g.fillRect(px + PX - w, pz, w, PX);
         if (u) g.fillRect(px + (l ? w : 0), pz, PX - (l ? w : 0) - (rr ? w : 0), w);
         if (d) g.fillRect(px + (l ? w : 0), pz + PX - w, PX - (l ? w : 0) - (rr ? w : 0), w);
         // Outer corners: a wall touching only diagonally still leaves a small shadow.
         for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-          if (floorOf(x + ox, z + oz) !== F.NONE || floorOf(x + ox, z) === F.NONE || floorOf(x, z + oz) === F.NONE) continue;
+          if (!wallish(x + ox, z + oz) || wallish(x + ox, z) || wallish(x, z + oz)) continue;
           g.fillRect(ox < 0 ? px : px + PX - w, oz < 0 ? pz : pz + PX - w, w, w);
         }
       }
     }
     for (const p of def.props) {
+      if ((p.lv ?? 0) !== lv) continue;
       if (p.x + p.w < cx0 - 1 || p.z + p.d < cz0 - 1 || p.x > cx1 + 1 || p.z > cz1 + 1) continue;
       const round = ROUND[p.type];
       for (const [grow, alpha] of [[0.16, 0.12], [0.05, 0.18]] as const) {
@@ -188,7 +205,7 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
     // Decals: puddles, scattered paper, drain stains. Deterministic per tile.
     for (let z = cz0 - 1; z <= cz1; z++) for (let x = cx0 - 1; x <= cx1; x++) {
       const f = floorOf(x, z);
-      if (f === F.NONE || f === F.WATER || def.propCell[z * W + x] || def.doorCell[z * W + x] >= 0) continue;
+      if (f === F.NONE || f === F.WATER || def.propCell[o + z * W + x] || def.doorCell[o + z * W + x] >= 0 || def.ramp[o + z * W + x]) continue;
       const r = hash2(x * 13 + 5, z * 17 + 3), q = hash2(x * 3 + 11, z * 5 + 29), px = x * PX, pz = z * PX;
       const outdoor = !isIndoor(f);
       if (outdoor && (f === F.ASPHALT || f === F.CONCRETE || f === F.DIRT || f === F.SIDEWALK) && r < (rainy ? 0.07 : 0.03) * (f === F.SIDEWALK ? 0.25 : 1)) {
@@ -215,24 +232,24 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       }
     }
     // Hazard stripes under every door.
-    for (const d of def.doors) for (let z = d.z0; z <= d.z1; z++) for (let x = d.x0; x <= d.x1; x++) for (let i = 0; i < 4; i++) {
+    for (const d of def.doors) if ((d.lv ?? 0) === lv) for (let z = d.z0; z <= d.z1; z++) for (let x = d.x0; x <= d.x1; x++) for (let i = 0; i < 4; i++) {
       g.fillStyle = i % 2 ? '#1a1226' : '#ffd43b';
       g.fillRect(x * PX + (i * PX) / 4, z * PX, PX / 4, PX);
     }
     const glyph = (x: number, z: number, rot: number, draw: () => void) => { g.save(); g.translate(x * PX, z * PX); g.rotate(rot); g.scale(s, s); draw(); g.restore(); };
     // Arrow rot is a yaw (tip at (sin rot, cos rot), so PI/2 points +X); canvas rotation turns the other way.
-    for (const a of def.arrows) glyph(a.x, a.z, -a.rot, () => {
+    for (const a of def.arrows) if (storeyOfY(a.y, levels) === lv) glyph(a.x, a.z, -a.rot, () => {
       g.fillStyle = 'rgba(255,231,163,0.9)'; g.strokeStyle = '#1a1226'; g.lineWidth = 3; g.lineJoin = 'round';
       g.beginPath(); g.moveTo(0, 32); g.lineTo(-22, 2); g.lineTo(-9, 2); g.lineTo(-9, -30); g.lineTo(9, -30); g.lineTo(9, 2); g.lineTo(22, 2); g.closePath();
       g.stroke(); g.fill();
     });
-    for (const l of def.labels) glyph(l.x, l.z, l.rot, () => {
+    for (const l of def.labels) if (storeyOfY(l.y, levels) === lv) glyph(l.x, l.z, l.rot, () => {
       const text = t(l.text);
       g.font = `900 ${l.size}px ui-rounded, "Arial Rounded MT Bold", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.lineWidth = 5; g.strokeStyle = '#1a1226'; g.lineJoin = 'round'; g.strokeText(text, 0, 0); g.fillStyle = l.color; g.fillText(text, 0, 0);
     });
-    return cv;
   };
+  const floorOf = (x: number, z: number) => ctx.floorOf(x, z, 0);
 
   const chunks: Chunk[] = [];
   ctx.chunks((cx0, cz0, cx1, cz1) => {
@@ -276,20 +293,68 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
     if (water.idx.length) ctx.add(meshEntity(ctx.mesh(water), waterMat));
   });
 
+  // -------------------------------------------------------------- upper floors
+  // Every floor above the ground in a chunk shares one mesh and one texture: each storey's floor
+  // cells get a box in an atlas (their bounding rect plus half a tile of painted gutter all round).
+  if (levels > 1) ctx.chunks((cx0, cz0, cx1, cz1) => {
+    const boxes: { lv: number; x0: number; z0: number; x1: number; z1: number; oy: number }[] = [];
+    let aw = 0, ah = 0;
+    for (let lv = 1; lv < levels; lv++) {
+      let bx0 = 1e9, bz0 = 1e9, bx1 = -1, bz1 = -1;
+      for (let z = cz0; z < cz1; z++) for (let x = cx0; x < cx1; x++) if (ctx.floorOf(x, z, lv) !== F.NONE) { bx0 = Math.min(bx0, x); bz0 = Math.min(bz0, z); bx1 = Math.max(bx1, x + 1); bz1 = Math.max(bz1, z + 1); }
+      if (bx1 < 0) continue;
+      boxes.push({ lv, x0: bx0, z0: bz0, x1: bx1, z1: bz1, oy: ah });
+      aw = Math.max(aw, bx1 - bx0 + 1); ah += bz1 - bz0 + 1;
+    }
+    if (!boxes.length) return;
+    const geo: Geo = newGeo();
+    for (const b of boxes) {
+      const y = b.lv * STOREY;
+      for (let z = b.z0; z < b.z1; z++) for (let x = b.x0; x < b.x1; x++) {
+        if (ctx.floorOf(x, z, b.lv) === F.NONE) continue;
+        const ax = x * T, az = z * T, bx = ax + T, bz = az + T, i = geo.pos.length / 3;
+        const u0 = (x - b.x0 + 0.5) / aw, u1 = (x + 1 - b.x0 + 0.5) / aw, v0 = (z - b.z0 + 0.5 + b.oy) / ah, v1 = (z + 1 - b.z0 + 0.5 + b.oy) / ah;
+        geo.pos.push(ax, y, az, ax, y, bz, bx, y, bz, bx, y, az); geo.nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+        geo.uv.push(u0, v0, u0, v1, u1, v1, u1, v0); geo.idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
+      }
+    }
+    const paint = (): HTMLCanvasElement => {
+      const cv = document.createElement('canvas');
+      cv.width = aw * PX; cv.height = ah * PX;
+      const g = cv.getContext('2d')!;
+      g.fillStyle = '#1a1730'; g.fillRect(0, 0, cv.width, cv.height);
+      for (const b of boxes) {
+        g.save();
+        g.beginPath(); g.rect(0, b.oy * PX, (b.x1 - b.x0 + 1) * PX, (b.z1 - b.z0 + 1) * PX); g.clip();
+        g.translate((0.5 - b.x0) * PX, (0.5 + b.oy - b.z0) * PX);
+        paintTiles(g, b.lv, b.x0, b.z0, b.x1, b.z1);
+        g.restore();
+      }
+      return cv;
+    };
+    const mi = ctx.add(meshEntity(ctx.mesh(geo), toonTexMat)).render!.meshInstances[0];
+    mi.setParameter('uTex', whiteTex);
+    chunks.push({ mi, x0: cx0 * T, z0: cz0 * T, x1: cx1 * T, z1: cz1 * T, tex: null, paint, upper: true });
+  });
+
   // ------------------------------------------------- curbs, banks, lane dashes
   // Runs of edge cells are merged into long boxes; each goes to the prop batch of its chunk.
   const curbC = (f: number) => mul(mix3(floorBase(f), [1, 1, 1], 0.28), 1.02);
+  /** `y`: floor height of the storey the strip sits on. */
+  let y = 0;
   const strip = (c: V3, xa: number, ya: number, za: number, xb: number, yb: number, zb: number, hull: boolean) => {
-    const solid = newGeo(); aabb(solid, c, xa, ya, za, xb, yb, zb);
+    const solid = newGeo(); aabb(solid, c, xa, y + ya, za, xb, y + yb, zb);
     let h: Geo | undefined;
-    if (hull) { h = newGeo(); const t = 0.02; aabb(h, [1, 1, 1], Math.min(xa, xb) - t, ya === 0 ? 0.004 : ya, Math.min(za, zb) - t, Math.max(xa, xb) + t, yb + t, Math.max(za, zb) + t, true); }
+    if (hull) { h = newGeo(); const t = 0.02; aabb(h, [1, 1, 1], Math.min(xa, xb) - t, y + (ya === 0 ? 0.004 : ya), Math.min(za, zb) - t, Math.max(xa, xb) + t, y + yb + t, Math.max(za, zb) + t, true); }
     batchFor((xa + xb) / 2, (za + zb) / 2).raw(solid, h);
   };
   const CW = 0.2, CH = 0.11;
   /** kind of edge between cell `a` (this side) and `b` (other side): 1 = curb on a, 2 = bank on a, 0 = none */
   const edgeKind = (a: number, b: number) => (a === F.SIDEWALK && b === F.ASPHALT ? 1 : a !== F.WATER && a !== F.NONE && b === F.WATER ? 2 : 0);
-  for (const horiz of [true, false]) {
+  for (let lv = 0; lv < levels; lv++) for (const horiz of [true, false]) {
     const N = horiz ? H : W, M = horiz ? W : H;
+    const floorOf = (x: number, z: number) => ctx.floorOf(x, z, lv);
+    y = lv * STOREY;
     for (let j = 0; j < N; j++) for (const side of [-1, 1]) {
       let start = -1, kind = 0;
       for (let i = 0; i <= M; i++) {
@@ -343,7 +408,7 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       for (const c of chunks) {
         const rho = Math.hypot(Math.max(c.x0 - camX, camX - c.x1, 0), Math.max(c.z0 - camZ, camZ - c.z1, 0)) - SLACK_M;
         const a = Math.atan2(h, Math.max(rho, 0)) + px;
-        const d = rho <= 0 || a >= 1.5 ? 0 : Math.hypot(h / Math.tan(a), h);
+        const d = rho <= 0 || a >= 1.5 ? 0 : c.upper ? rho : Math.hypot(h / Math.tan(a), h);
         if (c.tex) {
           if (d > far + DROP) { freeTexture(c.tex); c.tex = null; c.mi.setParameter('uTex', whiteTex); }
         } else if (d < far || (d < far + LOAD && spare-- > 0)) {

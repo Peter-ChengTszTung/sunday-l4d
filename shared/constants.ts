@@ -5,6 +5,15 @@ export const TICK_HZ = 30;
 export const SNAP_EVERY = 2; // send a snapshot every N ticks (15 Hz)
 export const MAX_PLAYERS = 4;
 export const CEIL_H = 4.2;
+/**
+ * Multi-storey maps (shared/level.ts): storey k's floor is at k * STOREY metres. Equal to CEIL_H, so an
+ * indoor ceiling is the underside of the floor above. STEP_UP: the largest height change a walker
+ * takes in stride (stairs and ladders are ramps, so every step along them is small).
+ * LADDER_SPEED: horizontal speed multiplier while on a ladder cell (it climbs a whole storey in one tile).
+ */
+export const STOREY = 4.2;
+export const STEP_UP = 0.6;
+export const LADDER_SPEED = 0.32;
 
 export const PLAYER = {
   radius: 0.35,

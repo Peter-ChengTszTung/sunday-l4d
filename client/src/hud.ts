@@ -117,13 +117,15 @@ export class Hud {
   flashObjective(): void { const o = this.el.objective; o.classList.remove('flash'); void o.offsetWidth; o.classList.add('flash'); }
 
   /** Screen position (CSS px) of the quest marker, or null to hide it. `edge` = clamped because it is off-screen. */
-  waypoint(x: number | null, y = 0, dist = 0, edge = false): void {
+  /** `vert`: the target is a storey above (1) or below (-1) you (multi-storey maps), shown as an arrow by the distance. */
+  waypoint(x: number | null, y = 0, dist = 0, edge = false, vert = 0): void {
     const w = this.el.waypoint;
     this.set('wpOn', String(x !== null), () => { w.hidden = x === null; });
     if (x === null) return;
     w.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
     this.set('wpEdge', String(edge), () => { w.classList.toggle('edge', edge); });
-    this.set('wpDist', String(Math.round(dist)), (v) => { this.el.wpdist.textContent = `${v} m`; });
+    const arrow = vert > 0 ? ' ▲' : vert < 0 ? ' ▼' : '';
+    this.set('wpDist', `${Math.round(dist)}${arrow}`, () => { this.el.wpdist.textContent = `${Math.round(dist)} m${arrow}`; });
   }
 
   /** A radio line went up (speaker, text, seconds it will show). Wired to the radio sound by main.ts. */

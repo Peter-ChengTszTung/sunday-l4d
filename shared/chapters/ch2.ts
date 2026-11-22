@@ -1,33 +1,41 @@
 // Chapter 2: "Visiting Hours" — St. Marigold Hospital & Bayside Galleria, 4:40 a.m.
 // Brief: docs/campaign.md, "Chapter 2: Visiting Hours".
 //
-// There is no verticality, so every "floor" is its own wing on the flat grid,
-// joined by an elevator shaft and stair corridors (signposted with labels).
+// Four real storeys (storey k's floor is k * STOREY = 4.2k m):
 //
-//   x:  0         40        80   100  125   153    179
-//  z 0  +--------------------+-------+     +-------+
-//       | FLOOR 4: Sleep     |stair| ROOF / HELIPAD |~~~~~| GALLERIA UPPER  |
-//       | Clinic, pods, OBS  |well |  (crescendo 2) |=====| CONCOURSE,      |   ===== skybridge
-//    40 +--stairs------------+-----+----------------+~~~~~| ballroom, Dream |   ~~~~~ bay inlet
-//       | FLOOR 3: wards, day room, soup, nurses' post |~~~~~| Shop            |
-//       |  corridor A west  <------------- elevator    |~~~~~+--BUN BUN TOYS-+
-//    88 +-----------------------------------shaft-----+~~~~~| stockroom (CP)  |
-//       | GROUND: staff rooms, staff corridor, ELEV LOBBY (cresc. 1)  |  FOOD COURT      |
-//       | ER    | waiting | main lobby   | SECURITY/ARCADE| atrium (Brute)   |
-//   140 | TRIAGE (start)  | gift, pharmacy|  dock corridor +------------------+
-//       | ambulance bay   |               | LOADING DOCK (finale), FREIGHT LIFT
-//   179 +-----------------+               | truck yard
+//   storey 3  .......... HOSPITAL ROOF / HELIPAD (x 4-61) with roof-access huts (stair cores up from 3F)
+//   storey 2  3F DREAMWELL SLEEP CLINIC (x 4-60) | SKYBRIDGE TERRACE (x 62-98) = skybridge ===> GALLERIA UPPER CONCOURSE
+//   storey 1  2F WARDS + SOUP (x 4-97) / ER roof + lobby roof (lower roofs)      BUN BUN TOYS + stockroom | MEZZANINE ring
+//   storey 0  GROUND: triage, ER, lobby, staff rooms, elevator lobby | bay inlet | arcade, security, FOOD COURT, loading dock
 //
-// Route: triage (ambulance bay) → ER → waiting room → main lobby → staff areas
-// (keycard sweep: nurses' station, on-call, radiology, pharmacy) → staff elevator
-// lobby (crescendo 1) → elevator to Floor 3 (soup) → west along the ward → stairs up →
-// Floor 4 Sleep Clinic → observation room (checkpoint) → stairwell → roof helipad →
-// skybridge panel (crescendo 2) → glass skybridge over the bay inlet → Galleria upper
-// concourse (ballroom) → Bun Bun Toys stockroom (checkpoint) → food court atrium
-// (Snoozle Brute) → arcade → Security breakers → back through the arcade → loading
-// dock (finale) → freight lift.
+//   x:  0     20     40     62        99  100   121 122            163
+//  z 3  +-----------------------+---------+ ~~~~~~~~ +----------------+
+//       | tower: staff rooms    | east    | ~ bay  ~ | north block:   |   storey 0 arcade + security
+//       | (G) / wards (2F) /    | wing:   | ~inlet ~ |   G  arcade    |   storey 1 toy store, stockroom
+//       | Sleep Clinic (3F) /   | elev.   |=skybridge| 1  toys        |   storey 2 concourse, ballroom
+//       | helipad roof (R)      | lobby   | (storey2)| 2  concourse   |
+//    37 +-----------------------+---------+ ~~~~~~~~ +----------------+
+//       | south wing: ER, waiting room,   | ~      ~ | FOOD COURT     |   atrium: mezzanine ring on storey 1,
+//       | lobby, gift, pharmacy (G only;  | ~      ~ | (Brute)        |   open skylight void over the middle
+//    65 | roofs on storey 1)              |          +--kitchens------+
+//       | AMBULANCE BAY (triage start)    |   cold storage | LOADING DOCK (finale), catwalk (storey 1), FREIGHT LIFT
+//   107 +---------------------------------+          | truck yard     |
+//
+// Route (storey in brackets): triage [0] → ER → waiting room → main lobby → staff areas (keycard
+// sweep) → staff elevator lobby (crescendo 1; the car arrives and faults, which unlocks the fire
+// stairs) → fire stairs up [0→1] → 2F east hall, corridor A west past the soup → west stairs up [1→2]
+// → 3F Sleep Clinic → observation room (checkpoint) → stairwell up [2→3] → helipad (no helicopter)
+// → flight down to the skybridge terrace [3→2] (crescendo 2: the horde boils up the roof-access
+// huts and the ladders from the lobby roof) → glass skybridge over the bay inlet [2] → Galleria
+// upper concourse, ballroom → escalator down into Bun Bun Toys [2→1] → stockroom (checkpoint) →
+// mezzanine over the food court → escalator down [1→0] (Snoozle Brute) → arcade → Security
+// breakers → loading dock (finale; catwalk perch on storey 1) → freight lift.
+//
+// Optional ladder routes: ambulance bay → ER roof (two ladders; loot, Larry's thermos note),
+// dock catwalk (ladder + stairs; sniper perch over the finale).
 // Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
 import { LevelBuilder, F, WALL, type Theme } from '../level';
+import { STOREY } from '../constants';
 
 export const META = { id: 'ch2', title: 'Visiting Hours', subtitle: 'St. Marigold Hospital & Bayside Galleria' };
 
@@ -35,6 +43,9 @@ const S = 0, E = Math.PI / 2, WEST = -Math.PI / 2, N = Math.PI;
 const MINT = '#7cf2c8', CREAM = '#fff1c9', RED = '#ff5a5a', GOLD = '#ffd43b', LAV = '#c9a8ff', PINK = '#ff8fc8';
 const SOUP = '#f2a541', LEMON = '#fff27a', MAGENTA = '#ff3df0', SKY = '#8fd8ff';
 const GURNEY = 0xe8f0ee, PASTEL = [0xffb3d1, 0xfff1a8, 0xb8f0d8, 0xc9b8ff, 0xffd0a8];
+const W = 166, H = 108;
+/** Wall tops (absolute metres): the hospital tower and the mall's north block reach the roof, the east wing the terrace. */
+const ROOF = 3 * STOREY, TERRACE = 2 * STOREY;
 
 /** 4:40 a.m.: a teal pre-dawn sky, mint-white hospital, dusty pink and lemon mall. */
 const THEME: Theme = {
@@ -47,555 +58,685 @@ const THEME: Theme = {
   },
 };
 
-const INTRO = '4:40 a.m. The shuttle got you to St. Marigold Hospital, mostly in one piece. Dot says a helicopter is waiting on the roof. Nori used to work nights here and swears the third floor always smells like soup. The beds are empty. Every one of them is neatly made.';
+const INTRO = '4:40 a.m. The shuttle got you to St. Marigold Hospital, mostly in one piece. Dot says a helicopter is waiting on the roof. Nori used to work nights here and swears the second floor always smells like soup. The beds are empty. Every one of them is neatly made.';
 
 export function build() {
-  const b = new LevelBuilder(180, 180);
+  const b = new LevelBuilder(W, H, 4);
+  const WH = W * H;
   let pi = 0;
   const gurney = (x: number, z: number, w = 2, d = 1) => b.prop('bed', x, z, w, d, { color: GURNEY });
   const pastel = () => PASTEL[pi++ % PASTEL.length];
   /** Dropped slippers and pillows pointing the way the sleepers walked. */
   const zz = (x: number, z: number, rot = N) => b.label('zZ', x, z, 18, LAV, rot);
+  /**
+   * Walls on the storey being authored, up to absolute height `top`. Over floor below, a new wall
+   * stands on the slab; over a wall below, that wall's column simply grows (the cells above become
+   * its continuation), so wall stacks under roofs and upper floors stay one piece.
+   */
+  const wallUp = (x0: number, z0: number, x1: number, z1: number, top: number) => {
+    const k = b.storey;
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const c = z * W + x;
+      // Already carved on this storey: wall it in place (nothing is built on these walls).
+      if (b.floor[k * WH + c] !== F.NONE) { b.fill(x, z, x, z); b.walls(x, z, x, z, WALL.BUILDING, top - k * STOREY); continue; }
+      let j = k - 1;
+      // Skip untouched upper cells (no floor, no wall of their own): they continue the column below.
+      while (j > 0 && b.floor[j * WH + c] === F.NONE && b.wallH[j * WH + c] === 0 && !b.air[j * WH + c]) j--;
+      const i = j * WH + c;
+      if (b.floor[i] === F.NONE && !b.air[i]) { b.level(j); b.walls(x, z, x, z, WALL.BUILDING, top - j * STOREY); b.level(k); }
+      else { b.fill(x, z, x, z); b.walls(x, z, x, z, WALL.BUILDING, top - k * STOREY); }
+    }
+  };
+
+  // ==================================================================
+  // STOREY 0: hospital ground floor, bay inlet, Galleria ground floor
+  // ==================================================================
+  // The south wing (ER, waiting room, lobby, shops) is one storey: its roofs are storey 1.
+  b.walls(3, 37, 99, 65, WALL.BUILDING, STOREY);
 
   // ------------------------------------------------------------------
   // 1. Triage station (start safe room), Shuttle No. 4, ambulance bay
   // ------------------------------------------------------------------
-  b.carve(8, 140, 20, 147, F.SAFE);
+  b.carve(8, 52, 20, 59, F.SAFE);
   // Shuttle No. 4 parked nose-first through the bay doors (it seals the gap).
-  b.carve(13, 148, 14, 150, F.SAFE);
-  b.prop('counter', 9, 141, 3, 1, { color: 0xd8efe8 });                // nurse's desk
-  const triageRadio = b.obj('radio', 12, 141, 'Radio Dot from the triage desk');
-  gurney(17, 141); gurney(17, 146);
-  b.pick('smg', 8, 147); b.pick('smg', 9, 147); b.pick('shotgun', 10, 147); b.pick('shotgun', 11, 147); b.pick('rifle', 12, 147);
-  b.pick('ammo', 20, 143); b.pick('ammo', 20, 144); b.pick('ammo', 19, 143);
-  for (const z of [142, 143, 144, 145]) b.pick('medkit', 8, z);
-  b.pick('armor', 8, 146); b.pick('bat', 9, 146); b.pick('machete', 10, 146); b.pick('firebomb', 20, 145);
-  b.label('SAFE ROOM', 17.5, 143.6, 22, RED); b.label('TRIAGE', 10.5, 145.5, 20, MINT);
-  b.lamp(10.5, 143.5); b.lamp(17.5, 145);
-  b.carve(12, 137, 15, 139, F.TILES);
-  const triageDoor = b.door(12, 139, 15, 139, 'shutter', 'TRIAGE');
+  b.carve(13, 60, 14, 62, F.SAFE);
+  b.prop('counter', 9, 53, 3, 1, { color: 0xd8efe8 });                  // nurse's desk
+  const triageRadio = b.obj('radio', 12, 53, 'Radio Dot from the triage desk');
+  gurney(17, 53); gurney(17, 58);
+  b.pick('smg', 8, 59); b.pick('smg', 9, 59); b.pick('shotgun', 10, 59); b.pick('shotgun', 11, 59); b.pick('rifle', 12, 59);
+  b.pick('ammo', 20, 55); b.pick('ammo', 20, 56); b.pick('ammo', 19, 55);
+  for (const z of [54, 55, 56, 57]) b.pick('medkit', 8, z);
+  b.pick('armor', 8, 58); b.pick('bat', 9, 58); b.pick('machete', 10, 58); b.pick('firebomb', 20, 57);
+  b.label('SAFE ROOM', 17.5, 55.6, 22, RED); b.label('TRIAGE', 10.5, 57.5, 20, MINT);
+  b.lamp(10.5, 55.5); b.lamp(17.5, 57);
+  b.carve(12, 49, 15, 51, F.TILES);
+  const triageDoor = b.door(12, 51, 15, 51, 'shutter', 'TRIAGE');
   // Ambulance bay (open air): ambulances, the shuttle's tail, a pocket of supplies.
-  b.carve(4, 151, 44, 176, F.CONCRETE);
-  b.prop('bus', 13, 144, 2, 14, { color: 0x5ff2e0 });                   // placed after the bay so the carve keeps it
-  b.prop('van', 22, 156, 1, 3, { color: 0xf4f4f4, rot: N }); b.prop('van', 28, 160, 1, 3, { color: 0xf4f4f4, rot: N });
-  b.prop('van', 36, 166, 3, 1, { color: 0xff6b6b }); b.prop('barrier', 6, 166, 3, 1); b.prop('barrier', 30, 172, 3, 1);
-  for (const [x, z] of [[42, 152], [5, 175], [18, 172], [40, 175]]) b.prop('crate', x, z);
-  b.prop('dumpster', 43, 160, 1, 2); b.prop('barrel', 10, 158);
-  b.pick('rifle', 23, 160); b.pick('ammo', 24, 160); b.pick('medkit', 41, 170); b.pick('ammo', 6, 152);
-  b.label('SHUTTLE No. 4', 13.5, 162, 18, GOLD, E); b.label('AMBULANCE BAY', 26, 168, 28, CREAM);
-  b.label('AMBULANCES ONLY', 35.5, 153.5, 14, RED);
-  for (const [x, z] of [[8, 154], [30, 154], [20, 166], [40, 166], [10, 174]]) b.lamp(x, z);
+  b.carve(4, 63, 44, 88, F.CONCRETE);
+  b.prop('bus', 13, 56, 2, 14, { color: 0x5ff2e0 });                     // placed after the bay so the carve keeps it
+  b.prop('van', 22, 68, 1, 3, { color: 0xf4f4f4, rot: N }); b.prop('van', 28, 72, 1, 3, { color: 0xf4f4f4, rot: N });
+  b.prop('van', 36, 78, 3, 1, { color: 0xff6b6b }); b.prop('barrier', 6, 78, 3, 1); b.prop('barrier', 30, 84, 3, 1);
+  for (const [x, z] of [[42, 64], [5, 87], [18, 84], [40, 87]]) b.prop('crate', x, z);
+  b.prop('dumpster', 43, 72, 1, 2); b.prop('barrel', 10, 70);
+  b.pick('rifle', 23, 72); b.pick('ammo', 24, 72); b.pick('medkit', 41, 82); b.pick('ammo', 8, 64);
+  b.label('SHUTTLE No. 4', 13.5, 74, 18, GOLD, E); b.label('AMBULANCE BAY', 26, 80, 28, CREAM);
+  b.label('AMBULANCES ONLY', 35.5, 65.5, 14, RED);
+  for (const [x, z] of [[8, 66], [30, 66], [20, 78], [40, 78], [10, 86]]) b.lamp(x, z);
+  // Fire-escape ladders up the south wall onto the ER roof (optional route, storey 1).
+  b.ladder(6, 63, '-z'); b.ladder(28, 63, '-z');
+  b.label('ROOF LADDER', 6.5, 65, 9, CREAM); b.label('ROOF LADDER', 28.5, 65, 9, CREAM);
   // Ambulance entrance: sliding doors from the bay into the ER.
-  b.carve(34, 137, 37, 150, F.TILES);
-  gurney(34, 141, 1, 2); b.prop('bench', 37, 146, 1, 2);
-  b.label('AMBULANCE ENTRANCE', 35.5, 144, 12, RED, E);
-  b.lamp(35.5, 148);
+  b.carve(34, 49, 37, 62, F.TILES);
+  gurney(34, 53, 1, 2); b.prop('bench', 37, 58, 1, 2);
+  b.label('AMBULANCE ENTRANCE', 35.5, 56, 12, RED, E);
+  b.lamp(35.5, 60);
 
   // ------------------------------------------------------------------
   // 2. Emergency Room (curtained bays) and Radiology (keycard)
   // ------------------------------------------------------------------
-  b.carve(4, 118, 36, 136, F.TILES);
-  for (const x of [6, 10, 14, 18, 22]) { b.prop('bed', x, 119, 1, 2, { color: GURNEY }); b.prop('counter', x + 2, 118, 1, 3, { color: 0x9fe3cf }); }
-  b.prop('counter', 14, 127, 7, 1, { color: 0xd8efe8 }); b.prop('terminal', 17, 128);
-  gurney(26, 123); gurney(8, 131); gurney(28, 131); gurney(20, 133, 1, 2);
-  b.prop('bench', 5, 126, 1, 3); b.prop('shelf', 33, 118, 3, 1);
-  b.pick('ammo', 5, 135); b.pick('medkit', 35, 120);
-  b.label('EMERGENCY', 17.5, 123.5, 30, RED); b.label('ER', 31, 128, 40, MINT);
-  b.lamp(10, 125); b.lamp(24, 128); b.lamp(14, 134); b.lamp(32, 133);
-  b.arrow(13.5, 135, N); b.arrow(22, 130, E); b.arrow(34, 125.5, E);
+  b.carve(4, 30, 36, 48, F.TILES);
+  for (const x of [6, 10, 14, 18, 22]) { b.prop('bed', x, 31, 1, 2, { color: GURNEY }); b.prop('counter', x + 2, 30, 1, 3, { color: 0x9fe3cf }); }
+  b.prop('counter', 14, 39, 7, 1, { color: 0xd8efe8 }); b.prop('terminal', 17, 40);
+  gurney(26, 35); gurney(8, 43); gurney(28, 43); gurney(20, 45, 1, 2);
+  b.prop('bench', 5, 38, 1, 3); b.prop('shelf', 33, 30, 3, 1);
+  b.pick('ammo', 5, 47); b.pick('medkit', 35, 32);
+  b.label('EMERGENCY', 17.5, 35.5, 30, RED); b.label('ER', 31, 40, 40, MINT);
+  b.lamp(10, 37); b.lamp(24, 40); b.lamp(14, 46); b.lamp(32, 45);
+  b.arrow(13.5, 47, N); b.arrow(22, 42, E); b.arrow(34, 37.5, E);
   // Radiology (keycard on the scanner console), off the ER's south wall.
-  b.carve(25, 137, 27, 139, F.TILES);
-  b.carve(22, 140, 31, 149, F.TILES);
-  b.prop('bed', 24, 143, 3, 1, { color: 0xffffff }); b.prop('pillar', 23, 142, 1, 3, { color: 0xb8d8e8 });   // the scanner
-  b.prop('counter', 28, 147, 3, 1, { color: 0x9aa6b8 }); b.prop('terminal', 31, 146);
-  b.item('keycard', 'keycard', 30, 148, 'staff keycard');
-  b.label('RADIOLOGY', 26.5, 141, 16, SKY); b.label('X-RAY: LEAD LINED', 26.5, 145.6, 11, GOLD);
-  b.lamp(27, 146);
+  b.carve(25, 49, 27, 51, F.TILES);
+  b.carve(22, 52, 31, 61, F.TILES);
+  b.prop('bed', 24, 55, 3, 1, { color: 0xffffff }); b.prop('pillar', 23, 54, 1, 3, { color: 0xb8d8e8 });   // the scanner
+  b.prop('counter', 28, 59, 3, 1, { color: 0x9aa6b8 }); b.prop('terminal', 31, 58);
+  b.item('keycard', 'keycard', 30, 60, 'staff keycard');
+  b.label('RADIOLOGY', 26.5, 53, 16, SKY); b.label('X-RAY: LEAD LINED', 26.5, 57.6, 11, GOLD);
+  b.lamp(27, 58);
 
   // ------------------------------------------------------------------
   // 3. ER waiting room ("NOW SERVING 303")
   // ------------------------------------------------------------------
-  b.carve(37, 121, 37, 129, F.TILES);
-  b.carve(38, 116, 58, 138, F.TILES);
-  for (const z of [120, 124, 128, 132]) { b.prop('bench', 41, z, 6, 1, { color: 0x7fc8b8 }); b.prop('bench', 50, z, 6, 1, { color: 0x7fc8b8 }); }
-  b.prop('terminal', 48, 116, 2, 1); b.prop('counter', 39, 136, 5, 1, { color: 0xd8efe8 });
-  b.prop('shelf', 57, 136, 1, 3, { color: 0xffd0a8 });                    // vending machines
-  b.pick('ammo', 58, 135);
-  b.label('NOW SERVING 303', 49, 117.8, 20, RED);
-  b.label('WAITING ROOM', 48, 136.5, 22, MINT);
-  b.lamp(44, 122); b.lamp(53, 122); b.lamp(44, 131); b.lamp(53, 131);
-  b.arrow(48, 126, E); b.arrow(57, 127, E);
-  zz(40, 126, E); zz(47.5, 134.5, E);
+  b.carve(37, 33, 37, 41, F.TILES);
+  b.carve(38, 28, 58, 50, F.TILES);
+  for (const z of [32, 36, 40, 44]) { b.prop('bench', 41, z, 6, 1, { color: 0x7fc8b8 }); b.prop('bench', 50, z, 6, 1, { color: 0x7fc8b8 }); }
+  b.prop('terminal', 48, 28, 2, 1); b.prop('counter', 39, 48, 5, 1, { color: 0xd8efe8 });
+  b.prop('shelf', 57, 48, 1, 3, { color: 0xffd0a8 });                      // vending machines
+  b.pick('ammo', 58, 47);
+  b.label('NOW SERVING 303', 49, 29.8, 20, RED);
+  b.label('WAITING ROOM', 48, 48.5, 22, MINT);
+  b.lamp(44, 34); b.lamp(53, 34); b.lamp(44, 43); b.lamp(53, 43);
+  b.arrow(48, 38, E); b.arrow(57, 39, E);
+  zz(40, 38, E); zz(47.5, 46.5, E);
 
   // ------------------------------------------------------------------
   // 4. Main lobby, gift shop, pharmacy (keycard: Nori's old desk)
   // ------------------------------------------------------------------
-  b.carve(59, 120, 59, 132, F.TILES);
-  b.carve(60, 112, 98, 140, F.TILES);
-  for (const [x, z] of [[66, 116], [92, 116], [66, 135], [92, 135]]) b.prop('pillar', x, z, 2, 2, { color: 0xe8f4f0 });
-  b.prop('counter', 76, 124, 8, 1, { color: 0x9fe3cf }); b.prop('counter', 76, 128, 8, 1, { color: 0x9fe3cf });
-  b.prop('counter', 76, 125, 1, 3, { color: 0x9fe3cf });                    // information desk (open east side)
-  b.prop('bench', 64, 125, 1, 4); b.prop('bench', 89, 124, 1, 4); b.prop('bush', 70, 138, 2, 1); b.prop('bush', 86, 138, 2, 1);
-  b.prop('bed', 70, 120, 2, 1, { color: 0xd0d0d8 }); b.prop('bench', 84, 132, 3, 1);   // wheelchairs and a gurney
-  b.label('MAIN LOBBY', 80, 120, 30, MINT); b.label('INFORMATION', 80, 126.5, 14, CREAM);
-  b.label('MAIN ENTRANCE: BARRICADED', 79, 139.3, 14, RED);
-  for (const [x, z] of [[64, 114], [72, 130], [80, 116], [88, 130], [96, 114], [96, 138], [64, 138]]) b.lamp(x, z);
-  b.arrow(62, 126, E);
+  b.carve(59, 32, 59, 44, F.TILES);
+  b.carve(60, 24, 98, 52, F.TILES);
+  for (const [x, z] of [[66, 28], [92, 28], [66, 47], [92, 47]]) b.prop('pillar', x, z, 2, 2, { color: 0xe8f4f0 });
+  b.prop('counter', 76, 36, 8, 1, { color: 0x9fe3cf }); b.prop('counter', 76, 40, 8, 1, { color: 0x9fe3cf });
+  b.prop('counter', 76, 37, 1, 3, { color: 0x9fe3cf });                    // information desk (open east side)
+  b.prop('bench', 64, 37, 1, 4); b.prop('bench', 89, 36, 1, 4); b.prop('bush', 70, 50, 2, 1); b.prop('bush', 86, 50, 2, 1);
+  b.prop('bed', 70, 32, 2, 1, { color: 0xd0d0d8 }); b.prop('bench', 84, 44, 3, 1);   // wheelchairs and a gurney
+  b.label('MAIN LOBBY', 80, 32, 30, MINT); b.label('INFORMATION', 80, 38.5, 14, CREAM);
+  b.label('MAIN ENTRANCE: BARRICADED', 79, 51.3, 14, RED);
+  for (const [x, z] of [[64, 26], [72, 42], [80, 28], [88, 42], [96, 26], [96, 50], [64, 50]]) b.lamp(x, z);
+  b.arrow(62, 38, E);
   // Gift shop full of balloons.
-  b.carve(66, 141, 69, 141, F.TILES); b.carve(62, 142, 74, 150, F.TILES);
-  b.prop('shelf', 63, 145, 5, 1, { color: 0xffb3d1 }); b.prop('shelf', 63, 148, 5, 1, { color: 0xfff1a8 }); b.prop('counter', 71, 143, 1, 3);
-  for (const [x, z] of [[70, 147], [73, 149], [62, 150], [72, 146]]) b.prop('barrel', x, z, 1, 1, { color: pastel() });   // balloon bunches
-  b.pick('medkit', 74, 142); b.pick('ammo', 62, 143);
-  b.label('GIFT SHOP', 67.5, 142.6, 16, PINK); b.label('GET WELL SOON', 68, 146.6, 11, LEMON);
-  b.lamp(68, 147);
+  b.carve(66, 53, 69, 53, F.TILES); b.carve(62, 54, 74, 62, F.TILES);
+  b.prop('shelf', 63, 57, 5, 1, { color: 0xffb3d1 }); b.prop('shelf', 63, 60, 5, 1, { color: 0xfff1a8 }); b.prop('counter', 71, 55, 1, 3);
+  for (const [x, z] of [[70, 59], [73, 61], [62, 62], [72, 58]]) b.prop('barrel', x, z, 1, 1, { color: pastel() });   // balloon bunches
+  b.pick('medkit', 74, 54); b.pick('ammo', 62, 55);
+  b.label('GIFT SHOP', 67.5, 54.6, 16, PINK); b.label('GET WELL SOON', 68, 58.6, 11, LEMON);
+  b.lamp(68, 59);
   // Outpatient pharmacy: Nori's old counter.
-  b.carve(86, 141, 90, 141, F.TILES); b.carve(82, 142, 97, 152, F.TILES);
-  b.prop('counter', 84, 146, 10, 1, { color: 0xc9b8ff });
-  for (const x of [83, 87, 91, 95]) b.prop('shelf', x, 150, 3, 1, { color: 0xe8f4f0 });
-  b.prop('desk', 95, 148, 2, 1);
-  b.item('keycard', 'keycard', 94, 147, 'staff keycard');
-  b.pick('ammo', 83, 143);
-  b.label('PHARMACY', 89.5, 144, 22, LAV); b.label("NORI'S DESK: DO NOT TOUCH", 92, 148.6, 10, CREAM);
-  b.lamp(89, 148);
-  b.arrow(89, 139, S);
+  b.carve(86, 53, 90, 53, F.TILES); b.carve(82, 54, 97, 64, F.TILES);
+  b.prop('counter', 84, 58, 10, 1, { color: 0xc9b8ff });
+  for (const x of [83, 87, 91, 95]) b.prop('shelf', x, 62, 3, 1, { color: 0xe8f4f0 });
+  b.prop('desk', 95, 60, 2, 1);
+  b.item('keycard', 'keycard', 94, 59, 'staff keycard');
+  b.pick('ammo', 83, 55);
+  b.label('PHARMACY', 89.5, 56, 22, LAV); b.label("NORI'S DESK: DO NOT TOUCH", 92, 60.6, 10, CREAM);
+  b.lamp(89, 60);
+  b.arrow(89, 51, S);
 
   // ------------------------------------------------------------------
-  // 5. Staff corridor and staff rooms (keycard sweep)
+  // 5. Staff corridor and staff rooms (keycard sweep), under the wards
   // ------------------------------------------------------------------
-  b.carve(4, 104, 79, 107, F.TILES);
-  b.label('STAFF ONLY', 40, 105.5, 22, RED);
-  b.label('━━ EMERGENCY ━━', 22, 104.5, 12, RED); b.label('━━ EMERGENCY ━━', 62, 106.6, 12, RED);
-  gurney(14, 104); gurney(46, 107); gurney(64, 104); b.prop('bench', 33, 107, 2, 1); b.prop('shelf', 76, 104, 1, 1);
-  for (const x of [10, 22, 34, 46, 58, 70]) b.lamp(x, 105.5);
+  b.carve(4, 16, 79, 19, F.TILES);
+  b.label('STAFF ONLY', 40, 17.5, 22, RED);
+  b.label('━━ EMERGENCY ━━', 22, 16.5, 12, RED); b.label('━━ EMERGENCY ━━', 62, 18.6, 12, RED);
+  gurney(14, 16); gurney(46, 19); gurney(64, 16); b.prop('bench', 33, 19, 2, 1); b.prop('shelf', 76, 16, 1, 1);
+  for (const x of [10, 22, 34, 46, 58, 70]) b.lamp(x, 17.5);
   // Doors from the public side into the corridor.
-  b.carve(28, 108, 30, 117, F.TILES);                                     // ER → corridor
-  b.carve(70, 108, 73, 111, F.TILES);                                     // lobby → corridor
-  b.label('STAFF', 71.5, 110, 14, RED); b.label('STAFF', 29, 113, 14, RED, E);
+  b.carve(28, 20, 30, 29, F.TILES);                                       // ER → corridor
+  b.carve(70, 20, 73, 23, F.TILES);                                       // lobby → corridor
+  b.label('STAFF', 71.5, 22, 14, RED); b.label('STAFF', 29, 25, 14, RED, E);
   // Supply room.
-  b.carve(8, 103, 9, 103, F.TILES); b.carve(4, 92, 14, 102, F.TILES);
-  b.prop('shelf', 4, 93, 1, 8); b.prop('shelf', 7, 93, 6, 1); b.prop('shelf', 14, 93, 1, 6);
-  b.pick('medkit', 6, 97); b.pick('medkit', 12, 100);
-  b.label('SUPPLIES', 9, 99, 14, MINT);
+  b.carve(8, 15, 9, 15, F.TILES); b.carve(4, 4, 14, 14, F.TILES);
+  b.prop('shelf', 4, 5, 1, 8); b.prop('shelf', 7, 5, 6, 1); b.prop('shelf', 14, 5, 1, 6);
+  b.pick('medkit', 6, 9); b.pick('medkit', 12, 12);
+  b.label('SUPPLIES', 9, 11, 14, MINT);
   // On-call room (keycard under a pillow).
-  b.carve(24, 103, 26, 103, F.TILES); b.carve(17, 92, 34, 102, F.TILES);
-  for (const x of [18, 22, 29, 33]) b.prop('bed', x, 93, 1, 2, { color: 0xfff1f0 });
-  b.prop('desk', 18, 100, 2, 1); b.prop('shelf', 33, 98, 1, 4);
-  b.item('keycard', 'keycard', 30, 93, 'staff keycard');
-  b.pick('ammo', 19, 98);
-  b.label('ON-CALL', 25.5, 97, 18, MINT);
-  b.lamp(25.5, 95);
+  b.carve(24, 15, 26, 15, F.TILES); b.carve(17, 4, 34, 14, F.TILES);
+  for (const x of [18, 22, 29, 33]) b.prop('bed', x, 5, 1, 2, { color: 0xfff1f0 });
+  b.prop('desk', 18, 12, 2, 1); b.prop('shelf', 33, 10, 1, 4);
+  b.item('keycard', 'keycard', 30, 5, 'staff keycard');
+  b.pick('ammo', 19, 10);
+  b.label('ON-CALL', 25.5, 9, 18, MINT);
+  b.lamp(25.5, 7);
   // Quiet room (chapel): dark, a little ammo.
-  b.carve(41, 103, 43, 103, F.TILES); b.carve(37, 92, 48, 102, F.WOOD);
-  for (const z of [95, 98]) { b.prop('bench', 38, z, 4, 1); b.prop('bench', 44, z, 4, 1); }
-  b.pick('ammo', 42, 93); b.pick('firebomb', 43, 93);          // off-route reward
-  b.label('QUIET ROOM', 42.5, 100.5, 14, LAV);
+  b.carve(41, 15, 43, 15, F.TILES); b.carve(37, 4, 48, 14, F.WOOD);
+  for (const z of [7, 10]) { b.prop('bench', 38, z, 4, 1); b.prop('bench', 44, z, 4, 1); }
+  b.pick('ammo', 42, 5); b.pick('firebomb', 43, 5);              // off-route reward
+  b.label('QUIET ROOM', 42.5, 12.5, 14, LAV);
   // Lab (rifle).
-  b.carve(56, 103, 58, 103, F.TILES); b.carve(51, 92, 64, 102, F.TILES);
-  b.prop('counter', 52, 95, 5, 1, { color: 0xe8f4f0 }); b.prop('counter', 59, 95, 5, 1, { color: 0xe8f4f0 }); b.prop('counter', 53, 99, 1, 3, { color: 0xe8f4f0 });
-  b.pick('shotgun', 62, 93); b.pick('rifle', 63, 93); b.pick('smg', 64, 93); b.pick('ammo', 63, 92); b.pick('ammo', 52, 93);
-  b.label('PATH LAB', 57.5, 98, 16, SKY);
-  b.lamp(57.5, 97);
+  b.carve(56, 15, 58, 15, F.TILES); b.carve(51, 4, 64, 14, F.TILES);
+  b.prop('counter', 52, 7, 5, 1, { color: 0xe8f4f0 }); b.prop('counter', 59, 7, 5, 1, { color: 0xe8f4f0 }); b.prop('counter', 53, 11, 1, 3, { color: 0xe8f4f0 });
+  b.pick('shotgun', 62, 5); b.pick('rifle', 63, 5); b.pick('smg', 64, 5); b.pick('ammo', 63, 4); b.pick('ammo', 52, 5);
+  b.label('PATH LAB', 57.5, 10, 16, SKY);
+  b.lamp(57.5, 9);
   // Break room (coffee machines), with a side door into the elevator lobby.
-  b.carve(71, 103, 73, 103, F.TILES); b.carve(67, 92, 78, 102, F.TILES); b.carve(79, 95, 79, 97, F.TILES);
-  b.prop('counter', 67, 92, 6, 1, { color: 0xd8c2a0 }); b.prop('terminal', 73, 92); b.prop('desk', 70, 96, 2, 2); b.prop('desk', 75, 99, 2, 1);
-  b.pick('ammo', 77, 93); b.pick('ammo', 76, 93); b.pick('ammo', 68, 101);
-  b.label('BREAK ROOM', 72.5, 100.8, 14, MINT);
-  b.lamp(72, 98);
+  b.carve(71, 15, 73, 15, F.TILES); b.carve(67, 4, 78, 14, F.TILES); b.carve(79, 7, 79, 9, F.TILES);
+  b.prop('counter', 67, 4, 6, 1, { color: 0xd8c2a0 }); b.prop('terminal', 73, 4); b.prop('desk', 70, 8, 2, 2); b.prop('desk', 75, 11, 2, 1);
+  b.pick('ammo', 77, 5); b.pick('ammo', 76, 5); b.pick('ammo', 68, 13);
+  b.label('BREAK ROOM', 72.5, 12.8, 14, MINT);
+  b.lamp(72, 10);
   // Records and storage, south side.
-  b.carve(8, 108, 9, 108, F.TILES); b.carve(4, 109, 14, 115, F.TILES);
-  b.prop('shelf', 5, 110, 1, 5); b.prop('shelf', 8, 111, 5, 1); b.prop('shelf', 8, 114, 5, 1); b.pick('ammo', 13, 115);
-  b.label('RECORDS', 9.5, 112.6, 12, MINT);
-  b.carve(20, 108, 21, 108, F.TILES); b.carve(16, 109, 26, 115, F.TILES);
-  b.prop('crate', 17, 110); b.prop('crate', 25, 114); b.prop('shelf', 23, 110, 3, 1); b.pick('medkit', 17, 115);
+  b.carve(8, 20, 9, 20, F.TILES); b.carve(4, 21, 14, 27, F.TILES);
+  b.prop('shelf', 5, 22, 1, 5); b.prop('shelf', 8, 23, 5, 1); b.prop('shelf', 8, 26, 5, 1); b.pick('ammo', 13, 27);
+  b.label('RECORDS', 9.5, 24.6, 12, MINT);
+  b.carve(20, 20, 21, 20, F.TILES); b.carve(16, 21, 26, 27, F.TILES);
+  b.prop('crate', 17, 22); b.prop('crate', 25, 26); b.prop('shelf', 23, 22, 3, 1); b.pick('medkit', 17, 27);
   // Nurses' station (keycard by the coffee machine, handover sheet).
-  b.carve(36, 108, 52, 108, F.TILES); b.carve(32, 109, 56, 114, F.TILES);
-  b.prop('counter', 36, 110, 14, 1, { color: 0x9fe3cf }); b.prop('counter', 49, 111, 1, 2, { color: 0x9fe3cf });
-  b.prop('terminal', 55, 109); b.prop('desk', 38, 113, 2, 1); b.prop('desk', 44, 113, 2, 1); b.prop('shelf', 32, 109, 1, 4);
-  b.item('keycard', 'keycard', 54, 109, 'staff keycard');
-  b.note(41, 111, 'Handover sheet', 'Everyone on nights is fine. Everyone who napped on break got up at 3 and walked out humming. Lesson: NEVER nap on break. Sister Agnes');
-  b.label("NURSES' STATION", 44, 108.6, 16, MINT);
-  b.lamp(44, 112);
-  b.arrow(71.5, 109, N); b.arrow(60, 105.5, WEST); b.arrow(29, 109, S);
+  b.carve(36, 20, 52, 20, F.TILES); b.carve(32, 21, 56, 26, F.TILES);
+  b.prop('counter', 36, 22, 14, 1, { color: 0x9fe3cf }); b.prop('counter', 49, 23, 1, 2, { color: 0x9fe3cf });
+  b.prop('terminal', 55, 21); b.prop('desk', 38, 25, 2, 1); b.prop('desk', 44, 25, 2, 1); b.prop('shelf', 32, 21, 1, 4);
+  b.item('keycard', 'keycard', 54, 21, 'staff keycard');
+  b.note(41, 23, 'Handover sheet', 'Everyone on nights is fine. Everyone who napped on break got up at 3 and walked out humming. Lesson: NEVER nap on break. Sister Agnes');
+  b.label("NURSES' STATION", 44, 20.6, 16, MINT);
+  b.lamp(44, 24);
+  b.arrow(71.5, 21, N); b.arrow(60, 17.5, WEST); b.arrow(29, 21, S);
 
   // ------------------------------------------------------------------
-  // 6. Staff elevator lobby (crescendo 1: the muzak holdout)
+  // 6. Staff elevator lobby (crescendo 1: the muzak holdout) and the fire stairs
   // ------------------------------------------------------------------
-  b.carve(80, 92, 98, 110, F.TILES);
-  b.carve(84, 111, 87, 111, F.TILES); b.carve(93, 111, 96, 111, F.TILES);  // two ways in from the main lobby
-  b.carve(85, 84, 88, 90, F.TILES);                                       // the elevator car / shaft
-  const elevDoor = b.door(85, 91, 88, 91, 'shutter', 'STAFF ELEVATOR');
-  const elevButton = b.obj('terminal', 90, 92, 'Call the staff elevator (muzak!)');
-  gurney(83, 97); gurney(93, 100); gurney(85, 106, 1, 2);
-  b.prop('shelf', 97, 93, 1, 3, { color: 0xffd0a8 }); b.prop('bush', 81, 102); b.prop('bush', 96, 106);
-  b.prop('bench', 89, 103, 3, 1); b.prop('desk', 94, 95, 2, 1);
-  b.pick('ammo', 82, 93); b.pick('ammo', 83, 93); b.pick('ammo', 98, 109); b.pick('ammo', 98, 108); b.pick('medkit', 91, 108); b.pick('medkit', 81, 109);
-  b.pick('rattle', 84, 93);                                     // before the muzak holdout
-  b.label('STAFF ELEVATOR', 87, 94.5, 18, GOLD); b.label('STAFF CARD REQUIRED', 87, 96.5, 11, RED);
-  b.label('ELEVATOR', 86.5, 88, 14, GOLD, E);
-  for (const [x, z] of [[84, 98], [94, 98], [84, 108], [94, 108], [89, 93]]) b.lamp(x, z);
-  b.arrow(90, 101, N); b.arrow(86.5, 86, N);
+  b.carve(80, 7, 92, 11, F.TILES); b.carve(80, 12, 98, 22, F.TILES);
+  b.carve(84, 23, 87, 23, F.TILES); b.carve(93, 23, 96, 23, F.TILES);  // two ways in from the main lobby
+  b.carve(85, 4, 88, 5, F.TILES);                                         // the elevator car
+  const elevDoor = b.door(85, 6, 88, 6, 'shutter', 'STAFF ELEVATOR');
+  const elevButton = b.obj('terminal', 90, 7, 'Call the staff elevator (muzak!)');
+  b.pick('ammo', 88, 4); b.label('FAULT', 86.5, 4.8, 12, RED);           // the car came down, and that is all it will do
+  // Fire stairs: locked while the elevator is in service. Two wide, rising north to the 2F hall.
+  b.carve(94, 9, 95, 10, F.TILES);
+  b.stairs(94, 6, 95, 8, '-z', F.TILES);
+  const fireDoor = b.door(94, 11, 95, 11, 'shutter', 'FIRE STAIRS');
+  gurney(83, 13); gurney(91, 16); gurney(85, 18, 1, 2);
+  b.prop('shelf', 97, 15, 1, 3, { color: 0xffd0a8 }); b.prop('bush', 81, 15); b.prop('bush', 96, 20);
+  b.prop('bench', 88, 19, 3, 1); b.prop('desk', 81, 20, 2, 1);
+  b.pick('ammo', 82, 8); b.pick('ammo', 83, 8); b.pick('ammo', 98, 21); b.pick('ammo', 98, 22); b.pick('medkit', 91, 21); b.pick('medkit', 80, 22);
+  b.pick('rattle', 84, 8);                                      // before the muzak holdout
+  b.label('STAFF ELEVATOR', 87, 9.5, 18, GOLD); b.label('STAFF CARD REQUIRED', 87, 11.2, 11, RED);
+  b.label('FIRE STAIRS', 94.5, 12.8, 12, RED); b.label('LOCKED WHILE ELEVATOR IN SERVICE', 94.5, 14, 7, RED);
+  b.label('UP: FLOOR 2', 94.5, 9.6, 10, GOLD, N);
+  for (const [x, z] of [[84, 14], [94, 17], [84, 21], [92, 21], [89, 9], [94.5, 9.5]]) b.lamp(x, z);
+  b.arrow(90, 15, N); b.arrow(94.5, 13, N);
 
   // ------------------------------------------------------------------
-  // 7. Floor 3: wards, day room, the soup (elevator stuck here)
+  // 7. Bay inlet (water under the skybridge)
   // ------------------------------------------------------------------
-  b.carve(80, 72, 96, 83, F.TILES);                                       // floor 3 elevator hall
-  b.label('FLOOR 3', 88, 79, 40, SOUP); b.label('ELEVATOR STUCK. USE STAIRS', 88, 75.5, 14, SOUP);
-  b.label('MMM... SOUP', 92, 82, 12, SOUP);
-  b.prop('bed', 81, 73, 2, 1, { color: GURNEY }); b.prop('bench', 94, 80, 1, 3);
-  b.lamp(84, 78); b.lamp(93, 76);
-  b.arrow(84.5, 74, WEST);
+  b.carve(100, 2, 121, 70, F.WATER);
+
+  // ------------------------------------------------------------------
+  // 8. Galleria ground floor: Security, arcade, food court, kitchens
+  // ------------------------------------------------------------------
+  // Security: CCTV wall and the breaker panel on the back wall.
+  b.carve(134, 8, 150, 18, F.INTERIOR);
+  const breaker = b.obj('lever', 142, 8, 'Throw the breakers');
+  b.prop('counter', 135, 12, 6, 1, { color: 0x6a7080 }); b.prop('terminal', 135, 11); b.prop('terminal', 137, 11); b.prop('terminal', 139, 11);
+  b.prop('shelf', 150, 9, 1, 5); b.prop('desk', 146, 14, 2, 1);
+  b.pick('medkit', 134, 18); b.pick('medkit', 135, 18); b.pick('ammo', 148, 18); b.pick('ammo', 147, 18); b.pick('ammo', 146, 18);
+  b.pick('magnum', 137, 18); b.pick('launcher', 138, 18); b.pick('rifle', 139, 18); // before the freight lift finale
+  b.pick('axe', 140, 18);
+  b.label('MALL SECURITY', 142, 15.5, 16, CREAM); b.label('BREAKERS', 142, 9.6, 12, GOLD);
+  b.lamp(142, 13);
+  // Star Arcade, under the toy store.
+  b.carve(141, 19, 143, 21, F.INTERIOR);
+  b.carve(126, 22, 160, 37, F.INTERIOR);
+  for (const z of [24, 28, 32]) for (const x of [129, 133, 137, 147, 151, 155]) b.prop('terminal', x, z, 1, 2, { color: [0xff3df0, 0x3dd8ff, 0xfff27a, 0x7cff6b][(x + z) % 4] });
+  b.prop('counter', 126, 36, 3, 1, { color: 0xff3df0 }); b.prop('shelf', 160, 33, 1, 3);
+  b.pick('ammo', 127, 23); b.pick('ammo', 159, 23);
+  b.label('INSERT COIN', 142.5, 34.5, 30, MAGENTA); b.label('INSERT COIN', 142.5, 27.5, 16, MAGENTA);
+  b.label('STAR ARCADE', 142.5, 31, 14, SKY);
+  b.label('SECURITY', 142, 23.5, 16, MAGENTA);
+  for (const [x, z] of [[131, 30], [154, 30], [142, 25], [142, 36]]) b.lamp(x, z);
+  b.arrow(142, 26, N); b.arrow(130, 36, E); b.arrow(156.5, 36.5, S);
+  b.carve(128, 38, 131, 39, F.INTERIOR); b.carve(155, 38, 158, 39, F.INTERIOR);   // arcade ↔ food court
+  // Food court atrium: the mezzanine ring is overhead, the middle is open to the broken skylight.
+  b.carve(124, 40, 162, 68, F.INTERIOR);
+  b.paint(131, 46, 155, 68, F.SIDEWALK);                                   // under the open skylight
+  // Escalators up to the mezzanine (west and east), with glass balustrades.
+  b.stairs(131, 56, 133, 57, '-x', F.TILES); b.prop('barrier', 131, 55, 3, 1); b.prop('barrier', 131, 58, 3, 1);
+  b.stairs(153, 50, 155, 51, '+x', F.TILES); b.prop('barrier', 153, 49, 3, 1); b.prop('barrier', 153, 52, 3, 1);
+  // The dry fountain and the helicopter tail poking down through the skylight.
+  b.prop('fountain', 142, 57, 4, 4, { color: 0xd8d0c8 });
+  b.label('DRY FOUNTAIN', 144, 62.5, 12, CREAM);
+  b.prop('container', 137, 47, 1, 8, { color: 0xe86a5a, rot: 0.25 });   // tail boom
+  b.prop('pillar', 136, 46, 3, 1, { color: 0xe86a5a });                  // tail fin
+  b.prop('crate', 140, 53, 2, 1, { color: 0x8fd8ff }); b.prop('crate', 134, 50, 1, 1, { color: 0x8fd8ff });   // skylight glass
+  b.label("LARRY'S CHOPPER", 139.5, 49, 14, RED, WEST);
+  // Tables in clusters, planters and the mezzanine's pillars.
+  for (const [x, z] of [[127, 44], [127, 52], [127, 62], [159, 44], [159, 58], [148, 47], [150, 63], [137, 63]]) b.prop('desk', x, z, 2, 2, { color: 0xffe0b0 });
+  for (const [x, z] of [[145, 52], [134, 60]]) b.prop('bush', x, z, 2, 1);
+  for (const [x, z] of [[130, 45], [156, 45], [130, 66], [156, 66]]) b.prop('pillar', x, z, 1, 1, { color: 0xffd0e0 });
+  b.prop('bench', 124, 56, 1, 3); b.prop('bench', 161, 50, 1, 3);
+  b.pick('ammo', 125, 41); b.pick('ammo', 162, 41); b.pick('medkit', 162, 67);
+  b.label('FOOD COURT', 143, 49.5, 34, LEMON);
+  for (const [x, z] of [[127, 48], [127, 58], [160, 48], [160, 60], [143, 54], [136, 62], [150, 58], [143, 66]]) b.lamp(x, z);
+  b.arrow(143, 46, N); b.arrow(129.5, 42, N); b.arrow(141.5, 66, S);
+  zz(150, 54, WEST); zz(138, 58, N);
+  // Food stall kitchens along the south wall (hidey-holes and horde lanes).
+  for (const [x0, name, col] of [[124, 'NOODLES', PINK], [131, 'TACO TACO', LEMON], [146, 'BUBBLE TEA', MINT], [153, 'PRETZEL', GOLD]] as const) {
+    b.carve(x0, 69, x0 + 5, 70, F.INTERIOR); b.carve(x0, 71, x0 + 5, 76, F.TILES);
+    b.prop('counter', x0 + 2, 69, 4, 1, { color: 0xf0e2b6 }); b.prop('shelf', x0 + 1, 76, 4, 1);
+    b.label(name, x0 + 3, 67.8, 12, col);
+  }
+  b.pick('ammo', 125, 75); b.pick('ammo', 126, 75); b.pick('medkit', 149, 75); b.pick('ammo', 157, 74); b.pick('ammo', 157, 75);
+  // Loading-dock corridor (opened by the breakers), under the dock catwalk.
+  const dockDoor = b.door(140, 69, 143, 69, 'shutter', 'LOADING DOCK');
+  b.carve(140, 70, 143, 79, F.CONCRETE);
+  b.prop('pallet', 140, 73); b.prop('crate', 143, 76);
+  b.pick('ammo', 143, 71); b.pick('medkit', 140, 78);
+  b.label('LOADING DOCK', 141.5, 74, 14, GOLD, N);
+  b.lamp(141.5, 71); b.lamp(141.5, 78);
+  b.arrow(141.5, 76, S);
+
+  // ------------------------------------------------------------------
+  // 9. Loading dock (finale), truck yard, freight lift
+  // ------------------------------------------------------------------
+  b.carve(104, 80, 154, 96, F.CONCRETE);
+  // Truck bays in the south wall: the shutters are up and the yard is full of sleepers.
+  b.carve(104, 99, 163, 106, F.ASPHALT);
+  b.walls(103, 97, 164, 107, WALL.FENCE, 3.2);
+  for (const x0 of [110, 124, 138, 150]) {
+    b.carve(x0, 97, x0 + 3, 98, F.CONCRETE);
+    b.label('BAY', x0 + 2, 95.4, 12, GOLD);
+  }
+  b.prop('truck', 106, 100, 8, 2, { color: 0xf0e2b6 }); b.prop('truck', 130, 102, 8, 2, { color: 0xffb3d1 }); b.prop('truck', 154, 100, 8, 2, { color: 0xfff1a8 });
+  b.prop('container', 118, 104, 6, 2, { color: 0x8fb4c6 }); b.prop('container', 144, 103, 2, 4, { color: 0xd3a7bf });
+  for (const [x, z] of [[122, 100], [150, 105], [160, 104], [140, 100]]) b.prop('pallet', x, z);
+  // Back-of-house pockets around the dock: more ways in for the finale horde.
+  b.carve(106, 72, 121, 76, F.TILES);                                     // cold storage
+  b.carve(110, 77, 112, 79, F.TILES); b.carve(117, 77, 118, 79, F.TILES);
+  b.prop('shelf', 107, 72, 6, 1, { color: 0xd8efe8 }); b.prop('shelf', 114, 72, 6, 1, { color: 0xd8efe8 }); b.prop('crate', 120, 75);
+  b.label('COLD STORAGE', 114, 74.5, 14, SKY);
+  b.carve(156, 94, 163, 96, F.CONCRETE); b.carve(155, 94, 155, 96, F.CONCRETE);   // compactor
+  b.prop('dumpster', 161, 94, 2, 2); b.label('COMPACTOR', 158, 95.5, 10, CREAM);
+  // Dock floor cover: pallets, crate stacks, a dead mall van.
+  for (const [x, z] of [[112, 84], [126, 87], [118, 92], [134, 90], [146, 88], [108, 94]]) b.prop('crate', x, z, 2, 1);
+  for (const [x, z] of [[116, 88], [130, 84], [140, 93], [123, 95]]) b.prop('pallet', x, z, 2, 1);
+  b.prop('car', 136, 83, 2, 1, { color: 0xffd43b }); b.prop('van', 149, 91, 1, 3, { color: 0xe6c3d3, rot: N });
+  b.prop('container', 110, 88, 1, 4, { color: 0x7aa59c });
+  b.pick('ammo', 105, 81); b.pick('ammo', 153, 88); b.pick('medkit', 152, 94); b.pick('ammo', 128, 95); b.pick('medkit', 153, 94);
+  b.pick('rattle', 153, 87);                                    // by the lift button, for the long finale
+  b.label('BAYSIDE GALLERIA DELIVERIES', 128, 86.5, 20, CREAM);
+  for (const [x, z] of [[108, 84], [120, 82], [134, 86], [146, 84], [114, 92], [128, 92], [142, 94], [152, 90], [112, 104], [136, 104], [158, 104], [114, 76]]) b.lamp(x, z);
+  b.arrow(141.5, 82, E); b.arrow(147, 85.5, E);
+  // Dock catwalk access: a ladder at the west end, stairs at the east end (catwalk is storey 1).
+  b.ladder(108, 80, '-z');
+  b.stairs(151, 80, 153, 81, '-x'); b.prop('barrier', 151, 82, 3, 1);
+  b.label('CATWALK', 108.5, 81.6, 10, CREAM); b.label('CATWALK', 152, 83.4, 10, CREAM);
+  // Freight lift (end safe room) behind its gate.
+  b.carve(156, 84, 163, 92, F.SAFE);
+  const liftButton = b.obj('terminal', 154, 85, 'Call the freight lift');
+  const liftGate = b.door(155, 86, 155, 89, 'fence', 'FREIGHT LIFT');
+  b.label('FREIGHT LIFT', 160, 87, 18, GOLD); b.label('TO SERVICE TUNNEL', 160, 89.5, 11, CREAM);
+  b.lamp(160, 88);
+
+  // ==================================================================
+  // STOREY 1: 2F wards, lower roofs, Bun Bun Toys, mezzanine, dock catwalk
+  // ==================================================================
+  b.level(1);
+  wallUp(3, 3, 61, 36, ROOF);                                             // the tower: walls run up to the roof
+  wallUp(62, 3, 99, 36, TERRACE);                                         // the east wing: up to the terrace
+
+  // ------------------------------------------------------------------
+  // 10. Floor 2: east hall (fire stairs arrive; elevator stuck), corridor A
+  // ------------------------------------------------------------------
+  b.carve(80, 5, 97, 35, F.TILES);
+  wallUp(85, 4, 88, 6, TERRACE);                                          // the elevator shaft
+  b.label('FLOOR 2', 90, 12, 40, SOUP); b.label('ELEVATOR: FAULT', 86.5, 7.8, 12, RED);
+  b.label('MMM... SOUP', 83, 25, 12, SOUP);
+  b.label('STAIRS TO FLOOR 3: WEST END', 84, 18.6, 11, GOLD);
+  gurney(90, 25); b.prop('bench', 96, 14, 1, 3); b.prop('shelf', 97, 30, 1, 3);
+  b.pick('ammo', 96, 34); b.pick('medkit', 81, 8);
+  b.lamp(90, 8); b.lamp(90, 20); b.lamp(90, 31);
+  b.arrow(94.5, 11, S); b.arrow(84.5, 21.5, WEST);
+  // Roof access D: stairs up to the skybridge terrace (locked until the roof doors give).
+  wallUp(81, 29, 84, 33, TERRACE);
+  b.stairs(82, 30, 83, 32, '+z', F.TILES);
+  const hutD = b.door(82, 29, 83, 29, 'shutter', 'ROOF ACCESS D');
+  b.label('ROOF ACCESS', 82.5, 27.6, 10, CREAM);
+  // Fire exit onto the lobby roof (locked until the roof doors give).
+  const fireExit = b.door(88, 36, 89, 36, 'shutter', 'FIRE EXIT');
+  b.label('FIRE EXIT', 88.5, 34.6, 10, RED);
   // Corridor A runs west the whole length of the floor.
-  b.carve(4, 72, 79, 75, F.TILES);
-  gurney(70, 72); gurney(52, 75); gurney(33, 72); gurney(18, 75);
-  b.prop('bench', 60, 75, 2, 1); b.prop('bench', 26, 72, 2, 1);
-  for (const x of [12, 24, 36, 48, 60, 72]) b.lamp(x, 73.5);
-  b.arrow(66, 73.5, WEST); b.arrow(42, 73.5, WEST); b.arrow(20, 73.5, WEST);
-  // IV stands and wheelchairs dragged toward the stairwell (wordless arrows).
-  for (const x of [74, 56, 38, 22]) b.prop('barrier', x, 75, 1, 1);
-  zz(46, 73.5, WEST); zz(28, 74.5, WEST);
-  // Wards south of corridor A.
+  b.carve(9, 20, 79, 23, F.TILES);
+  gurney(62, 20); gurney(52, 23); gurney(33, 20); gurney(18, 23);
+  b.prop('bench', 40, 23, 2, 1); b.prop('bench', 24, 20, 2, 1);
+  for (const x of [12, 24, 36, 48, 60, 72]) b.lamp(x, 21.5);
+  b.arrow(66, 21.5, WEST); b.arrow(42, 21.5, WEST); b.arrow(20, 21.5, WEST);
+  // IV stands and wheelchairs dragged toward the west stairs (wordless arrows).
+  for (const x of [74, 56, 38, 22]) b.prop('barrier', x, 23, 1, 1);
+  zz(46, 21.5, WEST); zz(28, 22.5, WEST);
+
+  // ------------------------------------------------------------------
+  // 11. Floor 2: wards, patient rooms, day room and the soup, nurses' post
+  // ------------------------------------------------------------------
   for (const [x0, x1] of [[10, 18], [21, 29], [32, 40], [43, 51], [54, 62], [65, 76]]) {
     const mid = Math.floor((x0 + x1) / 2);
-    b.carve(mid, 76, mid + 1, 76, F.TILES); b.carve(x0, 77, x1, 86, F.TILES);
-    b.prop('bed', x0 + 1, 79, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 83, 1, 2, { color: 0xfff1f0 });
-    b.prop('desk', x0 + 1, 85, 1, 1);
+    b.carve(mid, 24, mid + 1, 24, F.TILES); b.carve(x0, 25, x1, 35, F.TILES);
+    b.prop('bed', x0 + 1, 27, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 31, 1, 2, { color: 0xfff1f0 });
+    b.prop('desk', x0 + 1, 34, 1, 1);
   }
-  b.pick('ammo', 12, 85); b.pick('medkit', 39, 78); b.pick('ammo', 60, 85); b.pick('medkit', 74, 79);
-  b.label('WARD 3A', 14, 81, 12, MINT); b.label('WARD 3C', 36, 81, 12, MINT); b.label('WARD 3E', 58, 81, 12, MINT);
-  // Day room and soup kitchen, joining corridor A to corridor B.
-  b.carve(46, 71, 54, 71, F.TILES); b.carve(46, 56, 54, 57, F.TILES);
-  b.carve(40, 58, 60, 70, F.TILES);
-  for (const [x, z] of [[43, 61], [48, 61], [43, 66], [48, 66]]) b.prop('desk', x, z, 2, 2);
-  b.prop('counter', 54, 59, 1, 9, { color: 0xf2c48d }); b.prop('gen', 57, 61, 2, 2, { color: 0xf2a541 });   // the soup pot
-  b.prop('shelf', 59, 66, 2, 1);
-  b.pick('medkit', 58, 69); b.pick('ammo', 57, 58);
-  b.label('DAY ROOM', 46, 64, 22, MINT); b.label('SOUP', 57.5, 64.5, 18, SOUP);
-  b.lamp(46, 63.5); b.lamp(57, 66);
-  // Floor 3 nurses' post (east, a loop back to the elevator hall).
-  b.carve(61, 60, 61, 66, F.TILES); b.carve(84, 71, 92, 71, F.TILES);
-  b.carve(62, 52, 96, 70, F.TILES);
-  b.prop('counter', 68, 60, 12, 1, { color: 0x9fe3cf }); b.prop('counter', 79, 61, 1, 4, { color: 0x9fe3cf });
-  gurney(66, 54); gurney(86, 56); gurney(90, 66); b.prop('shelf', 95, 52, 1, 5); b.prop('bench', 70, 67, 3, 1);
-  b.pick('ammo', 94, 69); b.pick('smg', 72, 54);
-  b.label("NURSES' POST 3", 74, 57, 18, SOUP);
-  b.lamp(73, 63); b.lamp(88, 61);
-  // Patient rooms between the corridors (doors on both sides: loops).
-  for (const [x0, x1] of [[10, 21], [24, 37]]) {
-    const mid = Math.floor((x0 + x1) / 2);
-    b.carve(mid, 71, mid + 1, 71, F.TILES); b.carve(mid, 56, mid + 1, 57, F.TILES);
-    b.carve(x0, 58, x1, 70, F.TILES);
-    b.prop('bed', x0 + 1, 60, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 60, 1, 2, { color: 0xfff1f0 });
-    b.prop('bed', x0 + 1, 66, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 66, 1, 2, { color: 0xfff1f0 });
-    b.prop('desk', mid, 64, 2, 1);
+  b.pick('ammo', 12, 34); b.pick('medkit', 39, 26); b.pick('ammo', 60, 34); b.pick('medkit', 75, 26);
+  b.label('WARD 2A', 14, 30, 12, MINT); b.label('WARD 2C', 36, 30, 12, MINT); b.label('WARD 2E', 58, 30, 12, MINT);
+  // Patient rooms north of the corridor.
+  for (const [x0, x1, door] of [[10, 21, 15], [24, 37, 30]]) {
+    b.carve(door, 19, door + 1, 19, F.TILES); b.carve(x0, 5, x1, 18, F.TILES);
+    b.prop('bed', x0 + 1, 7, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 7, 1, 2, { color: 0xfff1f0 });
+    b.prop('bed', x0 + 1, 14, 1, 2, { color: 0xfff1f0 }); b.prop('bed', x1 - 1, 14, 1, 2, { color: 0xfff1f0 });
+    b.prop('desk', door, 11, 2, 1);
   }
-  b.pick('ammo', 13, 69); b.pick('ammo', 33, 59);
-  // Corridor B and the rooms above it.
-  b.carve(4, 52, 60, 55, F.TILES);
-  gurney(20, 52); gurney(40, 55); b.prop('bench', 50, 52, 2, 1);
-  b.lamp(18, 53.5); b.lamp(38, 53.5);
-  for (const [x0, x1] of [[12, 22], [26, 36]]) {
-    const mid = Math.floor((x0 + x1) / 2);
-    b.carve(mid, 51, mid + 1, 51, F.TILES); b.carve(x0, 45, x1, 50, F.TILES);
-    b.prop('bed', x0 + 1, 46, 2, 1, { color: 0xfff1f0 }); b.prop('shelf', x1, 45, 1, 3);
-  }
-  b.pick('medkit', 20, 49); b.pick('ammo', 34, 49);
-  b.label('LINEN', 17, 48, 12, MINT); b.label('STORE', 31, 48, 12, MINT);
-  // West stair hall: both corridors end here, stairs up to floor 4.
-  b.carve(4, 44, 8, 75, F.TILES);
-  b.prop('bench', 4, 62, 1, 2); b.prop('barrier', 8, 66);
-  b.label('STAIRS UP', 6.5, 58, 18, GOLD, N); b.label('FLOOR 4: SLEEP CLINIC', 6.5, 48, 11, LAV, N);
-  b.lamp(6.5, 70); b.lamp(6.5, 56); b.lamp(6.5, 46);
-  b.arrow(6.5, 66, N); b.arrow(6.5, 50, N);
+  b.pick('ammo', 11, 17); b.pick('ammo', 36, 6);
+  // Day room and soup kitchen.
+  b.carve(46, 19, 54, 19, F.TILES); b.carve(40, 5, 60, 18, F.TILES);
+  for (const [x, z] of [[43, 8], [48, 8], [43, 13], [48, 13]]) b.prop('desk', x, z, 2, 2);
+  b.prop('counter', 54, 6, 1, 9, { color: 0xf2c48d }); b.prop('gen', 57, 9, 2, 2, { color: 0xf2a541 });   // the soup pot
+  b.prop('shelf', 59, 15, 2, 1);
+  b.pick('medkit', 59, 17); b.pick('ammo', 57, 6);
+  b.label('DAY ROOM', 46, 11, 22, MINT); b.label('SOUP', 57.5, 12.5, 18, SOUP);
+  b.lamp(46, 10.5); b.lamp(57, 14);
+  // Floor 2 nurses' post, with roof access E in its corner.
+  b.carve(70, 19, 71, 19, F.TILES); b.carve(79, 12, 79, 14, F.TILES);
+  b.carve(63, 5, 78, 18, F.TILES);
+  wallUp(65, 4, 68, 9, TERRACE);
+  b.stairs(66, 7, 67, 9, '-z', F.TILES);
+  const hutE = b.door(66, 10, 67, 10, 'shutter', 'ROOF ACCESS E');
+  b.prop('counter', 71, 8, 6, 1, { color: 0x9fe3cf }); b.prop('terminal', 76, 6); b.prop('bench', 72, 16, 3, 1);
+  gurney(64, 15);
+  b.pick('ammo', 77, 17); b.pick('smg', 73, 6);
+  b.label("NURSES' POST 2", 72, 12, 18, SOUP); b.label('ROOF ACCESS', 66.5, 11.6, 10, CREAM);
+  b.lamp(72, 11);
+  // West stair hall: corridor A ends here, stairs up to the Sleep Clinic.
+  b.carve(4, 5, 8, 35, F.TILES);
+  wallUp(4, 5, 8, 9, ROOF);
+  wallUp(4, 10, 4, 12, ROOF); wallUp(7, 10, 7, 12, ROOF);
+  b.stairs(5, 10, 6, 12, '-z', F.TILES);
+  b.prop('bench', 4, 28, 1, 2); b.prop('barrier', 8, 31);
+  b.label('STAIRS UP', 6.5, 15, 16, GOLD, N); b.label('FLOOR 3: SLEEP CLINIC', 6.5, 18, 8, LAV, N);
+  b.lamp(6.5, 30); b.lamp(6.5, 16);
+  b.arrow(6.5, 25, N); b.arrow(6.5, 14, N);
 
   // ------------------------------------------------------------------
-  // 8. Floor 4: Dreamwell Sleep Clinic
+  // 12. Lower roofs (storey 1): the ER roof (optional ladder route) and the lobby roof
   // ------------------------------------------------------------------
-  b.carve(5, 38, 8, 43, F.TILES);                                         // the stairs
-  b.label('FLOOR 4', 6.5, 40.5, 16, GOLD, N);
-  b.carve(4, 22, 22, 37, F.TILES);                                        // clinic reception
-  b.prop('counter', 12, 26, 8, 1, { color: 0xc9b8ff }); b.prop('terminal', 19, 25);
-  b.prop('bench', 4, 28, 1, 4); b.prop('bench', 16, 33, 4, 1); b.prop('bush', 21, 23);
-  b.pick('ammo', 5, 23); b.pick('medkit', 21, 36);
-  b.label('DREAMWELL SLEEP CLINIC', 13, 30, 20, LAV);
-  b.label('SNOOZLE SAYS: SLEEP TIGHT', 13, 35.5, 12, PINK);
-  b.lamp(8, 33); b.lamp(16, 28);
-  b.arrow(9, 35, E); b.arrow(21, 30, E);
+  b.carve(4, 37, 36, 62, F.CONCRETE);                                     // ER roof
+  b.open(37, 37, 37, 62);                                                 // a gap between the two roofs
+  b.prop('gen', 9, 41, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 24, 46, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 14, 52, 2, 2, { color: 0xb8c4c8 });
+  b.prop('crate', 31, 40); b.prop('crate', 32, 40); b.prop('pallet', 18, 58, 2, 1); b.prop('bench', 21, 61, 2, 1);
+  // Larry's smoke-break ledge: a sniper perch over the ambulance bay.
+  b.pick('sniper', 16, 61); b.pick('ammo', 17, 61); b.pick('medkit', 25, 61); b.pick('armor', 34, 39);
+  b.note(20, 60, 'Thermos on the roof ledge', 'Best seat in the house. You can see the helipad AND the Galleria skylight. Back in 10, just resting my eyes. L.');
+  b.label('LARRY WAS HERE', 20, 57.5, 12, GOLD);
+  b.lamp(20, 59);
+  b.carve(38, 37, 98, 64, F.CONCRETE);                                    // lobby roof
+  b.prop('gen', 46, 44, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 74, 48, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 90, 56, 2, 2, { color: 0xb8c4c8 });
+  b.prop('container', 58, 52, 4, 2, { color: 0x8fb4c6 }); b.prop('crate', 80, 40); b.prop('crate', 81, 40); b.prop('pallet', 64, 60, 2, 1);
+  b.pick('ammo', 96, 62); b.pick('ammo', 40, 63);
+  // Ladders up the east wing's south wall to the skybridge terrace (storey 2).
+  b.ladder(66, 37, '-z'); b.ladder(92, 37, '-z');
+  b.label('LADDER', 66.5, 39, 10, CREAM); b.label('LADDER', 92.5, 39, 10, CREAM);
+  b.lamp(66.5, 38.5); b.lamp(92.5, 38.5);
+
+  // ------------------------------------------------------------------
+  // 13. Galleria storey 1: Bun Bun Toys, its stockroom (checkpoint), the mezzanine
+  // ------------------------------------------------------------------
+  wallUp(122, 2, 163, 39, ROOF);
+  wallUp(122, 40, 163, 79, TERRACE);
+  b.carve(136, 6, 162, 37, F.WOOD);                                       // Bun Bun Toys
+  // The escalator foot: two flights down from the upper concourse.
+  wallUp(153, 30, 153, 32, ROOF); wallUp(156, 30, 157, 32, ROOF); wallUp(160, 30, 160, 32, ROOF);
+  b.stairs(154, 30, 155, 32, '-z', F.TILES); b.stairs(158, 30, 159, 32, '-z', F.TILES);
+  // Snoozle plush displays.
+  for (const [x, z] of [[139, 10], [149, 10], [139, 18], [149, 18]]) { b.prop('shelf', x, z, 4, 1, { color: 0xffffff }); b.prop('barrel', x + 1, z + 1, 2, 1, { color: 0xffffff }); }
+  b.prop('counter', 161, 8, 1, 5, { color: 0xffb3d1 }); b.prop('crate', 145, 26, 2, 2, { color: 0xffb3d1 });
+  b.label('SNOOZLE PLUSH: 50% OFF', 149, 14.5, 12, PINK); b.label('BUN BUN TOYS', 149, 24, 22, LEMON);
+  b.pick('ammo', 161, 36); b.pick('ammo', 137, 7);
+  b.lamp(143, 14); b.lamp(155, 14); b.lamp(149, 34); b.lamp(140, 28);
+  b.arrow(152, 35, WEST); b.arrow(139, 27.5, WEST);
+  zz(146, 33, WEST);
+  const stockEntry = b.door(135, 26, 135, 29, 'shutter', 'BUN BUN STOCKROOM');
+  b.carve(124, 20, 134, 34, F.SAFE);
+  b.prop('shelf', 124, 21, 1, 6, { color: 0xffffff }); b.prop('shelf', 134, 20, 1, 5, { color: 0xffffff });
+  b.prop('crate', 126, 31); b.prop('crate', 132, 23); b.prop('barrel', 133, 24, 1, 1, { color: 0xffffff });
+  for (const x of [125, 126, 127, 128]) b.pick('medkit', x, 20);
+  b.pick('ammo', 129, 20); b.pick('ammo', 130, 20); b.pick('ammo', 131, 20);
+  b.pick('launcher', 125, 33); b.pick('shotgun', 126, 33); b.pick('rifle', 127, 33); b.pick('smg', 132, 33); b.pick('autoshotgun', 133, 33);
+  b.pick('axe', 132, 31); b.pick('armor', 133, 21); b.pick('firebomb', 134, 33);
+  const stockLever = b.obj('lever', 124, 34, 'Unbolt the back door');
+  b.label('SAFE ROOM', 129.5, 24.5, 22, RED); b.label('STOCKROOM: PLUSHIES', 129.5, 30.5, 12, LEMON);
+  b.lamp(129.5, 27);
+  const stockDoor = b.door(128, 35, 131, 35, 'shutter', 'STOCKROOM BACK DOOR');
+  b.carve(128, 36, 131, 39, F.INTERIOR);
+  // The mezzanine: a ring around the open atrium, escalators down at the west and east.
+  b.carve(124, 40, 162, 74, F.INTERIOR);
+  b.open(131, 46, 155, 68);
+  b.prop('bench', 124, 47, 1, 3); b.prop('bench', 161, 62, 1, 3); b.prop('bench', 136, 72, 3, 1); b.prop('bench', 148, 42, 3, 1);
+  for (const [x, z] of [[124, 66], [162, 44], [124, 74], [162, 74]]) b.prop('bush', x, z);
+  b.pick('ammo', 133, 41); b.pick('ammo', 134, 41); b.pick('medkit', 125, 52);
+  b.label('MEZZANINE', 143, 42.6, 18, PINK); b.label('SKYLIGHT', 143, 71.5, 12, SKY);
+  b.label('ESCALATOR DOWN', 128, 54.5, 10, GOLD); b.label('ESCALATOR DOWN', 158.5, 53.5, 10, GOLD);
+  for (const [x, z] of [[127, 43], [143, 43], [159, 43], [127, 57], [159, 57], [127, 71], [143, 71], [159, 71]]) b.lamp(x, z);
+  b.arrow(129.5, 44, S); b.arrow(127, 50, S); b.arrow(130.5, 57, E);
+  // Dock catwalk: a perch over the finale, ladder at the west end and stairs at the east end.
+  b.carve(106, 77, 150, 79, F.CONCRETE); b.carve(146, 80, 150, 81, F.CONCRETE);
+  b.prop('crate', 115, 77); b.prop('crate', 132, 77); b.prop('pallet', 140, 77, 2, 1);
+  b.pick('sniper', 124, 78); b.pick('ammo', 125, 78); b.pick('medkit', 136, 78); b.pick('ammo', 148, 81);
+  b.label('CATWALK', 128, 78, 12, CREAM, E);
+  b.lamp(110, 78); b.lamp(128, 78); b.lamp(147, 80);
+
+  // ==================================================================
+  // STOREY 2: 3F Sleep Clinic, the skybridge terrace, skybridge, Galleria upper concourse
+  // ==================================================================
+  b.level(2);
+  wallUp(3, 3, 61, 36, ROOF);
+
+  // ------------------------------------------------------------------
+  // 14. Floor 3: Dreamwell Sleep Clinic reception and pod ward
+  // ------------------------------------------------------------------
+  b.carve(4, 5, 20, 35, F.TILES);                                         // clinic reception
+  b.label('FLOOR 3', 6.5, 7, 16, GOLD, S);
+  b.prop('counter', 10, 16, 8, 1, { color: 0xc9b8ff }); b.prop('terminal', 17, 15);
+  b.prop('bench', 4, 20, 1, 4); b.prop('bench', 8, 26, 4, 1); b.prop('bush', 19, 6);
+  b.pick('ammo', 9, 6); b.pick('medkit', 19, 34);
+  b.label('DREAMWELL SLEEP CLINIC', 12, 11, 18, LAV);
+  b.label('SNOOZLE SAYS: SLEEP TIGHT', 12, 22, 12, PINK);
+  b.lamp(8, 13); b.lamp(15, 24); b.lamp(10, 32);
+  b.arrow(9, 9, E); b.arrow(19, 16, E);
+  // Roof access B: stairs up to the roof from the reception (locked until the roof doors give).
+  wallUp(13, 29, 16, 35, ROOF);
+  b.stairs(14, 30, 15, 32, '+z', F.TILES);
+  const hutB = b.door(14, 29, 15, 29, 'shutter', 'ROOF ACCESS B');
+  b.label('ROOF ACCESS', 14.5, 27.6, 10, CREAM);
   // Sleep pod ward: rows of empty, perfectly made pods.
-  b.carve(23, 27, 23, 33, F.TILES);
-  b.carve(24, 4, 60, 38, F.TILES);
+  b.carve(21, 14, 21, 18, F.TILES);
+  b.carve(22, 5, 50, 35, F.TILES);
   let pod = 0;
-  for (const z of [8, 15, 22, 29]) for (const x of [28, 33, 38, 43, 48, 53]) {
+  for (const z of [7, 14, 21, 28]) for (const x of [24, 28, 32, 36, 40, 44]) {
     pod++;
     if (pod === 20) continue;                                             // a gap in the rows: bed 20 got up and left
     b.prop('bed', x, z, 2, 3, { color: 0xe8dcff });
   }
-  b.prop('pillar', 41, 4, 2, 1, { color: 0xf4f0e0 });                    // the wall clock
-  b.label('3:00', 42, 5.6, 26, GOLD);
-  b.prop('shelf', 24, 4, 1, 4, { color: 0xffffff });                     // whiteboard
-  b.note(25, 6, 'Sleep Clinic whiteboard', 'HX-9 TRIAL: deep sleep, 100%. Side effect: sleepwalks toward the chime tone. Stop the chime, they stop? Ask Dr. Lowell. DO NOT tell Pell.');
-  // Bed 12 is the last pod of the second row (x 53, z 15).
-  b.note(55, 16, 'Patient chart, bed 12', '"In the dream I\'m looking for somewhere quiet. Everything awake is so LOUD." Walked 40 m toward the chime. Calmed when shushed.');
-  b.label('12', 54, 14.4, 12, CREAM);
-  for (const [x, z] of [[26, 12], [26, 26], [59, 6], [59, 36]]) b.label('SNOOZLE', x + (x > 40 ? -2 : 2), z, 14, PINK, x > 40 ? WEST : E);
-  b.label('SLEEP TRIALS', 42, 36.5, 24, LAV);
-  b.pick('ammo', 46, 26); b.pick('ammo', 31, 36);
-  for (const [x, z] of [[30, 12], [42, 12], [54, 12], [30, 26], [42, 26], [54, 26], [42, 19]]) b.lamp(x, z);
-  b.arrow(30, 33, E); b.arrow(46, 32.5, E); b.arrow(58, 20, N);
+  b.prop('pillar', 34, 5, 2, 1, { color: 0xf4f0e0 });                    // the wall clock
+  b.label('3:00', 35, 6.6, 26, GOLD);
+  b.prop('shelf', 49, 5, 1, 3, { color: 0xffffff });                     // whiteboard
+  b.note(48, 6, 'Sleep Clinic whiteboard', 'HX-9 TRIAL: deep sleep, 100%. Side effect: sleepwalks toward the chime tone. Stop the chime, they stop? Ask Dr. Lowell. DO NOT tell Pell.');
+  // Bed 12 is the last pod of the second row (x 44, z 14).
+  b.note(46, 15, 'Patient chart, bed 12', '"In the dream I\'m looking for somewhere quiet. Everything awake is so LOUD." Walked 40 m toward the chime. Calmed when shushed.');
+  b.label('12', 45, 13.4, 12, CREAM);
+  for (const [x, z, r] of [[23, 11, E], [23, 25, E], [49, 19, WEST], [49, 33, WEST]] as const) b.label('SNOOZLE', x, z, 14, PINK, r);
+  b.label('SLEEP TRIALS', 34, 34, 24, LAV);
+  b.pick('ammo', 38, 26); b.pick('ammo', 27, 33);
+  for (const [x, z] of [[26, 11], [34, 11], [42, 11], [26, 25], [34, 25], [42, 25], [34, 18], [48, 12]]) b.lamp(x, z);
+  b.arrow(26, 17.5, E); b.arrow(46, 18.5, E); b.arrow(49.5, 10, E);
+  // Roof access C: stairs up from the back of the ward (locked until the roof doors give).
+  wallUp(37, 32, 40, 35, ROOF);
+  b.stairs(38, 33, 39, 35, '+z', F.TILES);
+  const hutC = b.door(38, 32, 39, 32, 'shutter', 'ROOF ACCESS C');
+  b.label('ROOF ACCESS', 38.5, 31.6, 9, CREAM);
   // Observation room (checkpoint): one-way glass onto the ward, a monitoring desk.
-  b.carve(61, 12, 62, 13, F.TILES);
-  const obsEntry = b.door(63, 12, 63, 13, 'shutter', 'OBSERVATION');
-  b.carve(61, 7, 63, 10, F.TILES); b.prop('barrier', 61, 7, 3, 4, { color: 0xbfe8f0 });   // the one-way glass
-  b.label('ONE-WAY GLASS', 62, 9, 10, SKY, E);
-  b.carve(64, 6, 76, 17, F.SAFE);
-  b.prop('counter', 65, 6, 6, 1, { color: 0x9aa6b8 }); b.prop('terminal', 66, 7); b.prop('terminal', 69, 7);
-  b.prop('desk', 72, 7, 2, 1);
-  b.note(73, 8, 'Lanyard on the desk', 'DREAMWELL SLEEP CO. Dr. Wren Lowell, Lead Formulation. Emergency contact: Dorothy "Dot" Lowell (Mum), Mallow Bay Transit.');
-  b.note(76, 15, 'Taped to the stairwell door', 'LARRY. Do NOT nap in the chopper. We have talked about this. Mgmt');
-  for (const x of [64, 65, 66, 67]) b.pick('medkit', x, 17);
-  b.pick('ammo', 74, 6); b.pick('ammo', 75, 6); b.pick('ammo', 76, 6);
-  b.pick('sniper', 69, 17); b.pick('shotgun', 70, 17); b.pick('rifle', 71, 17); b.pick('smg', 72, 17); b.pick('autoshotgun', 73, 17);
-  b.pick('armor', 68, 17); b.pick('bat', 74, 17); b.pick('firebomb', 75, 17);
-  const obsLever = b.obj('lever', 76, 10, 'Unlock the stairwell door');
-  b.label('SAFE ROOM', 70, 12, 22, RED); b.label('OBSERVATION', 70, 14.5, 14, LAV);
-  b.lamp(70, 11);
-  b.arrow(60, 12.5, E);
+  const obsEntry = b.door(51, 9, 51, 10, 'shutter', 'OBSERVATION');
+  b.carve(51, 5, 51, 8, F.TILES); b.carve(51, 11, 51, 15, F.TILES);
+  b.prop('barrier', 51, 5, 1, 4, { color: 0xbfe8f0 }); b.prop('barrier', 51, 11, 1, 5, { color: 0xbfe8f0 });   // the one-way glass
+  b.label('ONE-WAY GLASS', 50, 14, 10, SKY, E);
+  b.carve(52, 5, 60, 15, F.SAFE);
+  b.prop('counter', 53, 5, 5, 1, { color: 0x9aa6b8 }); b.prop('terminal', 53, 6); b.prop('terminal', 56, 6);
+  b.prop('desk', 59, 5, 2, 1);
+  b.note(59, 6, 'Lanyard on the desk', 'DREAMWELL SLEEP CO. Dr. Wren Lowell, Lead Formulation. Emergency contact: Dorothy "Dot" Lowell (Mum), Mallow Bay Transit.');
+  b.note(58, 15, 'Taped to the stairwell door', 'LARRY. Do NOT nap in the chopper. We have talked about this. Mgmt');
+  for (const [x, z] of [[52, 15], [53, 15], [54, 15], [52, 14]]) b.pick('medkit', x, z);
+  b.pick('ammo', 58, 8); b.pick('ammo', 59, 8); b.pick('ammo', 60, 8);
+  b.pick('sniper', 52, 12); b.pick('shotgun', 53, 12); b.pick('rifle', 54, 12); b.pick('smg', 59, 12); b.pick('autoshotgun', 60, 12);
+  b.pick('armor', 59, 14); b.pick('bat', 60, 14); b.pick('firebomb', 60, 15);
+  const obsLever = b.obj('lever', 60, 10, 'Unlock the stairwell door');
+  b.label('SAFE ROOM', 56, 8.5, 20, RED); b.label('OBSERVATION', 56, 13.6, 12, LAV);
+  b.lamp(56, 10);
   // Stairwell up to the roof.
-  const stairDoor = b.door(77, 11, 77, 13, 'shutter', 'STAIRWELL');
-  b.carve(78, 4, 86, 16, F.TILES);
-  b.prop('barrier', 82, 9, 3, 1); b.prop('barrier', 79, 13, 3, 1);       // switchback railings
-  b.pick('ammo', 85, 15); b.pick('medkit', 86, 15);
-  b.label('STAIRS UP: ROOF', 82, 11.5, 14, GOLD); b.label('HELIPAD', 84, 6, 14, CREAM, E);
-  b.lamp(82, 14); b.lamp(82, 6);
-  b.arrow(80, 11, N); b.arrow(85, 6.5, E);
+  const stairDoor = b.door(56, 16, 57, 16, 'shutter', 'STAIRWELL');
+  b.carve(55, 17, 58, 17, F.TILES);
+  b.stairs(56, 18, 57, 20, '+z', F.TILES);
+  b.label('STAIRS UP: ROOF', 56.5, 14.6, 10, GOLD);
   // East offices: a dead-end side pocket off the ward.
-  b.carve(61, 29, 63, 31, F.TILES); b.carve(64, 21, 86, 38, F.TILES);
-  for (const x of [66, 72, 78]) { b.prop('desk', x, 24, 3, 1); b.prop('shelf', x, 21, 3, 1); }
-  b.prop('counter', 70, 31, 1, 7, { color: 0xc9b8ff }); b.prop('bed', 80, 33, 2, 3, { color: 0xe8dcff });
-  b.pick('medkit', 85, 22); b.pick('rifle', 84, 37); b.pick('ammo', 65, 37);
-  b.pick('armor', 84, 22);                                      // off-route reward
-  b.label('NAP POD SHOWROOM', 80, 30, 14, LAV); b.label('DR. W. LOWELL', 73, 26, 12, CREAM);
-  b.lamp(75, 30);
+  b.carve(51, 29, 51, 30, F.TILES); b.carve(52, 25, 60, 35, F.TILES);
+  b.prop('desk', 53, 26, 3, 1); b.prop('shelf', 57, 25, 3, 1); b.prop('bed', 57, 32, 2, 3, { color: 0xe8dcff });
+  b.prop('counter', 55, 29, 1, 4, { color: 0xc9b8ff });
+  b.pick('medkit', 60, 26); b.pick('rifle', 52, 35); b.pick('ammo', 53, 35);
+  b.pick('armor', 60, 30);                                      // off-route reward
+  b.label('NAP POD SHOWROOM', 58, 30, 10, LAV); b.label('DR. W. LOWELL', 54, 28, 10, CREAM);
+  b.lamp(56, 30);
 
   // ------------------------------------------------------------------
-  // 9. Roof and helipad (crescendo 2 at the skybridge end)
+  // 15. The skybridge terrace (roof of the east wing; crescendo 2)
   // ------------------------------------------------------------------
-  b.carve(87, 5, 87, 8, F.CONCRETE);
-  b.carve(88, 2, 124, 44, F.CONCRETE);
-  // Roof access huts: other stair cores, where the horde boils up from.
-  b.fill(89, 35, 97, 44); b.carve(90, 36, 96, 43, F.TILES); b.carve(93, 35, 94, 35, F.TILES);
-  b.fill(112, 2, 122, 10); b.carve(113, 3, 121, 9, F.TILES); b.carve(116, 10, 117, 10, F.TILES);
-  b.fill(104, 37, 112, 44); b.carve(105, 38, 111, 43, F.TILES); b.carve(105, 37, 106, 37, F.TILES);
-  // Two more pockets close to the skybridge panel, so the horde can boil up out of sight nearby.
-  b.fill(114, 38, 124, 44); b.carve(115, 39, 123, 43, F.TILES); b.carve(115, 38, 116, 38, F.TILES);
-  b.fill(118, 12, 124, 22); b.carve(119, 13, 123, 21, F.TILES); b.carve(118, 16, 118, 18, F.TILES);
-  b.prop('gen', 120, 14, 2, 2, { color: 0xb8c4c8 }); b.prop('crate', 122, 42);
-  b.label('PLANT ROOM', 121, 19, 10, CREAM); b.label('ROOF ACCESS E', 119, 41, 12, CREAM);
-  b.label('ROOF ACCESS B', 93.5, 39, 12, CREAM); b.label('ROOF ACCESS C', 117, 6, 12, CREAM); b.label('ROOF ACCESS D', 108, 41, 12, CREAM);
-  b.prop('crate', 91, 37); b.prop('crate', 119, 4); b.prop('barrel', 110, 39);
-  // The helipad: big H, landing lights, skid marks, no helicopter.
-  b.label('H', 106, 20, 110, CREAM); b.label('NO HELICOPTER', 106, 27.5, 12, RED);
-  b.label('~~ skid marks ~~', 112, 14, 14, '#2b2b3a', 0.4);
-  for (const [x, z] of [[99, 12], [111, 12], [99, 28], [111, 28]]) b.prop('beacon', x, z);
-  // HVAC units, vents and crates: imperfect cover.
-  b.prop('gen', 91, 14, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 91, 24, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 112, 20, 2, 2, { color: 0xb8c4c8 });
-  b.prop('container', 100, 39, 2, 4, { color: 0x8fb4c6 }); b.prop('crate', 110, 33); b.prop('crate', 111, 33); b.prop('pallet', 102, 33, 2, 1);
-  b.prop('barrier', 118, 27, 1, 3); b.prop('barrier', 113, 34, 3, 1); b.prop('pallet', 96, 4, 2, 1);
-  b.pick('ammo', 120, 35); b.pick('ammo', 121, 35); b.pick('ammo', 122, 35); b.pick('medkit', 122, 36); b.pick('ammo', 89, 3);
-  b.pick('launcher', 119, 35); b.pick('sniper', 120, 36); // before the skybridge holdout; long roof sightlines
-  b.pick('rattle', 121, 36);
-  b.label('HELIPAD', 106, 4.5, 26, CREAM);
-  b.label('SKYBRIDGE', 121, 32, 16, GOLD, E);
-  for (const [x, z] of [[90, 4], [124, 4], [89, 31], [124, 26], [124, 35], [100, 44], [113, 44]]) b.lamp(x, z);
-  b.arrow(92, 7, E); b.arrow(114, 30.5, E); b.arrow(122, 31, E);
+  b.carve(62, 4, 98, 36, F.CONCRETE);
+  b.fill(84, 4, 89, 7);                                                   // elevator motor room
+  b.label('LIFT MOTOR ROOM', 86.5, 8.6, 10, CREAM);
+  // Roof-access huts: the tops of the stair cores from Floor 2 (D and E).
+  b.fill(81, 29, 84, 34); b.carve(82, 33, 83, 34, F.CONCRETE);
+  b.fill(65, 4, 68, 10); b.carve(66, 5, 68, 6, F.CONCRETE);
+  b.label('ROOF ACCESS D', 82.5, 35.6, 9, CREAM); b.label('ROOF ACCESS E', 70, 5.6, 9, CREAM, E);
+  // Up to the helipad roof: an outside flight and a ladder against the tower wall.
+  b.fill(62, 25, 64, 25); b.fill(62, 28, 64, 28);
+  b.stairs(62, 26, 64, 27, '-x');
+  b.ladder(62, 8, '-x');
+  b.label('HELIPAD', 66.5, 26.5, 10, CREAM, WEST); b.label('LADDER', 64, 8.5, 9, CREAM, WEST);
+  // Cover: HVAC units, a container, crates. Imperfect on purpose.
+  b.prop('gen', 72, 14, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 88, 22, 2, 2, { color: 0xb8c4c8 });
+  b.prop('container', 76, 26, 2, 4, { color: 0x8fb4c6 }); b.prop('crate', 92, 12); b.prop('crate', 93, 12);
+  b.prop('pallet', 70, 32, 2, 1); b.prop('barrier', 90, 30, 3, 1); b.prop('barrier', 95, 8, 1, 3);
+  b.pick('ammo', 95, 24); b.pick('ammo', 96, 24); b.pick('ammo', 97, 24); b.pick('medkit', 98, 24);
+  b.pick('launcher', 95, 25); b.pick('sniper', 96, 25); // before the skybridge holdout; long roof sightlines
+  b.pick('rattle', 97, 25);
+  b.label('SKYBRIDGE TERRACE', 80, 18, 20, CREAM);
+  b.label('SKYBRIDGE', 96.5, 20, 16, GOLD, E);
+  for (const [x, z] of [[64, 4.5], [76, 10], [90, 6], [70, 22], [84, 18], [97, 14], [97, 28], [66, 34], [80, 35], [92, 35]]) b.lamp(x, z);
+  b.arrow(68, 26.5, E); b.arrow(82, 22, E); b.arrow(93, 20, E);
   // The skybridge control panel and shutter.
-  const skyPanel = b.obj('lever', 124, 30, 'Raise the skybridge shutter (LOUD)');
-  b.carve(125, 31, 125, 33, F.INTERIOR);
-  const skyShutter = b.door(125, 31, 125, 33, 'shutter', 'SKYBRIDGE');
+  const skyPanel = b.obj('lever', 98, 17, 'Raise the skybridge shutter (LOUD)');
+  const skyShutter = b.door(99, 19, 99, 21, 'shutter', 'SKYBRIDGE');
 
   // ------------------------------------------------------------------
-  // 10. Bay inlet and the glass skybridge
+  // 16. The glass skybridge over the bay inlet
   // ------------------------------------------------------------------
-  b.carve(126, 20, 152, 30, F.WATER); b.carve(126, 34, 152, 79, F.WATER);
-  b.carve(126, 31, 152, 33, F.INTERIOR);
-  b.prop('bench', 133, 31, 2, 1); b.prop('barrier', 141, 33, 1, 1); b.prop('bench', 147, 31, 2, 1);
-  b.label('SKYBRIDGE TO BAYSIDE GALLERIA', 139, 32, 14, GOLD, E);
-  for (const x of [129, 137, 145, 151]) b.lamp(x, 32);
-  b.arrow(131, 32, E); b.arrow(144, 32, E);
+  b.carve(100, 19, 121, 21, F.INTERIOR);
+  b.prop('bench', 105, 19, 2, 1); b.prop('barrier', 111, 21, 1, 1); b.prop('bench', 116, 19, 2, 1);
+  b.label('SKYBRIDGE TO BAYSIDE GALLERIA', 110.5, 20, 14, GOLD, E);
+  for (const x of [102, 108, 114, 120]) b.lamp(x, 20.5);
+  b.arrow(103, 20.5, E); b.arrow(118, 20.5, E);
 
   // ------------------------------------------------------------------
-  // 11. Galleria upper concourse: ballroom, chandelier, Dream Shop
+  // 17. Galleria upper concourse: ballroom, chandelier, Dream Shop
   // ------------------------------------------------------------------
-  b.carve(153, 4, 178, 50, F.INTERIOR);
-  b.paint(158, 21, 174, 39, F.WOOD);                                       // the old ballroom floor
-  for (const [x, z] of [[158, 21], [173, 21], [158, 38], [173, 38]]) b.prop('pillar', x, z, 1, 1, { color: 0xffe0b0 });
-  b.label('BAYSIDE GALLERIA', 166, 34, 28, PINK); b.label('GRAND BALLROOM 1931', 166, 26, 14, LEMON);
+  wallUp(122, 2, 163, 39, ROOF);
+  b.carve(122, 19, 122, 21, F.INTERIOR);
+  b.carve(123, 13, 162, 29, F.INTERIOR); b.carve(123, 30, 152, 37, F.INTERIOR);
+  b.carve(161, 30, 162, 37, F.INTERIOR); b.carve(153, 33, 160, 37, F.INTERIOR);
+  b.paint(132, 15, 152, 29, F.WOOD);                                       // the old ballroom floor
+  for (const [x, z] of [[132, 15], [152, 15], [132, 29], [152, 29]]) b.prop('pillar', x, z, 1, 1, { color: 0xffe0b0 });
+  b.label('BAYSIDE GALLERIA', 142, 26.5, 28, PINK); b.label('GRAND BALLROOM 1931', 142, 18.6, 14, LEMON);
   // The chandelier: a ring of lights over the old dance floor.
-  for (let a = 0; a < 8; a++) b.lamp(166 + Math.cos((a * Math.PI) / 4) * 4, 30 + Math.sin((a * Math.PI) / 4) * 4);
-  b.lamp(166, 30);
-  b.prop('bench', 155, 24, 1, 3); b.prop('bench', 155, 35, 1, 3); b.prop('bush', 177, 30); b.prop('bush', 177, 22);
-  b.pick('ammo', 170, 47); b.pick('medkit', 159, 49);
+  for (let a = 0; a < 8; a++) b.lamp(142.5 + Math.cos((a * Math.PI) / 4) * 4, 22.5 + Math.sin((a * Math.PI) / 4) * 4);
+  b.lamp(142.5, 22.5);
+  b.prop('bench', 125, 15, 1, 3); b.prop('bench', 125, 26, 1, 3); b.prop('bush', 162, 16); b.prop('bush', 162, 27);
+  b.pick('ammo', 151, 36); b.pick('medkit', 124, 36);
+  b.label('ESCALATOR DOWN: BUN BUN TOYS', 156.5, 27.6, 10, LEMON);
+  b.arrow(126, 20.5, E); b.arrow(150, 22.5, E); b.arrow(154.5, 26, S); b.arrow(158.5, 26, S);
+  zz(130, 21, E); zz(156, 24, S);
+  b.lamp(128, 33); b.lamp(158, 35); b.lamp(158, 18);
   // The Dream Shop: pyjama-clad mannequins and a scrawled poster.
-  b.fill(153, 15, 170, 15); b.carve(159, 15, 163, 15, F.INTERIOR);
-  for (const [x, z] of [[156, 7], [159, 7], [162, 7], [156, 11], [159, 11], [162, 11]]) b.prop('pillar', x, z, 1, 1, { color: pastel() });
-  b.prop('counter', 166, 6, 1, 5, { color: 0xc9b8ff }); b.prop('shelf', 168, 12, 3, 1, { color: 0xe8dcff });
-  b.note(161, 14, 'Dream Shop window poster', 'COMING SOON: Hush HX-9 Pillow Mist! Dreamwell, because Mallow Bay deserves to rest. [scrawled:] the one Wren said NO to');
-  b.pick('medkit', 169, 5); b.pick('ammo', 154, 5); b.pick('rattle', 168, 5);   // off-route reward
-  b.label('DREAMWELL DREAM SHOP', 161, 9, 14, LAV);
-  b.lamp(161, 10);
-  // Dark shopfronts on the east side.
-  b.fill(171, 4, 171, 19); b.carve(171, 9, 171, 10, F.INTERIOR);
-  b.prop('shelf', 176, 5, 1, 6); b.prop('counter', 173, 15, 4, 1); b.pick('ammo', 174, 6);
-  b.label('CLOSED', 175, 12, 12, PINK, WEST);
-  b.fill(153, 41, 158, 50); b.fill(171, 41, 178, 50);                    // hall down to the toy store
-  b.prop('bench', 161, 45, 1, 3); b.prop('bush', 169, 42);
-  b.label('BUN BUN TOYS', 164.5, 48, 18, LEMON);
-  for (const [x, z] of [[156, 32], [176, 36], [164, 44]]) b.lamp(x, z);
-  b.arrow(156, 32, E); b.arrow(164.5, 41, S); b.arrow(164.5, 49, S);
-  zz(160, 42, S);
+  b.carve(123, 4, 140, 11, F.INTERIOR); b.carve(128, 12, 134, 12, F.INTERIOR);
+  for (const [x, z] of [[125, 6], [128, 6], [131, 6], [125, 9], [128, 9], [131, 9]]) b.prop('pillar', x, z, 1, 1, { color: pastel() });
+  b.prop('counter', 136, 5, 1, 5, { color: 0xc9b8ff }); b.prop('shelf', 138, 10, 2, 1, { color: 0xe8dcff });
+  b.note(133, 11, 'Dream Shop window poster', 'COMING SOON: Hush HX-9 Pillow Mist! Dreamwell, because Mallow Bay deserves to rest. [scrawled:] the one Wren said NO to');
+  b.pick('medkit', 139, 5); b.pick('ammo', 123, 4); b.pick('rattle', 138, 4);   // off-route reward
+  b.label('DREAMWELL DREAM SHOP', 132, 8, 14, LAV);
+  b.lamp(132, 8);
+  // Dark shopfronts on the north-east side.
+  b.carve(143, 4, 162, 11, F.INTERIOR); b.carve(150, 12, 151, 12, F.INTERIOR);
+  b.prop('shelf', 162, 5, 1, 6); b.prop('counter', 145, 9, 4, 1); b.pick('ammo', 160, 10);
+  b.label('CLOSED', 152, 7, 12, PINK);
+
+  // ==================================================================
+  // STOREY 3: the hospital roof and helipad
+  // ==================================================================
+  b.level(3);
 
   // ------------------------------------------------------------------
-  // 12. Bun Bun Toys and its stockroom (checkpoint)
+  // 18. Roof and helipad; roof-access huts are where the horde boils up
   // ------------------------------------------------------------------
-  b.carve(160, 51, 169, 51, F.WOOD); b.carve(153, 52, 178, 66, F.WOOD);
-  // Snoozle plush displays.
-  for (const [x, z] of [[155, 55], [155, 61], [172, 55], [172, 61]]) { b.prop('shelf', x, z, 4, 1, { color: 0xffffff }); b.prop('barrel', x + 1, z + 1, 2, 1, { color: 0xffffff }); }
-  b.prop('counter', 176, 53, 1, 5, { color: 0xffb3d1 }); b.prop('crate', 162, 58, 2, 2, { color: 0xffb3d1 });
-  b.label('SNOOZLE PLUSH: 50% OFF', 165, 63, 12, PINK); b.label('BUN BUN TOYS', 165, 56, 22, LEMON);
-  b.pick('ammo', 177, 65); b.pick('ammo', 153, 65);
-  b.lamp(158, 58); b.lamp(171, 58); b.lamp(165, 64);
-  b.arrow(165.5, 62, S);
-  b.carve(164, 67, 167, 67, F.WOOD);
-  const stockEntry = b.door(164, 67, 167, 67, 'shutter', 'BUN BUN STOCKROOM');
-  b.carve(158, 68, 174, 76, F.SAFE);
-  b.prop('shelf', 158, 68, 1, 8, { color: 0xffffff }); b.prop('shelf', 174, 68, 1, 6, { color: 0xffffff });
-  b.prop('crate', 160, 74); b.prop('crate', 171, 70); b.prop('barrel', 172, 70, 1, 1, { color: 0xffffff });
-  for (const x of [160, 161, 162, 163]) b.pick('medkit', x, 68);
-  b.pick('ammo', 168, 68); b.pick('ammo', 169, 68); b.pick('ammo', 170, 68);
-  b.pick('launcher', 158, 76); b.pick('shotgun', 159, 76); b.pick('rifle', 160, 76); b.pick('smg', 161, 76); b.pick('autoshotgun', 162, 76);
-  b.pick('axe', 163, 76); b.pick('armor', 164, 68); b.pick('firebomb', 171, 68);
-  const stockLever = b.obj('lever', 173, 76, 'Unbolt the back door');
-  b.label('SAFE ROOM', 166, 71, 22, RED); b.label('STOCKROOM: PLUSHIES', 166, 73.5, 12, LEMON);
-  b.lamp(166, 72);
-  b.carve(165, 78, 167, 79, F.INTERIOR);
-  const stockDoor = b.door(165, 77, 167, 77, 'shutter', 'STOCKROOM BACK DOOR');
+  b.carve(4, 4, 61, 36, F.CONCRETE);
+  b.fill(55, 16, 58, 22); b.carve(56, 21, 57, 22, F.CONCRETE);           // main stairwell hut (from observation)
+  b.fill(13, 29, 16, 34); b.carve(14, 33, 15, 34, F.CONCRETE);           // roof access B
+  b.fill(37, 32, 40, 35);                                                 // roof access C (opens onto the south edge)
+  b.label('ROOF ACCESS A', 56.5, 24, 10, CREAM); b.label('ROOF ACCESS B', 14.5, 35.6, 10, CREAM); b.label('ROOF ACCESS C', 34.5, 36, 9, CREAM);
+  // The helipad: big H, landing lights, skid marks, no helicopter.
+  b.label('H', 32, 19.5, 110, CREAM); b.label('NO HELICOPTER', 32, 27.5, 12, RED);
+  b.label('~~ skid marks ~~', 38, 13, 14, '#2b2b3a', 0.4);
+  for (const [x, z] of [[25, 12], [39, 12], [25, 27], [39, 27]]) b.prop('beacon', x, z);
+  // HVAC units, vents and crates: imperfect cover.
+  b.prop('gen', 7, 7, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 7, 20, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 47, 8, 2, 2, { color: 0xb8c4c8 });
+  b.prop('container', 48, 27, 2, 4, { color: 0x8fb4c6 }); b.prop('crate', 20, 7); b.prop('crate', 21, 7); b.prop('pallet', 44, 21, 2, 1);
+  b.prop('barrier', 52, 31, 3, 1); b.prop('pallet', 10, 30, 2, 1);
+  b.pick('ammo', 54, 24); b.pick('ammo', 5, 5); b.pick('medkit', 60, 35);
+  b.label('HELIPAD', 32, 6, 26, CREAM);
+  b.label('SKYBRIDGE TERRACE', 58, 26.5, 11, GOLD, E);
+  for (const [x, z] of [[6, 5], [60, 5], [6, 35], [33, 35], [56, 25], [32, 10], [32, 30], [60, 26.5]]) b.lamp(x, z);
+  b.arrow(54, 24.5, WEST); b.arrow(44, 18, WEST); b.arrow(52, 26.5, E); b.arrow(59, 26.5, E);
 
-  // ------------------------------------------------------------------
-  // 13. Food court atrium (the Snoozle Brute), helicopter in the skylight
-  // ------------------------------------------------------------------
-  b.carve(122, 80, 178, 126, F.INTERIOR);
-  // Food stall kitchens along the south wall (hidey-holes and horde lanes).
-  b.fill(122, 119, 178, 126);
-  for (const [x0, name, col] of [[125, 'NOODLES', PINK], [136, 'TACO TACO', LEMON], [147, 'BUBBLE TEA', MINT], [158, 'PRETZEL', GOLD], [169, 'SUSHI GO', SKY]] as const) {
-    b.carve(x0, 121, x0 + 7, 125, F.TILES); b.carve(x0, 119, x0 + 7, 120, F.INTERIOR);
-    b.prop('counter', x0 + 2, 119, 6, 1, { color: 0xf0e2b6 }); b.prop('shelf', x0 + 1, 125, 5, 1);
-    b.label(name, x0 + 4, 117.8, 14, col);
-  }
-  b.pick('ammo', 126, 124); b.pick('ammo', 127, 124); b.pick('medkit', 159, 124); b.pick('ammo', 175, 123); b.pick('ammo', 175, 124);
-  // The dry fountain and the helicopter tail poking down through the skylight.
-  b.prop('fountain', 146, 99, 4, 4, { color: 0xd8d0c8 });
-  b.label('DRY FOUNTAIN', 148, 104.5, 12, CREAM);
-  b.prop('container', 134, 83, 1, 9, { color: 0xe86a5a, rot: 0.25 });   // tail boom
-  b.prop('pillar', 133, 82, 3, 1, { color: 0xe86a5a });                // tail fin
-  b.prop('crate', 137, 92, 2, 1, { color: 0x8fd8ff }); b.prop('crate', 131, 90, 1, 1, { color: 0x8fd8ff });   // skylight glass
-  b.label("LARRY'S CHOPPER", 137, 87, 14, RED, WEST); b.label('SKYLIGHT', 138, 81.2, 12, SKY);
-  // Tables in clusters, planters and pillars.
-  for (const [x, z] of [[128, 97], [128, 106], [139, 100], [139, 110], [155, 92], [157, 108], [166, 96], [166, 106], [174, 101], [148, 112]]) b.prop('desk', x, z, 2, 2, { color: 0xffe0b0 });
-  for (const [x, z] of [[134, 104], [160, 101], [152, 88]]) b.prop('bush', x, z, 2, 1);
-  for (const [x, z] of [[144, 90], [154, 90], [144, 110], [154, 110], [128, 86], [172, 86]]) b.prop('pillar', x, z, 1, 1, { color: 0xffd0e0 });
-  b.prop('bench', 162, 84, 3, 1); b.prop('bench', 124, 112, 1, 3);
-  b.pick('ammo', 177, 81); b.pick('ammo', 123, 81);
-  b.label('FOOD COURT', 150, 95, 34, LEMON);
-  for (const [x, z] of [[130, 92], [140, 104], [150, 88], [160, 96], [170, 92], [130, 114], [160, 114], [170, 108], [150, 108], [166, 82]]) b.lamp(x, z);
-  b.arrow(166, 82, S); b.arrow(158, 100, WEST); b.arrow(132, 101, WEST); b.arrow(125, 102, WEST);
-  zz(162, 90, WEST); zz(140, 96, WEST);
-
-  // ------------------------------------------------------------------
-  // 14. Arcade, Security office (breakers), dock corridor
-  // ------------------------------------------------------------------
-  b.carve(121, 98, 121, 106, F.INTERIOR);
-  b.carve(104, 96, 120, 118, F.INTERIOR);
-  for (const z of [99, 103, 107, 111]) for (const x of [106, 109, 114, 117]) b.prop('terminal', x, z, 1, 2, { color: [0xff3df0, 0x3dd8ff, 0xfff27a, 0x7cff6b][(x + z) % 4] });
-  b.prop('counter', 104, 116, 3, 1, { color: 0xff3df0 }); b.prop('shelf', 120, 115, 1, 3);
-  b.pick('ammo', 105, 97);
-  b.label('INSERT COIN', 112, 114.5, 30, MAGENTA); b.label('INSERT COIN', 112, 101.5, 16, MAGENTA);
-  b.label('STAR ARCADE', 112, 109, 14, SKY);
-  b.label('SECURITY', 111, 97, 16, MAGENTA);
-  for (const [x, z] of [[108, 105], [116, 105], [112, 98], [112, 116]]) b.lamp(x, z);
-  b.arrow(118, 102, WEST); b.arrow(111.5, 98, N);
-  // Security: CCTV wall and the breaker panel on the back wall.
-  b.carve(110, 95, 112, 95, F.INTERIOR);
-  b.carve(104, 84, 118, 94, F.INTERIOR);
-  const breaker = b.obj('lever', 113, 84, 'Throw the breakers');
-  b.prop('counter', 105, 88, 6, 1, { color: 0x6a7080 }); b.prop('terminal', 105, 87); b.prop('terminal', 107, 87); b.prop('terminal', 109, 87);
-  b.prop('shelf', 118, 85, 1, 5); b.prop('desk', 114, 90, 2, 1);
-  b.pick('medkit', 104, 93); b.pick('medkit', 105, 93); b.pick('ammo', 117, 93); b.pick('ammo', 116, 93); b.pick('ammo', 115, 93);
-  b.pick('magnum', 106, 93); b.pick('launcher', 107, 93); b.pick('rifle', 108, 93); // before the freight lift finale
-  b.pick('axe', 109, 93);
-  b.label('MALL SECURITY', 111, 91.5, 16, CREAM); b.label('BREAKERS', 113, 85.6, 12, GOLD);
-  b.lamp(111, 89);
-  // Loading-dock corridor (opened by the breakers).
-  b.carve(108, 119, 111, 119, F.INTERIOR);
-  const dockDoor = b.door(108, 119, 111, 119, 'shutter', 'LOADING DOCK');
-  b.carve(108, 120, 111, 133, F.CONCRETE);
-  b.prop('pallet', 108, 124); b.prop('crate', 111, 128);
-  b.pick('ammo', 111, 122); b.pick('medkit', 108, 131);
-  b.label('LOADING DOCK', 109.5, 126, 14, GOLD, N);
-  b.lamp(109.5, 121); b.lamp(109.5, 131);
-  b.arrow(109.5, 117, S); b.arrow(109.5, 129, S);
-
-  // ------------------------------------------------------------------
-  // 15. Loading dock (finale), truck yard, freight lift
-  // ------------------------------------------------------------------
-  b.carve(104, 134, 164, 158, F.CONCRETE);
-  // Truck bays in the south wall: the shutters are up and the yard is full of sleepers.
-  b.carve(104, 161, 176, 176, F.ASPHALT);
-  b.walls(103, 159, 177, 177, WALL.FENCE, 3.2);
-  for (const x0 of [112, 126, 140, 154]) {
-    b.carve(x0, 159, x0 + 3, 160, F.CONCRETE);
-    b.label('BAY', x0 + 2, 157.4, 12, GOLD);
-  }
-  b.prop('truck', 106, 165, 2, 8, { color: 0xf0e2b6 }); b.prop('truck', 133, 164, 2, 8, { color: 0xffb3d1 }); b.prop('truck', 161, 166, 2, 8, { color: 0xfff1a8 });
-  b.prop('container', 118, 170, 6, 2, { color: 0x8fb4c6 }); b.prop('container', 146, 168, 2, 6, { color: 0xd3a7bf });
-  for (const [x, z] of [[122, 163], [150, 175], [172, 164], [140, 172]]) b.prop('pallet', x, z);
-  // Back-of-house pockets around the dock: more ways in for the finale horde.
-  b.carve(138, 128, 162, 132, F.TILES);                                   // cold storage
-  b.carve(142, 133, 144, 133, F.TILES); b.carve(156, 133, 158, 133, F.TILES);
-  b.prop('shelf', 139, 128, 10, 1, { color: 0xd8efe8 }); b.prop('shelf', 151, 128, 10, 1, { color: 0xd8efe8 }); b.prop('crate', 148, 131);
-  b.label('COLD STORAGE', 150, 130.5, 14, SKY);
-  b.carve(166, 134, 176, 140, F.CONCRETE); b.carve(165, 135, 165, 137, F.CONCRETE);   // returns cage
-  b.prop('pallet', 170, 135); b.prop('crate', 174, 139); b.label('RETURNS', 171, 138, 12, CREAM);
-  b.carve(166, 154, 176, 158, F.CONCRETE); b.carve(165, 155, 165, 157, F.CONCRETE);   // compactor
-  b.prop('dumpster', 172, 155, 2, 2); b.label('COMPACTOR', 168, 157, 10, CREAM);
-  // Dock floor cover: pallets, crate stacks, a forklift, a dead mall van.
-  for (const [x, z] of [[116, 138], [130, 140], [146, 137], [124, 150], [140, 152], [156, 151], [150, 156]]) b.prop('crate', x, z, 2, 1);
-  for (const [x, z] of [[120, 144], [136, 146], [152, 143], [110, 152]]) b.prop('pallet', x, z, 2, 1);
-  b.prop('car', 134, 135, 2, 1, { color: 0xffd43b }); b.prop('van', 158, 136, 1, 3, { color: 0xe6c3d3, rot: N });
-  b.prop('container', 113, 146, 1, 4, { color: 0x7aa59c }); b.prop('container', 160, 152, 3, 1, { color: 0xeedfa6 });
-  b.pick('ammo', 105, 135); b.pick('ammo', 163, 141); b.pick('medkit', 160, 134); b.pick('ammo', 128, 157); b.pick('medkit', 163, 134);
-  b.pick('rattle', 162, 141);                                   // by the lift button, for the long finale
-  b.label('BAYSIDE GALLERIA DELIVERIES', 132, 142.5, 20, CREAM);
-  for (const [x, z] of [[108, 138], [122, 136], [140, 140], [156, 140], [118, 154], [134, 154], [150, 154], [162, 148], [114, 168], [140, 168], [168, 170], [150, 130]]) b.lamp(x, z);
-  b.arrow(112, 136, E); b.arrow(140, 136, E); b.arrow(158, 146, E);
-  // Freight lift (end safe room) behind its gate.
-  b.carve(166, 143, 174, 151, F.SAFE);
-  const liftButton = b.obj('terminal', 164, 144, 'Call the freight lift');
-  const liftGate = b.door(165, 145, 165, 148, 'fence', 'FREIGHT LIFT');
-  b.label('FREIGHT LIFT', 170, 146, 18, GOLD); b.label('TO SERVICE TUNNEL', 170, 148.5, 11, CREAM);
-  b.lamp(170, 147);
-
+  b.level(0);
   // ------------------------------------------------------------------
   // Quest
   // ------------------------------------------------------------------
-  b.start([[15.5, 143.5], [16.5, 144.5], [19.5, 143.5], [19.5, 145.5]]);
+  b.start([[15.5, 55.5], [16.5, 56.5], [19.5, 55.5], [19.5, 57.5]]);
   b.use(triageRadio, {
     objective: 'Radio Dot from triage', opens: [triageDoor],
     radio: [
       ['Dot', 'You made it! Helicopter\'s on the roof. Pilot says he\'ll wait. Ish.'],
-      ['Nori', 'I work nights here. Pharmacy. The third floor always smells like soup.'],
+      ['Nori', 'I work nights here. Pharmacy. The second floor always smells like soup.'],
       ['Taro', 'Sorry about the doors, St. Marigold.'],
     ],
   });
-  b.reach({ x0: 62, z0: 114, x1: 80, z1: 138 }, {
+  b.reach({ x0: 62, z0: 26, x1: 80, z1: 50 }, {
     objective: 'Get through the ER waiting room',
     radio: [
       ['Pip', 'Waiting room zombies. They\'ve been waiting a REALLY long time.'],
@@ -610,23 +751,25 @@ export function build() {
     ],
   });
   b.use(elevButton, {
-    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [elevDoor],
+    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [elevDoor, fireDoor],
     radio: [
       ['Mochi', 'Elevator music. Of course there\'s elevator music.'],
       ['Pip', 'The zombies LIKE it! Why do they like it?!'],
       ['Nori', 'It\'s a lullaby. Huh.'],
     ],
   });
-  b.reach({ x0: 26, z0: 6, x1: 58, z1: 36 }, {
+  b.reach({ x0: 24, z0: 6, x1: 48, z1: 32, lv: 2 }, {
     objective: 'Search the Sleep Clinic', opens: [obsEntry],
     radio: [
+      ['Mochi', 'It came all the way down just to get stuck. Relatable.'],
+      ['Dot', 'Fault mode unlocks the fire stairs. Sleep Clinic\'s on three, sweet peas.'],
       ['Nori', 'Dreamwell\'s sleep trials. I filled their prescriptions. \'Hush,\' every night.'],
-      ['Taro', 'Every bed empty, and every bed made. That\'s the part I don\'t like.'],
     ],
   });
-  b.gather({ x0: 64, z0: 6, x1: 76, z1: 17 }, {
+  b.gather({ x0: 52, z0: 5, x1: 60, z1: 15, lv: 2 }, {
     objective: 'Lock yourselves in observation', checkpoint: true, closes: [obsEntry],
     radio: [
+      ['Taro', 'Every bed empty, and every bed made. That\'s the part I don\'t like.'],
       ['Dot', 'Find a room with a door that locks. I need you all in one piece.'],
       ['Pip', 'Guys. ID badge on the desk. \'Lowell.\' Like Dot?'],
       ['Nori', 'Common name. Probably.'],
@@ -639,8 +782,8 @@ export function build() {
       ['Mochi', 'Stairwell, then helipad. Last leg of the delivery!'],
     ],
   });
-  b.reach({ x0: 98, z0: 12, x1: 114, z1: 28 }, {
-    objective: 'Get up to the helipad',
+  b.reach({ x0: 24, z0: 12, x1: 40, z1: 27, lv: 3 }, {
+    objective: 'Get up to the helipad', opens: [hutB, hutC, hutD, hutE, fireExit],
     radio: [
       ['Dot', 'Larry? Come in, Larry. ...Oh, no. He took a nap. He was on a double.'],
       ['Mochi', 'So the helicopter is... on the mall.'],
@@ -650,18 +793,20 @@ export function build() {
   b.use(skyPanel, {
     objective: 'Raise the skybridge shutter', horde: true, hold: 75, opens: [skyShutter],
     radio: [
+      ['Dot', 'The skybridge leaves from the terrace one floor down. Panel\'s by the shutter.'],
+      ['Taro', 'Every roof door in the place just banged open. Company\'s coming up.'],
       ['Dot', 'Cross the skybridge to the Galleria. Its service tunnel runs to the rail yard.'],
       ['Pip', 'A MALL. Finally, side quests.'],
     ],
   });
-  b.reach({ x0: 158, z0: 20, x1: 176, z1: 40 }, {
+  b.reach({ x0: 132, z0: 15, x1: 152, z1: 29, lv: 2 }, {
     objective: 'Cross into the Galleria', opens: [stockEntry],
     radio: [
       ['Taro', 'This was a ballroom once. I took my wife dancing here. She\'d hate the carpet.'],
       ['Nori', '...That\'s actually lovely, Taro.'],
     ],
   });
-  b.gather({ x0: 158, z0: 68, x1: 174, z1: 76 }, {
+  b.gather({ x0: 124, z0: 20, x1: 134, z1: 34, lv: 1 }, {
     objective: 'Hole up in the toy store stockroom', checkpoint: true, closes: [stockEntry],
     radio: [
       ['Pip', 'Plushies. Thousands of plushies.'],
@@ -672,11 +817,11 @@ export function build() {
   b.use(stockLever, {
     objective: 'Unbolt the stockroom back door', opens: [stockDoor],
     radio: [
-      ['Nori', 'Back door goes out to the food court. Stay together.'],
+      ['Nori', 'Back door lets out on the mezzanine over the food court. Stay together.'],
       ['Pip', 'Snoozle plush is coming with me. For morale.'],
     ],
   });
-  b.reach({ x0: 138, z0: 92, x1: 158, z1: 112 }, {
+  b.reach({ x0: 136, z0: 50, x1: 150, z1: 64 }, {
     objective: 'Cross the food court', brute: true,
     radio: [
       ['Pip', 'Is that SNOOZLE? Snoozle is HUGE.'],
@@ -699,7 +844,7 @@ export function build() {
       ['Nori', 'And Pip, do not hum along to the music.'],
     ],
   });
-  b.gather({ x0: 166, z0: 143, x1: 174, z1: 151 }, {
+  b.gather({ x0: 156, z0: 84, x1: 163, z1: 92 }, {
     objective: 'Everybody into the freight lift', closes: [liftGate],
     radio: [
       ['Dot', 'Tunnel runs under the river to the rail yard. I\'m right here on the radio.'],

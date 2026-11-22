@@ -1,11 +1,11 @@
 // Light and air: the baked world light map, per-theme light colours, the sky
 // dome with its haze and skyline, additive glow sprites and weather particles.
 import * as pc from 'playcanvas';
-import { TILE } from '../../shared/constants';
+import { TILE, STOREY, PLAYER } from '../../shared/constants';
 import { F, WALL, isIndoor, hash2 } from '../../shared/level';
 import { type Geo, sphere, ring, make, merge } from './geo';
 import { device, meshEntity, makeUnlit, makeGlow, rgb, setFog, setAtmosphere, setLightMap, setTime, type V3 } from './gfx';
-import { type Ctx, newGeo, quad, mix3, mul, lampIndoor } from './worldkit';
+import { type Ctx, newGeo, quad, mix3, mul, lampIndoor, storeyOfY } from './worldkit';
 
 const T = TILE;
 const LM = 4; // light map texels per tile
@@ -21,63 +21,90 @@ const RAINY: Record<string, boolean> = { ch1: true };
  * the next room, and every lamp on the map lights the scene at a fixed cost.
  */
 function bakeLightMap(ctx: Ctx): pc.Texture {
-  const { W, H, def } = ctx, w = W * LM, h = H * LM, n = w * h;
-  const sky = new Float32Array(n), warm = new Float32Array(n), cool = new Float32Array(n), open = new Uint8Array(n);
-  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    const f = def.floor[z * W + x];
-    if (f === F.NONE) continue;
-    const v = isIndoor(f) ? 0 : 1;
-    for (let j = 0; j < LM; j++) for (let i = 0; i < LM; i++) { const k = (z * LM + j) * w + x * LM + i; sky[k] = v; open[k] = 1; }
-  }
-  const px = T / LM;
-  for (const l of def.lamps) {
-    const indoor = lampIndoor(ctx, l), R = indoor ? 9.5 : 11, ch = indoor ? cool : warm;
-    const lcx = Math.floor(l.x / T), lcz = Math.floor(l.z / T), los = !ctx.isWall(lcx, lcz);
-    const x0 = Math.max(0, Math.floor((l.x - R) / px)), x1 = Math.min(w - 1, Math.ceil((l.x + R) / px));
-    const z0 = Math.max(0, Math.floor((l.z - R) / px)), z1 = Math.min(h - 1, Math.ceil((l.z + R) / px));
-    for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
-      const k = tz * w + tx;
-      if (!open[k]) continue;
-      const wx = (tx + 0.5) * px, wz = (tz + 0.5) * px, d = Math.hypot(wx - l.x, wz - l.z);
-      if (d >= R) continue;
-      if (los) {
-        const steps = Math.ceil(d / (T * 0.4));
-        let hit = false;
-        for (let s = 1; s < steps && !hit; s++) { const q = s / steps; hit = ctx.isWall(Math.floor((l.x + (wx - l.x) * q) / T), Math.floor((l.z + (wz - l.z) * q) / T)); }
-        if (hit) continue;
+  const { W, H, def } = ctx, { levels, WH, wall, look } = ctx.S, w = W * LM, h = H * LM, n = w * h;
+  const px = T / LM, data = new Uint8Array(n * levels * 4);
+  // Maps with storeys bake one layer per storey, side by side along u (the shader picks by height).
+  const layers: { sky: Float32Array; warm: Float32Array; cool: Float32Array; open: Uint8Array; down: Uint8Array }[] = [];
+  /** Something is built over this node (a floor slab or a wall), so the sky does not reach it. */
+  const covered = (nd: number): boolean => { for (let u = nd + WH; u < WH * levels; u += WH) if (def.floor[u] !== F.NONE || wall[u]) return true; return false; };
+  for (let lv = 0; lv < levels; lv++) {
+    const sky = new Float32Array(n), warm = new Float32Array(n), cool = new Float32Array(n), open = new Uint8Array(n), down = new Uint8Array(n);
+    /** 1 = floor, 2 = open air (lit from the storey below). */
+    const kind = new Uint8Array(WH);
+    layers.push({ sky, warm, cool, open, down });
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const nd = lv * WH + z * W + x, f = look[nd];
+      if (wall[nd]) continue;
+      const v = isIndoor(f) || (levels > 1 && covered(nd)) ? 0 : 1;
+      kind[z * W + x] = f === F.NONE ? 2 : 1;
+      for (let j = 0; j < LM; j++) for (let i = 0; i < LM; i++) { const k = (z * LM + j) * w + x * LM + i; sky[k] = v; open[k] = 1; }
+    }
+    const wallAt = (tx: number, tz: number) => ctx.isWall(tx, tz, lv);
+    for (const l of def.lamps) {
+      if (storeyOfY(l.y, levels) !== lv) continue;
+      const indoor = lampIndoor(ctx, l), R = indoor ? 9.5 : 11, ch = indoor ? cool : warm;
+      const lcx = Math.floor(l.x / T), lcz = Math.floor(l.z / T), los = !wallAt(lcx, lcz);
+      const x0 = Math.max(0, Math.floor((l.x - R) / px)), x1 = Math.min(w - 1, Math.ceil((l.x + R) / px));
+      const z0 = Math.max(0, Math.floor((l.z - R) / px)), z1 = Math.min(h - 1, Math.ceil((l.z + R) / px));
+      for (let tz = z0; tz <= z1; tz++) for (let tx = x0; tx <= x1; tx++) {
+        const k = tz * w + tx;
+        if (!open[k]) continue;
+        const wx = (tx + 0.5) * px, wz = (tz + 0.5) * px, d = Math.hypot(wx - l.x, wz - l.z);
+        if (d >= R) continue;
+        if (los) {
+          const steps = Math.ceil(d / (T * 0.4));
+          let hit = false;
+          for (let s = 1; s < steps && !hit; s++) { const q = s / steps; hit = wallAt(Math.floor((l.x + (wx - l.x) * q) / T), Math.floor((l.z + (wz - l.z) * q) / T)); }
+          if (hit) continue;
+        }
+        const a = 1 - d / R;
+        ch[k] = 1 - (1 - ch[k]) * (1 - a);
       }
-      const a = 1 - d / R;
-      ch[k] = 1 - (1 - ch[k]) * (1 - a);
     }
-  }
-  // Spread values into wall texels so bilinear sampling at a wall's foot does not pull in black.
-  for (let pass = 0; pass < 3; pass++) {
-    const set: number[] = [];
+    // Open air takes the lamp light of the outdoor floor below it (a street lamp lights the whole facade
+    // above it), and remembers how far down that floor is so the light fades with height as on a flat map.
+    if (lv > 0) {
+      const below = layers[lv - 1];
+      for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+        if (kind[z * W + x] !== 2) continue;
+        const nb = (lv - 1) * WH + z * W + x, lit = !wall[nb] && !isIndoor(look[nb]);
+        for (let j = 0; j < LM; j++) for (let i = 0; i < LM; i++) {
+          const k = (z * LM + j) * w + x * LM + i;
+          warm[k] = lit ? below.warm[k] : 0; cool[k] = lit ? below.cool[k] : 0; down[k] = lit ? Math.min(3, below.down[k] + 1) : 0;
+        }
+      }
+    }
+    // Spread values into wall texels so bilinear sampling at a wall's foot does not pull in black.
+    for (let pass = 0; pass < 3; pass++) {
+      const set: number[] = [];
+      for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
+        const k = z * w + x;
+        if (open[k]) continue;
+        let c = 0, s = 0, a = 0, b = 0, dn = 0;
+        if (x > 0 && open[k - 1]) { c++; s += sky[k - 1]; a += warm[k - 1]; b += cool[k - 1]; dn = Math.max(dn, down[k - 1]); }
+        if (x < w - 1 && open[k + 1]) { c++; s += sky[k + 1]; a += warm[k + 1]; b += cool[k + 1]; dn = Math.max(dn, down[k + 1]); }
+        if (z > 0 && open[k - w]) { c++; s += sky[k - w]; a += warm[k - w]; b += cool[k - w]; dn = Math.max(dn, down[k - w]); }
+        if (z < h - 1 && open[k + w]) { c++; s += sky[k + w]; a += warm[k + w]; b += cool[k + w]; dn = Math.max(dn, down[k + w]); }
+        if (c) { sky[k] = s / c; warm[k] = a / c; cool[k] = b / c; down[k] = dn; set.push(k); }
+      }
+      for (const k of set) open[k] = 1;
+    }
+    // Wall tops you can look down on (maps with storeys) are under the open sky.
+    if (levels > 1) for (let k = 0; k < n; k++) if (!open[k]) sky[k] = 1;
+    // 3x3 blur on the lamp channels softens the ray-check staircase before the shader bands it.
+    const blur = (src: Float32Array, x: number, z: number) => {
+      let s = 0, c = 0;
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const xx = x + i, zz = z + j; if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue; const wt = i === 0 && j === 0 ? 2 : 1; s += src[zz * w + xx] * wt; c += wt; }
+      return s / c;
+    };
+    const tw = w * levels;
     for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
-      const k = z * w + x;
-      if (open[k]) continue;
-      let c = 0, s = 0, a = 0, b = 0;
-      if (x > 0 && open[k - 1]) { c++; s += sky[k - 1]; a += warm[k - 1]; b += cool[k - 1]; }
-      if (x < w - 1 && open[k + 1]) { c++; s += sky[k + 1]; a += warm[k + 1]; b += cool[k + 1]; }
-      if (z > 0 && open[k - w]) { c++; s += sky[k - w]; a += warm[k - w]; b += cool[k - w]; }
-      if (z < h - 1 && open[k + w]) { c++; s += sky[k + w]; a += warm[k + w]; b += cool[k + w]; }
-      if (c) { sky[k] = s / c; warm[k] = a / c; cool[k] = b / c; set.push(k); }
+      const k = z * w + x, o = (z * tw + lv * w + x) * 4;
+      data[o] = Math.round(sky[k] * 255); data[o + 1] = Math.round(blur(warm, x, z) * 255); data[o + 2] = Math.round(blur(cool, x, z) * 255); data[o + 3] = 255 - down[k] * 85;
     }
-    for (const k of set) open[k] = 1;
-  }
-  const data = new Uint8Array(n * 4);
-  // 3x3 blur on the lamp channels softens the ray-check staircase before the shader bands it.
-  const blur = (src: Float32Array, x: number, z: number) => {
-    let s = 0, c = 0;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const xx = x + i, zz = z + j; if (xx < 0 || zz < 0 || xx >= w || zz >= h) continue; const wt = i === 0 && j === 0 ? 2 : 1; s += src[zz * w + xx] * wt; c += wt; }
-    return s / c;
-  };
-  for (let z = 0; z < h; z++) for (let x = 0; x < w; x++) {
-    const k = z * w + x;
-    data[k * 4] = Math.round(sky[k] * 255); data[k * 4 + 1] = Math.round(blur(warm, x, z) * 255); data[k * 4 + 2] = Math.round(blur(cool, x, z) * 255); data[k * 4 + 3] = 255;
   }
   return new pc.Texture(device, {
-    width: w, height: h, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
+    width: w * levels, height: h, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
     addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE, levels: [data],
   });
 }
@@ -97,7 +124,7 @@ const disc = (dir: pc.Vec3, dist: number, size: number): Geo => {
 function skyline(ctx: Ctx, near: V3, far: V3, lit: V3): Geo {
   const g = newGeo(), R = 250 * SKY_K, Y = SKY_K;
   let rural = 0, total = 0;
-  for (let i = 0; i < ctx.def.floor.length; i++) if (ctx.def.floor[i] === F.NONE) { total++; if (ctx.def.wallKind[i] === WALL.ROCK || ctx.def.wallKind[i] === WALL.HEDGE) rural++; }
+  for (let i = 0; i < ctx.W * ctx.H; i++) if (ctx.def.floor[i] === F.NONE) { total++; if (ctx.def.wallKind[i] === WALL.ROCK || ctx.def.wallKind[i] === WALL.HEDGE) rural++; }
   const hills = rural > total * 0.5;
   const at = (a: number, r: number, y: number) => [Math.cos(a) * r, y, Math.sin(a) * r];
   const panel = (c: V3, a0: number, a1: number, r: number, y0: number, y1a: number, y1b = y1a) =>
@@ -245,7 +272,7 @@ export function buildAtmosphere(ctx: Ctx, glows: GlowSpot[]): Atmo {
 
   const light = bakeLightMap(ctx);
   ctx.textures.push(light);
-  setLightMap(light, ctx.W * T, ctx.H * T);
+  setLightMap(light, ctx.W * T, ctx.H * T, ctx.S.levels, STOREY);
 
   const sky = buildSky(ctx, fog);
   ctx.root.addChild(sky);
@@ -260,7 +287,8 @@ export function buildAtmosphere(ctx: Ctx, glows: GlowSpot[]): Atmo {
     update(t, dt, camX, camY, camZ) {
       setTime(t);
       sky.setPosition(camX, camY, camZ);
-      const f = ctx.floorOf(Math.floor(camX / T), Math.floor(camZ / T));
+      // The storey the camera's owner stands on decides indoors or out (rain stops, dust motes show).
+      const f = ctx.S.levels > 1 ? ctx.S.look[ctx.L.nodeAt(camX, camY - PLAYER.eye, camZ)] : ctx.floorOf(Math.floor(camX / T), Math.floor(camZ / T));
       inside += ((isIndoor(f) ? 1 : 0) - inside) * Math.min(1, dt * 4);
       if (rain) { rain.enabled = inside < 0.98; rain.render!.meshInstances[0].setParameter('uAlpha', 0.34 * (1 - inside)); }
       dust.enabled = inside > 0.02;
