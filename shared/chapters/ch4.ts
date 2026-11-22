@@ -184,6 +184,7 @@ export function build() {
   b.pick('smg', 7, 17); b.pick('shotgun', 8, 17); b.pick('rifle', 9, 17); b.pick('rifle', 10, 17); b.pick('smg', 11, 17);
   b.pick('ammo', 22, 16); b.pick('ammo', 22, 17); b.pick('ammo', 21, 16);
   for (const x of [19, 20, 21, 22]) b.pick('medkit', x, 18);
+  b.pick('bat', 12, 17); b.pick('machete', 13, 17); b.pick('firebomb', 23, 16); b.pick('armor', 18, 18);
   b.label('SAFE ROOM', 16, 13, 22, RED); b.label('WAITING ROOM', 16, 15.6, 12, PEACH);
   b.label('TICKETS', 9, 12.6, 10, CREAM); b.label('CLOCK: 3:00', 20, 9.6, 9, LAV);
   b.lamp(16, 16); b.lamp(9, 10.5);
@@ -363,6 +364,7 @@ export function build() {
   for (const x of [109, 110, 111, 112]) b.pick('medkit', x, 99);
   b.pick('ammo', 113, 91); b.pick('ammo', 114, 91); b.pick('ammo', 112, 88);
   b.pick('shotgun', 106, 99); b.pick('rifle', 107, 99); b.pick('smg', 108, 99); b.pick('autoshotgun', 106, 98); b.pick('launcher', 108, 98); // the schoolyard Brute is next
+  b.pick('axe', 107, 98); b.pick('armor', 113, 99); b.pick('rattle', 115, 91);
   const hatchLever = b.obj('lever', 104, 91, 'Open the basement hatch');
   b.label('SAFE ROOM', 110.5, 90, 22, RED); b.label('HENDERSON BASEMENT', 110.5, 92.4, 11, PEACH);
   b.label('PEACHES: 212 CANS', 107, 86.6, 8, CREAM); b.label('HATCH', 104.5, 94.8, 10, GOLD, E);
@@ -380,7 +382,7 @@ export function build() {
   b.label('SCHOOL PATH', 98, 88, 11, CREAM, N);
   // Treehouse corner (pocket north) and compost heap (pocket south).
   b.prop('tree', 98, 61); b.prop('pallet', 96, 62, 1, 2); b.prop('bush', 99, 66);
-  b.pick('ammo', 97, 63); b.pick('medkit', 99, 61);
+  b.pick('ammo', 97, 63); b.pick('medkit', 99, 61); b.pick('armor', 98, 63);   // off-route reward
   b.label('TREEHOUSE (NO GIRLS, NO ZOMBIES)', 97.5, 67, 8, PEACH, N);
   b.prop('crate', 99, 103); b.prop('barrel', 96, 104);
   b.pick('ammo', 97, 102);
@@ -440,6 +442,7 @@ export function build() {
   b.label('EQUIPMENT', 89.5, 102.5, 9, CREAM);
   for (const [x, z] of [[31, 88], [31, 100], [74, 108], [82, 92], [48, 108], [66, 90]]) b.prop(x === 31 ? 'pine' : 'tree', x, z);
   b.pick('ammo', 44, 104); b.pick('ammo', 45, 104); b.pick('medkit', 33, 96); b.pick('ammo', 70, 100);
+  b.pick('rattle', 46, 104);                                     // before the flood gate holdout
   for (const [x, z] of [[46, 90], [70, 96], [36, 106], [84, 108]]) b.lamp(x, z);
   b.arrow(56, 100, WEST); b.arrow(44, 106, WEST);
   zz(50, 102, WEST);
@@ -486,7 +489,7 @@ export function build() {
   b.label("HUNTERS' BLIND", 23.5, 136.6, 9, CREAM, 0);
   b.label('slippers', 29, 141.2, 10, LAV, E); zz(31, 141.5, E); zz(34, 142, E); zz(38, 141.5, E);   // the slipper pile at the fork
   b.prop('rock', 37, 156); b.prop('bush', 39, 159);
-  b.pick('ammo', 38, 158); b.pick('medkit', 36, 160);
+  b.pick('ammo', 38, 158); b.pick('medkit', 36, 160); b.pick('firebomb', 37, 160);   // off-route reward
   b.label('FERNS', 37.5, 157.5, 9, MINT, 0);
   for (const [x, z] of [[7, 128.5], [28, 141.5], [50.5, 147], [18, 152.5]]) b.lamp(x, z);
   b.arrow(6.5, 132, S); b.arrow(24, 141.5, E); b.arrow(50.5, 144, S); b.arrow(44, 152.5, WEST); b.arrow(17.5, 155, S);
@@ -512,6 +515,7 @@ export function build() {
   for (const x of [18, 19, 20, 21]) b.pick('medkit', x, 173);
   b.pick('ammo', 10, 169); b.pick('ammo', 11, 169); b.pick('ammo', 12, 169); b.pick('ammo', 12, 165);
   b.pick('smg', 12, 171); b.pick('shotgun', 13, 171); b.pick('rifle', 14, 171); b.pick('sniper', 15, 171); b.pick('autoshotgun', 13, 170); b.pick('launcher', 14, 170); b.pick('magnum', 12, 170);
+  b.pick('armor', 17, 173); b.pick('armor', 22, 173); b.pick('axe', 15, 170); b.pick('machete', 16, 171); b.pick('firebomb', 13, 169); b.pick('rattle', 13, 165);   // last stop before the finale
   const cabinLatch = b.obj('lever', 22, 172, 'Unlatch the cabin back door');
   b.label('SAFE ROOM', 16.5, 169.4, 20, RED); b.label('RANGER CABIN', 16.5, 171.6, 10, MINT);
   b.lamp(16.5, 168);
@@ -573,6 +577,7 @@ export function build() {
   // Loot before the Bell.
   b.pick('ammo', 120, 140); b.pick('ammo', 121, 140); b.pick('ammo', 133, 144); b.pick('ammo', 133, 145); b.pick('ammo', 142, 125); b.pick('ammo', 142, 126);
   b.pick('medkit', 134, 136); b.pick('medkit', 135, 136); b.pick('medkit', 112, 145); b.pick('rifle', 118, 124); b.pick('shotgun', 131, 136); b.pick('launcher', 132, 136); b.pick('autoshotgun', 131, 135);
+  b.pick('rattle', 134, 144);                                    // for the long Bell holdout
   for (const [x, z] of [[113, 126], [113, 143], [123, 125], [143, 126], [143, 143], [125, 137]]) b.lamp(x, z);
   b.arrow(106, 134.5, E); b.arrow(120, 134.5, E);
   // Outer ring: boulders and pines (spawn cover on three sides), the river lookout.
@@ -628,10 +633,11 @@ export function build() {
   const boomLever = b.obj('lever', 157, 166, 'Raise the army boom gate');
   b.pick('ammo', 141, 165); b.pick('ammo', 142, 165); b.pick('ammo', 141, 164); b.pick('ammo', 152, 176); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173);
   b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 168); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 168); b.pick('sniper', 137, 169);
+  b.pick('rattle', 143, 165); b.pick('firebomb', 157, 170);      // for the boom gate holdout
   b.label('ARMY CHECKPOINT', 146, 169.4, 14, OLIVE, 0); b.label('CONVOY ASSEMBLY', 146, 171, 9, CREAM, 0);
   b.label('BOOM GATE', 156, 168.6, 10, GOLD, N);
   for (const [x, z] of [[134, 166], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152]]) b.lamp(x, z);
-  b.arrow(136, 174, E); b.arrow(150, 167.5, E);
+  b.arrow(136, 176.7, E); b.arrow(150, 167.5, E);
   // The bridge deck, the boom gate and Dot's No. 9 bus on the far span.
   b.carve(159, 164, 171, 171, F.ASPHALT);
   b.label('OLD BRIDGE', 165, 164.5, 12, PEACH, E); b.label('MALLOW RIVER', 165, 158, 14, SKY, E);

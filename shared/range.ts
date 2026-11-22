@@ -3,7 +3,7 @@
 // Tile coordinates: x grows east, z grows south. You start at the north end facing south (+z).
 import { LevelBuilder, Level, F, WALL, type Theme } from './level';
 import { TILE, ZT } from './constants';
-import type { GunKind } from './level';
+import type { LootKind } from './level';
 
 /** Where the firing line is (tile z); target distances are measured from it. */
 export const RANGE_LINE = 6;
@@ -23,6 +23,8 @@ const at = (tx: number, metres: number) => ({ x: (tx + 0.5) * TILE, z: (rowZ(met
 export const RANGE_DUMMIES: RangeDummy[] = [
   // 10 m: one of every type, spaced wider than a launcher blast so each can be tested alone.
   ...[ZT.WALKER, ZT.LEAPER, ZT.PUFFER, ZT.DROOLER, ZT.ALARM, ZT.CHARGER, ZT.BRUTE].map((type, i) => ({ type, ...at(5 + i * 4, 10) })),
+  // 30 m: the later arrivals. The Tinpot faces you, so bullets bounce: shove it (V) or use a close-in weapon.
+  ...[ZT.SNATCHER, ZT.PIGGYBACK, ZT.WEEPER, ZT.TINPOT, ZT.RAINCOAT].map((type, i) => ({ type, ...at(7 + i * 5, 30) })),
   // 20 m: three walkers in a file (piercing rounds), a moving walker, and a clump (launcher splash).
   ...[0, 1.4, 2.8].map((d) => ({ type: ZT.WALKER, x: (9.5) * TILE, z: (rowZ(20) + 0.5) * TILE + d })),
   { type: ZT.WALKER, ...at(18, 20), sway: 6, speed: 3.5 },
@@ -34,7 +36,9 @@ export const RANGE_DUMMIES: RangeDummy[] = [
 ];
 
 /** The rack at the back of the booth: every pickup gun (the pistol is the default sidearm). */
-const RACK: GunKind[] = ['smg', 'shotgun', 'rifle', 'autoshotgun', 'sniper', 'launcher', 'magnum'];
+const RACK: LootKind[] = ['smg', 'shotgun', 'rifle', 'autoshotgun', 'sniper', 'launcher', 'magnum'];
+/** Left of the guns: close-in weapons. Right: throwables and a Pillow Vest. */
+const RACK_LEFT: LootKind[] = ['bat', 'machete', 'axe'], RACK_RIGHT: LootKind[] = ['firebomb', 'rattle', 'armor'];
 
 const THEME: Theme = {
   sky: [0xffc38a, 0x8fb4e0, 0x3d5fa8], fog: 0x9fb1d6, fogNear: 60, fogFar: 190,
@@ -58,6 +62,8 @@ function build() {
     b.label(`${m} m`, W - 3.6, rowZ(m) + 0.5, 24, '#fff1c9');
   }
   RACK.forEach((k, i) => b.pick(k, 12 + i * 2, 2));
+  RACK_LEFT.forEach((k, i) => b.pick(k, 4 + i * 2, 2));
+  RACK_RIGHT.forEach((k, i) => b.pick(k, 28 + i * 2, 2));
   b.label('WEAPON RACK — or press 1-8', W / 2, 3.6, 18, '#5ff2e0');
   for (let z = 4; z < H - 3; z += 8) { b.lamp(2.5, z); b.lamp(W - 2.5, z); }
   b.start([[W / 2, 4], [W / 2 - 2, 4], [W / 2 + 2, 4], [W / 2, 3]]);

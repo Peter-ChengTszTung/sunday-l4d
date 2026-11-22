@@ -9,7 +9,7 @@ export interface MateView { id: number; name: string; color: string; hp: number;
 
 export class Hud {
   private el = {
-    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), medkit: $('medkit'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
+    hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), medkit: $('medkit'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
     acount: $('acount'), slots: $('slots'), team: $('team'), feed: $('feed'), banner: $('banner'), prompt: $('prompt'), ring: $('ring'),
     ringfg: document.getElementById('ringfg') as unknown as SVGCircleElement, ringlabel: $('ringlabel'), hitmark: $('hitmark'), vignette: $('vignette'),
     goo: $('goo'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
@@ -47,7 +47,8 @@ export class Hud {
     };
   }
 
-  setHealth(hp: number, st: number, medkits: number): void {
+  /** `armor` of `armorMax` vest points left; `throwable`: name of the carried throwable ('' = none). */
+  setHealth(hp: number, st: number, medkits: number, armor = 0, armorMax = 1, throwable = ''): void {
     const shown = Math.max(0, Math.min(PLAYER.hp, hp));
     this.set('hp', `${shown}|${st}`, () => {
       this.el.hpbar.style.width = `${shown}%`;
@@ -55,19 +56,27 @@ export class Hud {
       this.el.hptext.textContent = st === PSTATE.DOWN ? t('DOWN! {hp}', { hp: shown }) : st === PSTATE.DEAD ? t('OUT') : String(shown);
     });
     this.set('mk', String(medkits), () => { this.el.medkit.hidden = medkits < 1; });
+    const ar = Math.max(0, Math.min(armorMax, armor));
+    this.set('ar', String(ar), () => { this.el.armor.hidden = ar <= 0; this.el.armorbar.style.width = `${(ar / armorMax) * 100}%`; });
+    this.set('th', throwable, (v) => { this.el.throwable.hidden = !v; this.el.throwname.textContent = v; });
     // Low health keeps a faint red edge on screen.
     const base = st === PSTATE.ALIVE && shown < 35 ? 0.35 : st === PSTATE.DOWN ? 0.5 : 0;
     this.set('vig', (Math.max(base, this.hurtT > 0 ? 0.9 : 0)).toFixed(2), (v) => { this.el.vignette.style.opacity = v; });
   }
 
-  /** `primary` / `sidearm` name the slots ('' = empty primary). */
-  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = t('sidearm')): void {
+  /**
+   * `primary` / `sidearm` / `melee` name the slots ('' = empty); `slot` is the one in hand (1-3).
+   * A close-in weapon has no ammo: pass `mag` = Infinity.
+   */
+  setAmmo(name: string, mag: number, reserve: number, magSize: number, reloading: boolean, primary: string, slot: number, sidearm = t('sidearm'), melee = ''): void {
+    const endless = !Number.isFinite(mag);
     this.set('wn', name + reloading, () => { this.el.wname.textContent = reloading ? `${name} · ${t('reloading…')}` : name; });
-    this.set('mag', String(mag), (v) => { this.el.mag.textContent = v; });
-    this.set('res', String(reserve), () => { this.el.reserve.textContent = Number.isFinite(reserve) ? `/ ${reserve}` : '/ ∞'; });
-    this.set('low', String(mag <= magSize * 0.25), (v) => { this.el.acount.classList.toggle('low', v === 'true'); });
-    this.set('slots', `${primary}|${sidearm}|${slot}`, () => {
-      this.el.slots.innerHTML = `<span class="${slot === 1 ? 'on' : ''}">1 ${primary || '—'}</span><span class="${slot === 2 ? 'on' : ''}">2 ${sidearm}</span>`;
+    this.set('mag', endless ? '∞' : String(mag), (v) => { this.el.mag.textContent = v; });
+    this.set('res', endless ? '' : String(reserve), (v) => { this.el.reserve.textContent = endless ? '' : Number.isFinite(reserve) ? `/ ${v}` : '/ ∞'; });
+    this.set('low', String(!endless && mag <= magSize * 0.25), (v) => { this.el.acount.classList.toggle('low', v === 'true'); });
+    this.set('slots', `${primary}|${sidearm}|${melee}|${slot}`, () => {
+      const cell = (n: number, label: string) => { const s = document.createElement('span'); if (slot === n) s.className = 'on'; s.textContent = `${n} ${label || '—'}`; return s; };
+      this.el.slots.replaceChildren(cell(1, primary), cell(2, sidearm), ...(melee ? [cell(3, melee)] : []));
     });
   }
 

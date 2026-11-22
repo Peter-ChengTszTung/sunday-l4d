@@ -10,12 +10,12 @@ import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTex
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
 
 export type HairStyle = SurvivorLook['style'] | 'bald' | 'mess' | 'hood';
-export type ZombieKind = 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm';
+export type ZombieKind = 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm' | 'snatcher' | 'piggyback' | 'weeper' | 'tinpot' | 'raincoat';
 export interface ChibiLook {
   skin: number; shirt: number; pants: number; hair: number; style: HairStyle;
   zombie?: ZombieKind; eye?: number;
 }
-export type Pose = 'idle' | 'run' | 'aim' | 'attack' | 'stagger' | 'windup' | 'leap' | 'down' | 'charge' | 'pin' | 'ring';
+export type Pose = 'idle' | 'run' | 'aim' | 'attack' | 'stagger' | 'windup' | 'leap' | 'down' | 'charge' | 'pin' | 'ring' | 'sit' | 'swing' | 'slash' | 'chop';
 
 const HEAD_Y = 1.06;
 const ball = sphere(18, 12);
@@ -117,6 +117,38 @@ function headGeo(l: ChibiLook): Geo {
       parts.push(make(cone, 0x5a7fe0, trs(0.08, 0.36, 0.08, -0.5, 0, -0.35, 0.3, 0.45, 0.3)));
       parts.push(make(ball, 0xfff3d6, trs(0.22, 0.5, 0.3, 0, 0, 0, 0.085)));
       break;
+    case 'snatcher':
+      // A long striped scarf wound round the neck, one end trailing: the lasso.
+      for (const [y, c, r] of [[-0.3, 0xff8fab, 0.3], [-0.24, 0xfff5f5, 0.31], [-0.18, 0xff8fab, 0.29]] as const) {
+        parts.push(make(cylinder(16), c, trs(0, y, 0.01, 0, 0, 0, r, 0.07, r)));
+      }
+      parts.push(make(cube, 0xff8fab, trs(0.2, -0.42, -0.2, 0.2, 0, -0.25, 0.1, 0.26, 0.04)));
+      parts.push(make(cube, 0xfff5f5, trs(0.23, -0.57, -0.22, 0.2, 0, -0.25, 0.1, 0.06, 0.045)));
+      break;
+    case 'piggyback':
+      // Animal-onesie hood with round ears, and a wide open grin.
+      for (const sx of [-1, 1]) {
+        parts.push(make(ball, 0xffb3d1, trs(sx * 0.24, 0.33, 0.02, 0, 0, 0, 0.11, 0.11, 0.06)));
+        parts.push(make(ball, 0xff7fb0, trs(sx * 0.24, 0.33, -0.02, 0, 0, 0, 0.06, 0.06, 0.04)));
+      }
+      break;
+    case 'weeper':
+      // Long lank hair falling past the shoulders, tear streaks under the eyes.
+      parts.push(make(cube, 0xe9e4f5, trs(-0.27, -0.28, 0.06, 0, 0, 0.08, 0.14, 0.5, 0.3)));
+      parts.push(make(cube, 0xe9e4f5, trs(0.27, -0.28, 0.06, 0, 0, -0.08, 0.14, 0.5, 0.3)));
+      parts.push(make(cube, 0xe9e4f5, trs(0, -0.26, 0.26, 0.1, 0, 0, 0.5, 0.56, 0.12)));
+      for (const sx of [-1, 1]) parts.push(make(cube, 0x8fd8ff, trs(sx * 0.14, -0.13, -0.33, 0, 0, 0, 0.03, 0.13, 0.02)));
+      break;
+    case 'tinpot':
+      // A saucepan jammed on as a helmet, handle sticking out the back, and a colander-grey visor rim.
+      parts.push(make(cylinder(16), 0xaab0c4, trs(0, 0.2, 0.0, 0, 0, 0, 0.39, 0.3, 0.39)));
+      parts.push(make(cylinder(16), 0x7d8399, trs(0, 0.06, 0.0, 0, 0, 0, 0.42, 0.045, 0.42)));
+      parts.push(make(cube, 0x54506e, trs(0, 0.2, 0.52, 0, 0, 0, 0.07, 0.05, 0.34)));
+      break;
+    case 'raincoat':
+      // Sou'wester brim over the hood.
+      parts.push(make(cylinder(16), 0xf2b90f, trs(0, 0.1, 0.04, 0.2, 0, 0, 0.47, 0.03, 0.47)));
+      break;
   }
   return merge(parts);
 }
@@ -164,7 +196,24 @@ function bodyGeo(l: ChibiLook): Geo {
       make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.25, 0.14, 0.22)),
     ]);
   }
-  const wide = l.zombie === 'brute' ? 1.45 : l.zombie === 'leaper' || l.zombie === 'drooler' ? 0.85 : 1;
+  const wide = l.zombie === 'brute' ? 1.45 : l.zombie === 'leaper' || l.zombie === 'drooler' || l.zombie === 'snatcher' ? 0.85 : 1;
+  if (l.zombie === 'tinpot') {
+    // A baking tray strapped across the chest and a pot lid on the belly: the bulletproof front.
+    return merge([
+      make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.23, 0.25, 0.2)),
+      make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.2, 0.13, 0.18)),
+      make(cube, 0xaab0c4, trs(0, 0.04, -0.21, 0, 0, 0, 0.36, 0.3, 0.035)),
+      make(cylinder(14), 0x7d8399, trs(0, 0.0, -0.235, Math.PI / 2, 0, 0, 0.11, 0.03, 0.11)),
+      make(ball, 0xffd43b, trs(0, 0.0, -0.26, 0, 0, 0, 0.03)),
+    ]);
+  }
+  if (l.zombie === 'weeper') {
+    // Long nightdress, flared at the hem.
+    return merge([
+      make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.2, 0.25, 0.18)),
+      make(cylinder(14, 0.55, 1), l.shirt, trs(0, -0.17, 0, 0, 0, 0, 0.27, 0.26, 0.25)),
+    ]);
+  }
   return merge([
     make(ball, l.shirt, trs(0, 0.02, 0, 0, 0, 0, 0.23 * wide, 0.25, 0.2 * (wide > 1 ? 1.25 : wide))),
     make(ball, l.pants, trs(0, -0.13, 0, 0, 0, 0, 0.2 * wide, 0.13, 0.18 * (wide > 1 ? 1.2 : wide))),
@@ -195,7 +244,7 @@ export class Chibi {
     const k = [look.skin, look.shirt, look.pants, look.hair, look.style, look.zombie ?? 'p', look.eye ?? 0].join('|');
     const z = look.zombie;
     const armR = z === 'brute' ? 0.11 : z === 'drooler' ? 0.055 : 0.065;
-    const armLen = z === 'leaper' || z === 'drooler' ? 0.24 : z === 'brute' ? 0.22 : 0.15;
+    const armLen = z === 'leaper' || z === 'drooler' || z === 'weeper' ? 0.24 : z === 'snatcher' ? 0.3 : z === 'brute' ? 0.22 : 0.15;
     const mesh = cachedChibi(k, () => {
       const arm = limbGeo(z ? look.skin : look.shirt, look.skin, armR, armLen);
       // Per-type right arm: the Charger's huge battering arm, the Alarm Clock's clock.
@@ -262,8 +311,37 @@ export class Chibi {
         lean = -0.55; aL = aR = -0.6; aLz = -0.9; aRz = 0.9; headZ = Math.sin(ph * 20) * 0.2;
         leg = Math.sin(ph * 18) * 0.4;
         break;
+      case 'sit':
+        // The Weeper: knees up, face in her hands, shoulders shaking.
+        rootY = -0.2; lean = 0.75; leg = 0; aL = aR = 2.15 + Math.sin(ph * 9) * 0.05; aLz = 0.45; aRz = -0.45;
+        headZ = Math.sin(ph * 2.1) * 0.07; bob = Math.abs(Math.sin(ph * 4.4)) * 0.018; squash = 0.9;
+        break;
+      case 'swing': {
+        // Bat: both hands on it, a flat sweep across the body with the shoulders turning.
+        const s = Math.sin(ph * 13);
+        aR = 1.45; aL = 1.35; aRz = -0.2 + s * 0.95; aLz = 0.5 + s * 0.8; lean = 0.2; rootZ = -s * 0.1; headZ = s * 0.08;
+        break;
+      }
+      case 'slash': {
+        // Shears: quick one-handed cuts, up to one side and down to the other.
+        const s = Math.sin(ph * 21);
+        aR = 1.5 + s * 1.0; aRz = -0.3 + Math.cos(ph * 21) * 0.7; aL = 0.5; aLz = 0.35; lean = 0.3;
+        break;
+      }
+      case 'chop': {
+        // Axe: both arms hauled overhead, then slammed down with the whole body.
+        const s = Math.sin(ph * 9.5), up = Math.max(0, s), dn = Math.max(0, -s);
+        aL = aR = 1.4 + up * 1.5 - dn * 0.6; aLz = 0.25; aRz = -0.25; lean = -0.15 * up + 0.6 * dn; squash = 1 + up * 0.06 - dn * 0.1; bob = up * 0.03;
+        break;
+      }
       case 'windup':
-        if (kind === 'charger') {
+        if (kind === 'weeper') {
+          // Stirring: half risen, hands off her face, trembling. Back away.
+          rootY = -0.08; lean = 0.4; aL = aR = 0.9; aLz = -0.7; aRz = 0.7; headZ = Math.sin(ph * 26) * 0.16; rootZ = Math.sin(ph * 33) * 0.035; squash = 0.96;
+        } else if (kind === 'snatcher') {
+          // Whirling the scarf overhead.
+          aR = 2.9; aRz = Math.sin(ph * 20) * 0.7; aL = 0.4; aLz = -0.4; lean = -0.2; rootZ = Math.sin(ph * 20) * 0.05; headZ = Math.cos(ph * 20) * 0.1;
+        } else if (kind === 'charger') {
           // Head down, big arm cocked back, one foot scraping the ground.
           lean = 0.95; squash = 0.86; aL = -0.4; aR = -1.1; aRz = 0.35; leg = Math.sin(ph * 16) * 0.7; headZ = Math.sin(ph * 9) * 0.08;
           rootX = 0.08; rootZ = Math.sin(ph * 30) * 0.03;
@@ -278,9 +356,17 @@ export class Chibi {
         break;
       }
       case 'pin': {
-        // Pounding with the big arm.
         const s = Math.sin(ph * 11);
-        lean = 0.55; aR = 1.7 + s * 1.0; aL = 0.5; headZ = s * 0.1; bob = Math.max(0, -s) * 0.05;
+        if (kind === 'snatcher') {
+          // Hauling the scarf in hand over hand, leaning back against the weight.
+          lean = -0.4; aL = 1.5 + s * 0.5; aR = 1.5 - s * 0.5; headZ = s * 0.06; leg = 0.25;
+        } else if (kind === 'piggyback') {
+          // Clinging on: arms hugged down round the victim's head, legs splayed, bouncing with glee.
+          lean = 0.5; aL = aR = 0.9; aLz = 0.5; aRz = -0.5; leg = 1.0 + s * 0.15; headZ = Math.sin(ph * 15) * 0.25; bob = Math.abs(s) * 0.04;
+        } else {
+          // Pounding with the big arm.
+          lean = 0.55; aR = 1.7 + s * 1.0; aL = 0.5; headZ = s * 0.1; bob = Math.max(0, -s) * 0.05;
+        }
         break;
       }
       case 'ring':
@@ -354,6 +440,16 @@ const SPECIAL_LOOKS: ChibiLook[] = [
   { skin: 0xb7c9a0, shirt: 0xe8e2f8, pants: 0xe8e2f8, hair: 0x7a5a8a, style: 'bob', zombie: 'drooler', eye: 0xb8ff6a },
   // Alarm Clock: striped-blue pyjamas, nightcap, bedside clock in hand.
   { skin: 0xa8d8a0, shirt: 0x8fb4ff, pants: 0x5a7fe0, hair: 0x4a3b33, style: 'bald', zombie: 'alarm', eye: 0xffe14a },
+  // Snatcher: tall and thin in a teal cardigan, pink striped scarf, long arms.
+  { skin: 0xa6c9c0, shirt: 0x2f7f8a, pants: 0x2a3a4a, hair: 0x2a3a4a, style: 'mess', zombie: 'snatcher', eye: 0xff8fab },
+  // Piggyback: a little one in a pink animal onesie.
+  { skin: 0xb6dc90, shirt: 0xff9ec4, pants: 0xff9ec4, hair: 0xff9ec4, style: 'hood', zombie: 'piggyback', eye: 0xffffff },
+  // Weeper: bone-white nightdress, long pale hair, red-rimmed eyes.
+  { skin: 0xc9d6c4, shirt: 0xf6f2ff, pants: 0xf6f2ff, hair: 0xe9e4f5, style: 'bob', zombie: 'weeper', eye: 0xff4d6d },
+  // Tinpot: apron-brown clothes under kitchen armour.
+  { skin: 0x9ccf7a, shirt: 0x8a6a4a, pants: 0x4a4466, hair: 0x4a3b33, style: 'bald', zombie: 'tinpot', eye: 0xfff3a8 },
+  // Raincoat: yellow slicker with the hood up, red waterproof trousers.
+  { skin: 0x8fc4a8, shirt: 0xffd43b, pants: 0xe8413c, hair: 0xffd43b, style: 'hood', zombie: 'raincoat', eye: 0xfff3a8 },
 ];
 
 export function zombieLook(type: number, id: number): ChibiLook {

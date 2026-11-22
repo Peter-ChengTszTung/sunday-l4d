@@ -27,9 +27,9 @@ export type PropType =
 export type ObjLook = 'gen' | 'radio' | 'lever' | 'terminal' | 'valve' | 'battery' | 'beacon';
 /** Collectible quest items. */
 export type ItemLook = 'fuel' | 'fuse' | 'keycard' | 'medicine' | 'part' | 'tape';
-/** Weapon pickups use the weapon id (every weapon except the starting pistol can be found). */
+/** Weapon pickups use the weapon id (every weapon except the starting pistol can be found): guns, close-in weapons and throwables. */
 export type GunKind = Exclude<WeaponId, 'pistol'>;
-export type LootKind = GunKind | 'ammo' | 'medkit';
+export type LootKind = GunKind | 'ammo' | 'medkit' | 'armor';
 export type PickupKind = LootKind | 'obj' | 'item';
 
 export interface Vec2 { x: number; z: number }

@@ -1,7 +1,7 @@
 // Wire protocol (JSON over WebSocket). Tuples keep snapshots compact.
 
-// [id, x, y, z, yaw, pitch, hp, state, weapon, medkits, reviveFrac, anim, respawnIn]
-export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number];
+// [id, x, y, z, yaw, pitch, hp, state, weapon, medkits, reviveFrac, anim, respawnIn, armor, throwable (weapon index, -1 = none)]
+export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 // [id, type, x, z, yaw, state]
 export type ZombieSnap = [number, number, number, number, number, number];
 
@@ -40,7 +40,8 @@ export type GameEvent =
   // --- Charger / Drooler / Alarm Clock (zombie states CHARGE, PIN, RING travel in ZombieSnap).
   // A charging Charger hit a wall and stunned itself.
   | ['slam', zid: number, x: number, z: number]
-  // Survivor `pid` is pinned against a wall at (x, z) by Charger `zid` (the server ignores their movement until 'unpin').
+  // Survivor `pid` is held at (x, z) by zombie `zid`: pinned to a wall by a Charger, lassoed by a Snatcher or ridden by a
+  // Piggyback. Until 'unpin' the server owns their position (the victim follows their own PlayerSnap).
   | ['pin', pid: number, zid: number, x: number, z: number]
   | ['unpin', pid: number]
   // A goo glob in flight from (x0, z0) to (x1, z1), landing after `flight` seconds (the server simulates the same arc).
@@ -54,7 +55,18 @@ export type GameEvent =
   // …and this one rang out: a mini-horde is coming.
   | ['alarm', zid: number, x: number, z: number]
   // --- Weapons. A launcher grenade from survivor `pid` went off at (x, y, z); power 1 = armed, < 1 = half-armed close-range pop.
-  | ['blast', pid: number, x: number, y: number, z: number, power: number];
+  // (pid 0: a Rattle Bomb going off; nobody predicted it, so every client shows it.)
+  | ['blast', pid: number, x: number, y: number, z: number, power: number]
+  // --- Throwables. A fire patch of radius r burns at (x, z) for `life` seconds.
+  | ['fire', id: number, x: number, z: number, r: number, life: number]
+  // A Rattle Bomb landed at (x, z): it rattles for `secs` seconds, then 'blast'.
+  | ['lure', x: number, z: number, secs: number]
+  // A bullet bounced off Tinpot `zid`'s front.
+  | ['clang', zid: number]
+  // Survivor `pid`'s armour soaked up part of a hit.
+  | ['armor', pid: number]
+  // The Weeper `zid` is stirring (stage 1) or awake and after survivor `pid` (stage 2).
+  | ['weeper', zid: number, stage: number, pid: number];
 
 /** GET /api/rooms entry (listed rooms only). */
 /** `diff`: DifficultyId (shared/constants.ts DIFFICULTIES); absent = 'normal'. */

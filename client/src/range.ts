@@ -2,7 +2,7 @@
 // It takes the client's own messages ('f' shots, 'g' grenade impacts, 'v' shoves, 'u' rack use) and
 // answers with ordinary 's' snapshots, so main.ts renders the dummies, deaths and pickups through
 // its usual paths. Damage uses the same shared formulas as server/room.ts (shotDamage, blastDamage).
-import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
+import { WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, FIRE, armoredFront, TINPOT_FRONT, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
 import { RANGE_DUMMIES, type RangeDummy } from '../../shared/range';
 import type { Level } from '../../shared/level';
 import type { ClientMsg, GameEvent, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -42,6 +42,8 @@ export class ShootingRange {
   /** Launcher shells in flight: where each was fired from, by sequence number. */
   private nades = new Map<number, { x: number; z: number; w: number }>();
   private hits: { t: number; dmg: number }[] = [];
+  /** Burning patches from thrown firebombs. */
+  private fires: { x: number; z: number; age: number; tick: number }[] = [];
   stats: RangeStats = ShootingRange.freshStats();
 
   constructor(private L: Level, private pid: number, private emit: (m: ServerMsg) => void) {
@@ -79,10 +81,13 @@ export class ShootingRange {
     for (const [id, nb, nh] of m.h ?? []) {
       const d = this.dummies.get(id);
       if (!d || d.hp <= 0) continue;
+      // Same rule as the server: a Tinpot's front stops bullets (not a close-in swing).
+      const front = !w.melee && armoredFront(d.def.type, d.st, d.ry, d.x, d.z, this.player.x, this.player.z);
+      if (front) this.events.push(['clang', d.id]);
       const dist = Math.min(Math.hypot(d.x - this.player.x, d.z - this.player.z), w.range);
       if (shot.dist < 0) { shot.dist = dist; shot.falloff = falloffAt(w, dist); }
       shot.body += nb; shot.head += nh; shot.zeds++;
-      shot.dmg += this.damage(d, shotDamage(w, d.def.type, nb, nh, dist), nh > 0, true);
+      shot.dmg += this.damage(d, shotDamage(w, d.def.type, nb, nh, dist) * (front ? TINPOT_FRONT : 1), nh > 0 && !front, true);
     }
     if (shot.zeds) this.stats.shotsHit++;
     this.stats.shot = shot;
@@ -93,6 +98,14 @@ export class ShootingRange {
     this.nades.delete(m.n ?? 0);
     const B = n && WEAPONS[n.w].blast;
     if (!n || !B) return;
+    const thrown = WEAPONS[n.w].thrown;
+    if (thrown === 'fire') {
+      this.fires.push({ x: m.x, z: m.z, age: 0, tick: 0 });
+      this.events.push(['fire', this.nextId++, m.x, m.z, FIRE.r, FIRE.life]);
+      return;
+    }
+    // The range skips the rattle's fuse (nothing here walks over to it): it goes off where it lands.
+    if (thrown) this.events.push(['blast', 0, m.x, m.y, m.z, 1]);
     const power = blastPower(B, Math.hypot(m.x - n.x, m.z - n.z)), R = blastRadius(B, power);
     this.stats.shotsFired++;
     const shot = { dmg: 0, body: 0, head: 0, zeds: 0, dist: Math.hypot(m.x - this.player.x, m.z - this.player.z), falloff: 1 };
@@ -114,7 +127,10 @@ export class ShootingRange {
     for (const d of [...this.dummies.values()]) {
       const dx = d.x - this.player.x, dz = d.z - this.player.z, dist = Math.hypot(dx, dz);
       if (d.hp <= 0 || dist > PLAYER.shoveRange + ZTYPES[d.def.type].radius || dist < 0.001 || (dx * fx + dz * fz) / dist < 0.3) continue;
-      if (d.def.type !== ZT.BRUTE) this.damage(d, 8, false, false);
+      if (d.def.type === ZT.BRUTE) continue;
+      this.damage(d, 8, false, false);
+      // A shoved Tinpot reels as long as it does on the server: the window to shoot past its armour.
+      if (d.def.type === ZT.TINPOT) d.flinch = 1.7;
     }
   }
 
@@ -146,6 +162,17 @@ export class ShootingRange {
       if ((this.respawns[i].t -= dt) > 0) continue;
       this.spawn(this.respawns[i].slot);
       this.respawns.splice(i, 1);
+    }
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i];
+      f.age += dt;
+      if (f.age >= FIRE.life) { this.fires.splice(i, 1); continue; }
+      if (f.age < f.tick) continue;
+      f.tick += FIRE.tick;
+      for (const d of [...this.dummies.values()]) {
+        if (d.hp <= 0 || d.def.type === ZT.RAINCOAT || Math.hypot(d.x - f.x, d.z - f.z) > FIRE.r + ZTYPES[d.def.type].radius) continue;
+        this.damage(d, FIRE.dps * FIRE.tick, false, false);
+      }
     }
     const z: ZombieSnap[] = [];
     for (const d of this.dummies.values()) {

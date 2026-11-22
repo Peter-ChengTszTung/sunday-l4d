@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
+import { TILE, CEIL_H, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, ZHIT, SURVIVORS, ALARM, ARMOR, isCommon, armoredFront, DIFFICULTIES, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId } from '../../shared/constants';
 import { F, isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
@@ -66,6 +66,8 @@ function useLevel(next: Level): void {
 const fx = new FX();
 const sfx = new Sfx();
 fx.onSplat = (x, z) => sfx.splat(x, z);
+fx.onCrackle = (x, z) => sfx.fireCrackle(x, z);
+fx.onRattle = (x, z) => sfx.rattle(x, z);
 // Walls between you and a sound muffle it.
 sfx.occluded = (x, z) => !L.hasLOS(cam.x, cam.z, x, z, doors);
 const hud = new Hud();
@@ -80,6 +82,7 @@ interface Mate {
   id: number; name: string; look: number; /** Shirt colour as CSS, for the name tag and HUD. */ color: string; chibi: Chibi; tag: pc.Entity; gun: pc.Entity | null; gunW: number;
   x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number;
   hp: number; st: number; respawn: number; rev: number; speed: number; /** Metres since the last footstep sound. */ stride: number;
+  /** Seconds left of the close-in swing pose. */ swing: number;
 }
 /** `sfxT`: alarm-ring timer; `vox`: seconds until a special's next presence cue. */
 interface Zed { id: number; type: number; chibi: Chibi; x: number; z: number; ry: number; tx: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
@@ -89,9 +92,16 @@ const me = {
   id: 0, x: L.def.spawns[0].x, y: 0, z: L.def.spawns[0].z, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0,
   hp: PLAYER.hp as number, st: PSTATE.ALIVE as number, medkits: 0, respawn: 0, rev: 0,
   weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve),
+  /** Close-in weapon (slot 3) and carried throwable (G): weapon indices, -1 = none. Armour points left; seconds until you can throw again. */
+  melee: -1, throwable: -1, armor: 0, throwCd: 0,
+  /** A throw the server has not confirmed yet (its snapshots still show the throwable); and: snap to the server's position on the next snapshot (a hold just ended). */
+  throwPending: false, snapPos: false,
   fireCd: 0, reloadT: 0, /** Seconds since the last shove, and shove fatigue (PLAYER.shoveMax). */ shoveRest: 99, shoveFat: 0, healT: 0, healLatch: false, slowT: 0, recoil: 0, bloom: 0, trauma: 0, reviving: 0, onGround: true,
-  /** Pinned to a wall by a Charger: no moving, shooting or healing until 'unpin'. */
-  pinned: false, pinX: 0, pinZ: 0,
+  /**
+   * Held by a zombie of type `pinType` (Charger pin, Snatcher lasso, Piggyback ride): no moving, shooting or
+   * healing until 'unpin'. The server owns your position meanwhile: (pinX, pinZ) follows your own snapshot.
+   */
+  pinned: false, pinX: 0, pinZ: 0, pinType: 0,
   /** Right mouse held (a scoped weapon aims while it is), and how far the scope has zoomed in (0..1). */
   scopeHeld: false, zoom: 0,
   /** Metres since the last footstep sound. */ stride: 0,
@@ -137,12 +147,14 @@ document.addEventListener('keydown', (e) => {
   if (!active()) return;
   if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
   // Range: 1-8 hand you any weapon, X clears the numbers.
-  if (range && /^Digit[1-8]$/.test(e.code)) { debugGive(Number(e.code.slice(5)) - 1); return; }
+  if (range && RANGE_KEYS.includes(e.code)) { debugGive(RANGE_KEYS.indexOf(e.code)); return; }
   if (range && e.code === 'KeyX') { range.resetStats(); hud.feed(t('Stats cleared')); return; }
   switch (e.code) {
     case 'KeyR': startReload(); break;
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
     case 'Digit2': switchWeapon(me.sidearm); break;
+    case 'Digit3': if (me.melee >= 0) switchWeapon(me.melee); break;
+    case 'KeyG': throwIt(); break;
     case 'KeyF': torchOn = !torchOn; sfx.dryFire(); break;
     case 'KeyM': sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); break;
     case 'KeyE': interact(); break;
@@ -169,7 +181,14 @@ document.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; if (e.button === 2) me.scopeHeld = false; });
 document.addEventListener('contextmenu', (e) => { if (inGame) e.preventDefault(); });
-document.addEventListener('wheel', () => { if (active() && me.primary >= 0) switchWeapon(me.weapon === me.primary ? me.sidearm : me.primary); }, { passive: true });
+document.addEventListener('wheel', (e) => {
+  if (!active()) return;
+  // Cycle through what you carry: primary, sidearm, close-in.
+  const have = [me.primary, me.sidearm, me.melee].filter((w) => w >= 0), i = have.indexOf(me.weapon);
+  if (have.length > 1) switchWeapon(have[(i + (e.deltaY > 0 ? 1 : have.length - 1)) % have.length]);
+}, { passive: true });
+/** Shooting range: these keys hand you weapon 0, 1, 2… (every gun, close-in weapon and throwable). */
+const RANGE_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'Backspace'];
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
   if (!locked) { keys.clear(); mouse.left = false; me.scopeHeld = false; }
@@ -281,9 +300,53 @@ function flushOwnShots(): void {
   if (ownNade) { ownNade.mx = mx; ownNade.my = my; ownNade.mz = mz; placeNade(ownNade); ownNade = null; }
 }
 
+/**
+ * Close-in swing: everything in the weapon's cone and reach, nearest first, up to its cleave. Same
+ * rule as the server's check (room.ts meleeHits), from where you stand and face.
+ */
+function swing(wi: number): void {
+  const w = WEAPONS[wi], M = w.melee!;
+  me.fireCd = (me.fireCd < -w.rate ? 0 : me.fireCd) + w.rate;
+  const fxd = -Math.sin(me.yaw), fzd = -Math.cos(me.yaw);
+  const near: { z: Zed; d: number }[] = [];
+  for (const z of zeds.values()) {
+    const dx = z.x - me.x, dz = z.z - me.z, d = Math.hypot(dx, dz);
+    if (d > M.reach + ZTYPES[z.type].radius || (d > 0.6 && (dx * fxd + dz * fzd) / d < M.arc)) continue;
+    if (L.hasLOS(me.x, me.z, z.x, z.z, doors)) near.push({ z, d });
+  }
+  near.sort((a, b) => a.d - b.d);
+  near.length = Math.min(near.length, M.cleave);
+  for (const { z } of near) {
+    z.chibi.punch = 1;
+    const p = { x: z.x, y: 0.9 * ZTYPES[z.type].scale, z: z.z };
+    fx.burst(p, 0xb4f05a, 4, 4, 0.09);
+    fx.burst(p, 0xffffff, 3, 4, 0.14, true, 0.25, 3);
+  }
+  sendPos(); // the server checks the swing against where it has you facing: make that now
+  net.send({ t: 'f', w: wi, h: near.map(({ z }): [number, number, number] => [z.id, 1, 0]), e: [cam.x + cam.fx * M.reach, cam.y + cam.fy * M.reach, cam.z + cam.fz * M.reach] });
+  vm.fire(); sfx.shoot(wi);
+  if (near.length) { hud.hitmark(false, false); sfx.meleeHit(w.dmg > 120); me.trauma = Math.min(1, me.trauma + w.shake); }
+}
+
+/** G: lob the carried throwable where you are looking. It flies like a launcher shell and claims its landing with 'g'. */
+function throwIt(): void {
+  const wi = me.throwable;
+  if (wi < 0 || me.throwCd > 0 || me.st !== PSTATE.ALIVE || me.pinned || me.healT > 0 || !active()) return;
+  const b = aimBasis();
+  spreadDir(b, 0);
+  // A little loft so a level throw still carries.
+  _d.y += 0.16;
+  const dl = Math.hypot(_d.x, _d.y, _d.z); _d.x /= dl; _d.y /= dl; _d.z /= dl;
+  const first = launchNade(wi);
+  net.send({ t: 'f', w: wi, h: [], e: first, n: nadeSeq });
+  me.throwable = -1; me.throwCd = 0.9; me.throwPending = true;
+  vm.toss(); sfx.shoot(wi);
+}
+
 function fire(): void {
   const wi = me.weapon, w = WEAPONS[wi];
   if (me.fireCd > 0 || me.reloadT > 0 || me.healT > 0) return;
+  if (w.melee) { swing(wi); return; }
   if (me.mag[wi] <= 0) {
     if (me.reserve[wi] > 0) startReload(); else { sfx.dryFire(); me.fireCd = 0.3; }
     return;
@@ -296,7 +359,7 @@ function fire(): void {
   const spread = shotSpread();
   let first: [number, number, number] = [0, 0, 0];
   const hits = new Map<number, [number, number, number]>();
-  let anyHead = false;
+  let anyHead = false, landed = false;
   if (w.blast) {
     spreadDir(b, spread);
     first = launchNade(wi);
@@ -309,6 +372,18 @@ function fire(): void {
       if (i < 4) ownTracers.push(_end.x, _end.y, _end.z, w.pellets > 1 ? 0.02 : w.pierce > 2 ? 0.05 : 0.032);
       for (const hit of shot.hits) {
         const p = { x: cam.x + _d.x * hit.t, y: cam.y + _d.y * hit.t, z: cam.z + _d.z * hit.t };
+        // A Tinpot's front: sparks and a clang, a quarter of the damage (the server works it out), and the bullet stops there.
+        const zd = hit.zed, front = armoredFront(zd.type, zd.st, zd.ry, zd.x, zd.z, me.x, me.z);
+        landed = true;
+        if (front) {
+          fx.burst(p, 0xfff1a8, 3, 3.5, 0.1, true, 0.22, 3);
+          tinpotTip();
+          const e = hits.get(zd.id) ?? [zd.id, 0, 0];
+          if (hit.head) e[2]++; else e[1]++;
+          hits.set(zd.id, e);
+          zd.chibi.punch = 0.5;
+          break;
+        }
         const e = hits.get(hit.zed.id) ?? [hit.zed.id, 0, 0];
         if (hit.head) { e[2]++; anyHead = true; } else e[1]++;
         hits.set(hit.zed.id, e);
@@ -319,7 +394,7 @@ function fire(): void {
       if (!shot.hits.length && shot.t < w.range) fx.burst(_end, 0xfff1a8, 2, 2.5, 0.07, true, 0.22, 3);
     }
   }
-  if (hits.size) { hud.hitmark(anyHead, false); sfx.hit(anyHead); }
+  if (landed) { hud.hitmark(anyHead, false); sfx.hit(anyHead); }
   net.send({ t: 'f', w: wi, h: [...hits.values()], e: first, ...(w.blast ? { n: nadeSeq } : {}) });
   vm.fire(); sfx.shoot(wi);
   me.recoil += w.recoil;
@@ -409,10 +484,11 @@ function updateNades(dt: number): void {
     fx.dropShell(n.shell);
     nades.splice(i, 1);
     if (!n.mine) continue;
-    // Predict the boom locally; the server validates the claim and does the damage.
+    // Predict the boom locally; the server validates the claim and does the damage. A throwable
+    // has no boom of its own: its fire or rattle comes back from the server.
     const B = WEAPONS[n.w].blast!;
     const power = Math.hypot(n.x - n.ox, n.z - n.oz) < B.arm ? 0.4 : 1;
-    boomFx(n.x, n.y, n.z, power);
+    if (!WEAPONS[n.w].thrown) boomFx(n.x, n.y, n.z, power);
     net.send({ t: 'g', x: +n.x.toFixed(2), y: +n.y.toFixed(2), z: +n.z.toFixed(2), n: n.seq });
   }
 }
@@ -421,7 +497,8 @@ function updateNades(dt: number): void {
 function debugGive(wi: number): void {
   const w = WEAPONS[wi];
   if (!w) return;
-  if (w.slot === 'sidearm') me.sidearm = wi; else me.primary = wi;
+  if (w.slot === 'throw') { me.throwable = wi; me.throwCd = 0; return; }
+  if (w.slot === 'sidearm') me.sidearm = wi; else if (w.slot === 'melee') me.melee = wi; else me.primary = wi;
   me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
   switchWeapon(wi);
 }
@@ -475,9 +552,10 @@ function findTarget(): Target {
     else if (k === 'ammo') { usable = me.primary >= 0; text = t(usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'); }
     else if (k === 'obj') { if (holdout >= 0) continue; text = t(pv.def.label ?? 'Use'); }
     else if (k === 'item') text = t('Pick up {item}', { item: t(pv.def.label ?? 'item') });
+    else if (k === 'armor') { usable = me.armor < ARMOR.max; text = t(usable ? 'Strap on a Pillow Vest' : 'Your Pillow Vest is still plump'); }
     else {
-      const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : me.primary;
-      if (cur === wi) { usable = w.slot !== 'sidearm'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
+      const wi = weaponIndex(k), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : w.slot === 'throw' ? me.throwable : me.primary;
+      if (cur === wi) { usable = w.slot === 'primary'; text = t(usable ? 'Restock {w}' : 'Already carrying the {w}', { w: t(w.name) }); }
       else text = cur >= 0 ? t('Swap your {old} for the {w}', { old: t(WEAPONS[cur].name), w: t(w.name) }) : t('Take the {w}', { w: t(w.name) });
     }
     bestD = d; best = { kind: 'pickup', pv, usable, text };
@@ -507,12 +585,21 @@ function onGot(pickupId: number): void {
     world.setTaken(pickupId, true); // spent for you; teammates can still use this pile
     hud.feed(t('Ammo topped up'));
   }
+  else if (k === 'armor') { me.armor = ARMOR.max; hud.feed(t('Pillow Vest on — it soaks up half of every bite until it bursts')); }
   else if (k !== 'obj' && k !== 'item') {
     const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi];
-    if (w.slot === 'sidearm') me.sidearm = wi; else me.primary = wi;
-    me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
-    if (me.weapon === wi) me.reloadT = 0; else switchWeapon(wi);
-    hud.feed(t('Picked up the {w}', { w: t(w.name) }));
+    if (w.slot === 'throw') {
+      me.throwable = wi; me.throwCd = 0;
+      hud.feed(t(w.thrown === 'fire' ? 'Picked up the {w} — G to throw: sets the ground alight' : 'Picked up the {w} — G to throw: lures sleepers, then goes bang', { w: t(w.name) }));
+    } else {
+      // A close-in weapon goes on your belt (3): it doesn't take your gun out of your hands.
+      const had = w.slot === 'melee' && me.melee < 0 ? false : true;
+      if (w.slot === 'sidearm') me.sidearm = wi; else if (w.slot === 'melee') me.melee = wi; else me.primary = wi;
+      me.mag[wi] = w.mag; me.reserve[wi] = w.reserve;
+      if (me.weapon === wi) me.reloadT = 0; else if (w.slot !== 'melee' || me.primary < 0) switchWeapon(wi);
+      else if (!WEAPONS[me.weapon] || (me.weapon !== me.primary && me.weapon !== me.sidearm)) switchWeapon(wi); // the one it replaced was in hand
+      hud.feed(w.slot === 'melee' ? t(had ? 'Picked up the {w}' : 'Picked up the {w} — press 3 to swing it (quiet, never runs out)', { w: t(w.name) }) : t('Picked up the {w}', { w: t(w.name) }));
+    }
   }
   sfx.pickup();
 }
@@ -526,7 +613,7 @@ function addMate(r: RosterEntry): Mate {
   chibi.group.addChild(tag);
   chibi.group.enabled = false;
   app.root.addChild(chibi.group);
-  const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0, stride: 0 };
+  const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0, stride: 0, swing: 0 };
   mates.set(r.id, m);
   return m;
 }
@@ -547,6 +634,15 @@ function applyPlayers(list: PlayerSnap[]): void {
         vm.visible = st === PSTATE.ALIVE;
       }
       me.hp = hp; me.st = st; me.medkits = medkits; me.rev = rev; me.respawn = respawn;
+      me.armor = p[13] ?? 0;
+      // Just after a throw the snapshot may still show it in your pocket: wait until the server agrees it is gone
+      // (or, after a few seconds, accept that the throw never counted and it is still yours).
+      const thr = p[14] ?? -1;
+      if (me.throwPending && (thr < 0 || me.throwCd < -3)) me.throwPending = false;
+      if (!me.throwPending) me.throwable = thr;
+      if (me.pinned) { me.pinX = x; me.pinZ = z; }
+      // A hold just ended: stand exactly where the server dragged you to.
+      if (me.snapPos) { me.snapPos = false; me.x = x; me.z = z; }
       continue;
     }
     const m = mates.get(id);
@@ -560,6 +656,7 @@ function applyPlayers(list: PlayerSnap[]): void {
       m.gun?.destroy();
       m.gun = worldGun(WEAPONS[w]?.id ?? 'pistol');
       m.gun.setLocalPosition(0.1, 0.74, -0.36); m.gun.setLocalScale(1.15, 1.15, 1.15);
+      if (WEAPONS[w]?.melee) m.gun.setLocalEulerAngles(55, 0, 0); // held upright, not pointed like a gun
       m.chibi.root.addChild(m.gun); m.gunW = w;
     }
   }
@@ -585,6 +682,8 @@ function applyZombies(list: ZombieSnap[]): void {
       if (st === ZSTATE.WINDUP) {
         if (type === ZT.CHARGER) { sfx.chargeTell(x, z); if (dist < 24) fx.poof({ x, y: 0.1, z }, 0xd8cfe8, 4, 0.22); }
         else if (type === ZT.DROOLER) sfx.gurgle(x, z);
+        else if (type === ZT.SNATCHER) sfx.lasso(x, z);
+        else if (type === ZT.WEEPER) sfx.weeperWarn(x, z);
         else sfx.leap(x, z);
       }
       if (st === ZSTATE.CHARGE) sfx.chargeGo(x, z);
@@ -608,6 +707,37 @@ function killZed(id: number, head: boolean): void {
   sfx.pop(zd.x, zd.z, zd.type);
 }
 
+/** Zombie id -> survivor id it has hold of (from 'pin'), for the Snatcher's scarf. */
+const pinBy = new Map<number, number>();
+/**
+ * The first time each new kind of infected comes close, one line on how to deal with it (the campaign
+ * introduces them one at a time, see shared/constants.ts INTRO). Once per page load.
+ */
+const TIPS: Record<number, string> = {
+  [ZT.LEAPER]: 'New threat: Leaper — it pounces from range. Shove it or shoot it mid-crouch',
+  [ZT.PUFFER]: 'New threat: Puffer — pop it from a distance: its goo calls a horde',
+  [ZT.DROOLER]: 'New threat: Drooler — it spits goo pools. Keep moving',
+  [ZT.CHARGER]: 'New threat: Charger — sidestep the rush and it stuns itself on the wall',
+  [ZT.ALARM]: 'New threat: Alarm Clock — silence it before it rings out',
+  [ZT.SNATCHER]: 'New threat: Snatcher — it lassoes one of you from afar. Break line of sight, or free whoever it catches',
+  [ZT.PIGGYBACK]: 'New threat: Piggyback — it rides a survivor away from the team. Shove it off them',
+  [ZT.WEEPER]: 'You hear sobbing: a Weeper. Give her a wide berth and do not shoot her — or kill her fast',
+  [ZT.TINPOT]: 'New threat: Tinpot — its pots stop most of a bullet from the front. Shove it, flank it, or use a close-in weapon',
+  [ZT.RAINCOAT]: 'New threat: Raincoat — fire does nothing to it',
+};
+const seenTypes = new Set<number>([ZT.WALKER, ZT.BRUTE]);
+function firstSight(z: Zed): void {
+  if (range || Math.hypot(z.x - me.x, z.z - me.z) > (z.type === ZT.WEEPER ? 30 : 22)) return;
+  seenTypes.add(z.type);
+  if (TIPS[z.type]) hud.feed(t(TIPS[z.type]));
+}
+let tinpotTipped = false;
+/** Bullets bouncing off a Tinpot: say why, once. */
+function tinpotTip(): void {
+  if (tinpotTipped) return;
+  tinpotTipped = true;
+  hud.feed(t('A Tinpot\'s front soaks up most of a bullet — shove it first, or hit it from behind'));
+}
 // Indexed by ZSTATE.
 const POSE: Pose[] = ['idle', 'run', 'attack', 'stagger', 'windup', 'leap', 'charge', 'pin', 'ring'];
 /** Survivors currently pinned by a Charger (drawn staggered against the wall). */
@@ -622,7 +752,7 @@ function onEvent(ev: GameEvent): void {
       zeds.clear();
       for (const c of corpses) c.chibi.dispose();
       corpses.length = 0;
-      fx.clearGoo(); pinned.clear(); me.pinned = false; me.shoveFat = 0;
+      fx.clearGoo(); pinned.clear(); pinBy.clear(); me.pinned = false; me.shoveFat = 0; me.armor = 0; me.throwCd = 0;
       const newChapter = ch !== chapter;
       clearNades();
       loadChapter(ch);
@@ -631,7 +761,7 @@ function onEvent(ev: GameEvent): void {
         for (let i = 0; i < WEAPONS.length; i++) { me.mag[i] = WEAPONS[i].mag; me.reserve[i] = WEAPONS[i].reserve; }
         Object.assign(me, { reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0 });
       } else {
-        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
+        Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, y: 0, kx: 0, kz: 0, pitch: 0 });
         vm.setWeapon(0);
       }
       ended = false;
@@ -662,6 +792,11 @@ function onEvent(ev: GameEvent): void {
       } else { // no gun shown (downed, or not built yet): roughly the hands
         _muz.x = m.x - Math.sin(m.ry) * 0.5; _muz.y = m.y + (m.st === PSTATE.DOWN ? 0.3 : 0.78); _muz.z = m.z - Math.cos(m.ry) * 0.5;
       }
+      if (w?.melee) {
+        // A swing: no tracer, just the pose and the whoosh.
+        m.swing = w.id === 'axe' ? 0.6 : w.id === 'machete' ? 0.3 : 0.45; sfx.shoot(ev[2], m.x, m.z);
+        break;
+      }
       if (w?.blast) {
         // A visual arc to the predicted landing point; the boom arrives as 'blast'.
         const B = w.blast, dist = Math.hypot(_end.x - _muz.x, _end.y - _muz.y, _end.z - _muz.z);
@@ -669,7 +804,7 @@ function onEvent(ev: GameEvent): void {
         nades.push({ seq: 0, x: _muz.x, y: _muz.y, z: _muz.z, vx: (_end.x - _muz.x) / life, vy: (_end.y - _muz.y + 0.5 * B.grav * life * life) / life, vz: (_end.z - _muz.z) / life,
           t: 0, w: ev[2], mine: false, ox: 0, oz: 0, shell: fx.shell(), trail: 0, mx: 0, my: 0, mz: 0, life });
       } else fx.tracer(_muz, _end, w?.pierce > 2 ? 0.05 : 0.03);
-      fx.burst(_muz, 0xffd43b, 1, 0.5, 0.16, true, 0.08, 0);
+      if (!w?.thrown) fx.burst(_muz, 0xffd43b, 1, 0.5, 0.16, true, 0.08, 0);
       sfx.shoot(ev[2], m.x, m.z);
       break;
     }
@@ -720,7 +855,7 @@ function onEvent(ev: GameEvent): void {
       if (ev[1] === me.id) { hud.banner(t(ev[2] === me.id ? 'You got yourself up!' : 'Back on your feet!')); sfx.heal(); }
       else hud.feed(t('{who} was helped up', { who: roster.get(ev[1])?.name ?? t('A teammate') }));
       break;
-    case 'blast': if (ev[1] !== me.id) boomFx(ev[2], ev[3], ev[4], ev[5]); break;
+    case 'blast': if (ev[1] !== me.id || ev[1] === 0) boomFx(ev[2], ev[3], ev[4], ev[5]); break;
     case 'kb': if (ev[1] === me.id) { me.kx = ev[2]; me.kz = ev[3]; me.vy = 4; me.onGround = false; me.trauma = 1; } break;
     case 'horde': hud.banner(t('HORDE INCOMING!'), true); sfx.horde(); break;
     case 'brute': hud.banner(t('A BRUTE approaches…'), true); sfx.brute(); break;
@@ -732,22 +867,45 @@ function onEvent(ev: GameEvent): void {
       break;
     }
     case 'pin': {
-      pinned.add(ev[1]);
+      pinned.add(ev[1]); pinBy.set(ev[2], ev[1]);
+      const type = zeds.get(ev[2])?.type ?? ZT.CHARGER;
       if (ev[1] === me.id) {
-        Object.assign(me, { pinned: true, pinX: ev[3], pinZ: ev[4], x: ev[3], z: ev[4], kx: 0, kz: 0, vx: 0, vz: 0, reloadT: 0, healT: 0, trauma: 1 });
-        hud.banner(t('PINNED! Hang on…'), true);
+        Object.assign(me, { pinned: true, pinType: type, pinX: ev[3], pinZ: ev[4], kx: 0, kz: 0, vx: 0, vz: 0, reloadT: 0, healT: 0, trauma: 1 });
+        if (type === ZT.CHARGER) { me.x = ev[3]; me.z = ev[4]; }
+        hud.banner(t(type === ZT.SNATCHER ? 'LASSOED! Hang on…' : type === ZT.PIGGYBACK ? 'Something is on your back!' : 'PINNED! Hang on…'), true);
       } else {
         const who = roster.get(ev[1])?.name ?? t('A teammate');
-        hud.banner(t('{who} is PINNED — shoot the Charger!', { who }), true);
-        hud.feed(t('A Charger slammed {who} into a wall!', { who }));
+        if (type === ZT.SNATCHER) { hud.banner(t('{who} is LASSOED — shoot the Snatcher or shove them free!', { who }), true); hud.feed(t('A Snatcher is reeling {who} in!', { who })); }
+        else if (type === ZT.PIGGYBACK) { hud.banner(t('A Piggyback is riding {who} — shove it off!', { who }), true); hud.feed(t('A Piggyback jumped on {who}!', { who })); }
+        else { hud.banner(t('{who} is PINNED — shoot the Charger!', { who }), true); hud.feed(t('A Charger slammed {who} into a wall!', { who })); }
       }
-      sfx.down();
+      if (type === ZT.SNATCHER) { const zd = zeds.get(ev[2]); sfx.snatch(zd?.x ?? ev[3], zd?.z ?? ev[4]); } else sfx.down();
       break;
     }
     case 'unpin':
       pinned.delete(ev[1]);
-      if (ev[1] === me.id) { me.pinned = false; if (me.st === PSTATE.ALIVE) hud.feed(t('Free from the Charger!')); }
+      for (const [zid, pid] of pinBy) if (pid === ev[1]) pinBy.delete(zid);
+      if (ev[1] === me.id) {
+        me.pinned = false; me.snapPos = me.pinType !== ZT.CHARGER;
+        if (me.st === PSTATE.ALIVE) hud.feed(t(me.pinType === ZT.SNATCHER ? 'Free from the Snatcher!' : me.pinType === ZT.PIGGYBACK ? 'The Piggyback is off you!' : 'Free from the Charger!'));
+      }
       break;
+    case 'fire': fx.fire(ev[1], ev[2], ev[3], ev[4], ev[5]); sfx.fireStart(ev[2], ev[3]); break;
+    case 'lure': fx.lure(ev[1], ev[2], ev[3]); break;
+    case 'clang': { const zd = zeds.get(ev[1]); if (zd) { zd.chibi.punch = 0.5; sfx.clang(zd.x, zd.z); if (range === null && Math.hypot(zd.x - me.x, zd.z - me.z) < 12) tinpotTip(); } break; }
+    case 'armor':
+      if (ev[1] === me.id) { sfx.armorHit(); fx.burst({ x: cam.x + cam.fx * 0.8, y: cam.y - 0.35, z: cam.z + cam.fz * 0.8 }, 0xffffff, 5, 2, 0.07, false, 0.5, 3); }
+      else { const m = mates.get(ev[1]); if (m) fx.burst({ x: m.x, y: 0.8, z: m.z }, 0xffffff, 5, 2.5, 0.07, false, 0.5, 3); }
+      break;
+    case 'weeper': {
+      const zd = zeds.get(ev[1]);
+      if (ev[2] === 1) { if (zd && Math.hypot(zd.x - me.x, zd.z - me.z) < 14) hud.banner(t('The Weeper is stirring — back away!'), true); }
+      else {
+        if (zd) { sfx.weeperScream(zd.x, zd.z); me.trauma = Math.min(1, me.trauma + 0.6 / (1 + Math.hypot(zd.x - me.x, zd.z - me.z) * 0.1)); }
+        hud.banner(ev[3] === me.id ? t('You woke the Weeper — RUN or shoot!') : t('The Weeper is awake!'), true);
+      }
+      break;
+    }
     case 'spit': {
       const [, , x0, z0, x1, z1, flight] = ev;
       fx.glob(x0, z0, x1, z1, flight);
@@ -793,6 +951,9 @@ net.onMessage = (m: ServerMsg) => {
     case 'w':
       loadChapter(m.ch);
       me.id = m.id; me.x = m.x; me.z = m.z;
+      // A new room starts you with the pistol only, whatever you carried in the last one.
+      Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, armor: 0, pinned: false });
+      vm.setWeapon(0);
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
       for (const id of m.taken) world.setTaken(id, true);
       doors = m.doors; world.setDoors(doors, true);
@@ -905,7 +1066,7 @@ function clearZeds(): void {
   zeds.clear();
   for (const c of corpses) c.chibi.dispose();
   corpses.length = 0;
-  clearNades(); fx.clearGoo(); pinned.clear();
+  clearNades(); fx.clearGoo(); pinned.clear(); pinBy.clear();
 }
 
 /** Offline practice: no room or server; ShootingRange answers our messages locally. */
@@ -918,7 +1079,7 @@ function enterRange(): void {
   const s = L.def.spawns[0];
   Object.assign(me, {
     id: RANGE_PID, x: s.x, z: s.z, y: 0, vx: 0, vz: 0, vy: 0, kx: 0, kz: 0, yaw: Math.PI, pitch: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, medkits: 0,
-    weapon: 0, primary: -1, sidearm: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
+    weapon: 0, primary: -1, sidearm: 0, melee: -1, throwable: -1, armor: 0, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, pinned: false, shoveFat: 0,
   });
   vm.setWeapon(0);
   range = new ShootingRange(L, RANGE_PID, (m) => net.onMessage(m));
@@ -932,7 +1093,7 @@ function enterRange(): void {
   $('rangepanel').hidden = false;
   $('leaverange').hidden = false;
   hud.banner(t('Shooting range'));
-  hud.feed(t('1-8: any weapon · R: reload · X: clear stats · Esc: leave'));
+  hud.feed(t('1-8: guns · 9 0 -: close-in · = Backspace: throwables (G) · X: clear stats'));
   hud.feed(t('Sniper (7): hold right mouse to scope · V: shove'));
   enterGame();
 }
@@ -957,7 +1118,7 @@ $('range').addEventListener('click', enterRange);
 $('leaverange').addEventListener('mousedown', (e) => e.stopPropagation());
 $('leaverange').addEventListener('click', leaveRange);
 
-const ZNAMES: Record<string, string> = { walker: 'Walker', leaper: 'Leaper', puffer: 'Puffer', brute: 'Brute', charger: 'Charger', drooler: 'Drooler', alarm: 'Alarm Clock' };
+const ZNAMES: Record<string, string> = { walker: 'Walker', leaper: 'Leaper', puffer: 'Puffer', brute: 'Brute', charger: 'Charger', drooler: 'Drooler', alarm: 'Alarm Clock', snatcher: 'Snatcher', piggyback: 'Piggyback', weeper: 'Weeper', tinpot: 'Tinpot', raincoat: 'Raincoat' };
 const zname = (type: number) => t(ZNAMES[ZTYPES[type]?.id] ?? 'Zombie');
 /** Radians as degrees for the range panel (spread is a cone half-angle). */
 const deg = (r: number) => ((r * 180) / Math.PI).toFixed(2);
@@ -967,7 +1128,9 @@ const fmt = (v: number) => (v >= 100 ? Math.round(v).toString() : (Math.round(v 
 function updateRangePanel(): void {
   if (!range) return;
   const w = WEAPONS[me.weapon], s = range.stats;
-  const spec = w.blast
+  const spec = w.melee ? t('{dmg} dmg · hits {n} · reach {r} m · silent', { dmg: w.dmg, n: w.melee.cleave, r: w.melee.reach })
+    : w.thrown === 'fire' ? t('throwable (G): burning patch')
+    : w.blast
     ? t('{dmg} blast dmg · {r} m radius', { dmg: w.blast.dmg, r: w.blast.radius })
     : t('{dmg} dmg', { dmg: w.pellets > 1 ? `${w.dmg}×${w.pellets}` : w.dmg }) + (w.pierce > 1 ? ` · ${t('pierces {n}', { n: w.pierce })}` : '');
   const [near, far, floor] = w.falloff;
@@ -977,9 +1140,9 @@ function updateRangePanel(): void {
   if (w.scope) handling.push(t('RMB scope: {x}x zoom, move {pct}%', { x: fmt(baseFov / w.scope.fov), pct: Math.round(w.move * w.scope.move * 100) }));
   const shot = s.shot;
   const lines = [
-    `<b>${t(w.name)}</b> ${spec} · ${t('{rpm} RPM', { rpm: Math.round(60 / w.rate) })} · ${t('mag {n}', { n: w.mag })} · ${t('reload {s} s', { s: w.reload })}`,
-    `${reach} · ${handling.join(' · ')}`,
-    t('Spread {base}° · firing +{bloom}° max · moving +{move}° · now {now}°', {
+    w.melee || w.thrown ? `<b>${t(w.name)}</b> ${spec}` : `<b>${t(w.name)}</b> ${spec} · ${t('{rpm} RPM', { rpm: Math.round(60 / w.rate) })} · ${t('mag {n}', { n: w.mag })} · ${t('reload {s} s', { s: w.reload })}`,
+    w.melee || w.thrown ? handling.join(' · ') : `${reach} · ${handling.join(' · ')}`,
+    w.melee || w.thrown ? '' : t('Spread {base}° · firing +{bloom}° max · moving +{move}° · now {now}°', {
       base: deg(baseSpread()), bloom: deg(w.bloom[1]), move: deg(w.moving), now: deg(shotSpread()),
     }),
     !shot ? t('Last shot: —')
@@ -1077,7 +1240,7 @@ function updateWaypoint(): void {
 function updateMe(dt: number): void {
   if (me.pinned && me.st !== PSTATE.ALIVE) me.pinned = false;
   const alive = me.st === PSTATE.ALIVE, on = active() && alive && !me.pinned;
-  me.fireCd -= dt; me.shoveRest += dt; me.slowT -= dt;
+  me.fireCd -= dt; me.shoveRest += dt; me.slowT -= dt; me.throwCd -= dt;
   me.bloom = Math.max(0, me.bloom - dt * WEAPONS[me.weapon].bloom[2]);
   me.recoil += (0 - me.recoil) * Math.min(1, dt * 9);
 
@@ -1094,7 +1257,8 @@ function updateMe(dt: number): void {
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
   me.vx += (wx - me.vx) * k; me.vz += (wz - me.vz) * k;
   if (alive) {
-    if (me.pinned) { me.x = me.pinX; me.z = me.pinZ; me.vx = me.vz = me.kx = me.kz = 0; }
+    // Held: the server moves you (dragged by a Snatcher, steered by a Piggyback); ease toward where it has you.
+    if (me.pinned) { const pk = Math.min(1, dt * 14); me.x += (me.pinX - me.x) * pk; me.z += (me.pinZ - me.z) * pk; me.vx = me.vz = me.kx = me.kz = 0; }
     else L.moveSlide(me, (me.vx + me.kx) * dt, (me.vz + me.kz) * dt, PLAYER.radius, doors);
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
     if (on && keys.has('Space') && me.onGround) { me.vy = 6.4; me.onGround = false; }
@@ -1105,8 +1269,8 @@ function updateMe(dt: number): void {
       me.stride += Math.hypot(me.vx, me.vz) * dt;
       if (me.stride > 1.8) { me.stride = 0; sfx.step(indoorAt(me.x, me.z)); }
     }
-    // Zombies are solid: get shouldered out of them.
-    for (const z of zeds.values()) {
+    // Zombies are solid: get shouldered out of them (not while one has hold of you).
+    if (!me.pinned) for (const z of zeds.values()) {
       const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
       const d = Math.hypot(dx, dz);
@@ -1143,10 +1307,11 @@ function updateMe(dt: number): void {
   if (wantRevive !== me.reviving) { me.reviving = wantRevive; net.send({ t: 'r', id: wantRevive }); }
 
   sendT -= dt;
-  if (sendT <= 0) {
-    sendT = 0.05;
-    net.send({ t: 'p', x: +me.x.toFixed(2), y: +me.y.toFixed(2), z: +me.z.toFixed(2), ry: +me.yaw.toFixed(3), rx: +me.pitch.toFixed(3), w: me.weapon, a: 0 });
-  }
+  if (sendT <= 0) sendPos();
+}
+function sendPos(): void {
+  sendT = 0.05;
+  net.send({ t: 'p', x: +me.x.toFixed(2), y: +me.y.toFixed(2), z: +me.z.toFixed(2), ry: +me.yaw.toFixed(3), rx: +me.pitch.toFixed(3), w: me.weapon, a: 0 });
 }
 
 function updateCamera(dt: number): void {
@@ -1192,14 +1357,27 @@ function updateEntities(dt: number): void {
     m.chibi.group.setPosition(m.x, m.y, m.z);
     m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
     if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE;
-    m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : pinned.has(m.id) ? 'stagger' : m.speed > 1 ? 'run' : 'aim', time, dt);
+    m.swing -= dt;
+    m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : pinned.has(m.id) ? 'stagger' : m.swing > 0 ? (WEAPONS[m.gunW]?.id === 'axe' ? 'chop' : WEAPONS[m.gunW]?.id === 'machete' ? 'slash' : 'swing') : m.speed > 1 ? 'run' : 'aim', time, dt);
     m.tag.setRotation(cam.rot);
   }
   for (const z of zeds.values()) {
     z.x += (z.tx - z.x) * k; z.z += (z.tz - z.z) * k; z.ry = lerpAngle(z.ry, z.tr, k);
-    z.chibi.group.setPosition(z.x, 0, z.z);
+    // A riding Piggyback sits up on its victim's shoulders.
+    const riding = z.type === ZT.PIGGYBACK && z.st === ZSTATE.PIN;
+    z.chibi.group.setPosition(z.x, riding ? 0.62 : 0, z.z);
     z.chibi.group.setLocalEulerAngles(0, z.ry * RAD, 0);
-    z.chibi.animate(POSE[z.st] ?? 'idle', time, dt);
+    z.chibi.animate(z.type === ZT.WEEPER && z.st === ZSTATE.IDLE ? 'sit' : POSE[z.st] ?? 'idle', time, dt);
+    // A Snatcher's scarf, from its hands to whoever it has.
+    if (z.type === ZT.SNATCHER && z.st === ZSTATE.PIN) {
+      const pid = pinBy.get(z.id), v = pid === me.id ? me : pid !== undefined ? mates.get(pid) : undefined;
+      if (v) {
+        _muz.x = z.x - Math.sin(z.ry) * 0.4; _muz.y = 0.95; _muz.z = z.z - Math.cos(z.ry) * 0.4;
+        _end.x = v.x; _end.y = v.y + (pid === me.id ? 0.75 : 0.8); _end.z = v.z;
+        fx.rope(_muz, _end);
+      }
+    }
+    if (!seenTypes.has(z.type)) firstSight(z);
     // A ringing Alarm Clock keeps rattling until it is shot (or rings out).
     if (z.st === ZSTATE.RING) {
       z.sfxT -= dt;
@@ -1233,7 +1411,7 @@ function zedAudio(dt: number): void {
   for (const z of zeds.values()) {
     const d = Math.hypot(z.x - cam.x, z.z - cam.z);
     if (z.st !== ZSTATE.IDLE && d < 22) awake++;
-    if (z.type !== ZT.WALKER && z.st !== ZSTATE.RING && d < 40) {
+    if (!isCommon(z.type) && z.st !== ZSTATE.RING && d < 40) {
       z.vox -= dt;
       if (z.vox <= 0) z.vox = sfx.special(z.type, z.x, z.z, z.st);
     }
@@ -1242,7 +1420,7 @@ function zedAudio(dt: number): void {
   groanT -= dt;
   if (groanT <= 0 && zeds.size) {
     groanT = (0.4 + Math.random() * 1.3) / Math.min(2.5, 1 + awake / 8);
-    const near = [...zeds.values()].filter((z) => z.type === ZT.WALKER && Math.hypot(z.x - cam.x, z.z - cam.z) < (z.st === ZSTATE.IDLE ? 14 : 26));
+    const near = [...zeds.values()].filter((z) => isCommon(z.type) && Math.hypot(z.x - cam.x, z.z - cam.z) < (z.st === ZSTATE.IDLE ? 14 : 26));
     if (near.length) {
       const z = near[(Math.random() * near.length) | 0];
       if (z.st === ZSTATE.IDLE) sfx.snore(z.x, z.z); else sfx.groan(z.x, z.z);
@@ -1283,8 +1461,9 @@ function listen(dt: number): void {
 const team: MateView[] = [];
 function updateHud(dt: number): void {
   const w = WEAPONS[me.weapon];
-  hud.setHealth(me.hp, me.st, me.medkits);
-  hud.setAmmo(t(w.name), me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '', me.weapon === me.primary ? 1 : 2, t(WEAPONS[me.sidearm].name));
+  hud.setHealth(me.hp, me.st, me.medkits, me.armor, ARMOR.max, me.throwable >= 0 ? t(WEAPONS[me.throwable].name) : '');
+  hud.setAmmo(t(w.name), w.melee ? Infinity : me.mag[me.weapon], me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
+    me.weapon === me.primary ? 1 : me.weapon === me.melee ? 3 : 2, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '');
   let n = 0;
   for (const m of mates.values()) {
     const v = team[n] ?? (team[n] = { id: 0, name: '', color: '', hp: 0, st: 0, respawn: 0 });
@@ -1304,7 +1483,8 @@ function updateHud(dt: number): void {
   const solo = roster.size <= 1;
   hud.spectate(me.st === PSTATE.DEAD ? (me.respawn < 0 ? t('Knocked out — your team can rescue you at the next safe room') : t('Knocked out — a teammate will rescue you in {s}s', { s: me.respawn }))
     : me.st === PSTATE.DOWN ? t(solo ? (me.rev > 0 ? 'You are down! Getting yourself up…' : 'You are down — and alone.') : 'You are down! Wait for a teammate to help you up')
-    : me.pinned ? t('Pinned by a Charger! Teammates can shoot or shove it off you') : null);
+    : me.pinned ? t(me.pinType === ZT.SNATCHER ? 'Lassoed by a Snatcher! Teammates can shoot it or shove you free'
+      : me.pinType === ZT.PIGGYBACK ? 'A Piggyback is steering you! Teammates can shove or shoot it off' : 'Pinned by a Charger! Teammates can shoot or shove it off you') : null);
 
   if (me.st === PSTATE.DOWN && me.rev > 0) { hud.ring(me.rev, t(solo ? 'Getting up…' : 'Being helped up…')); hud.prompt(null); }
   else if (me.healT > 0) { hud.ring(me.healT / PLAYER.healTime, t('Patching up…'), 'var(--pink)'); hud.prompt(null); }
@@ -1315,7 +1495,8 @@ function updateHud(dt: number): void {
     hud.ring(null);
     hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
       : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> ${t('Read: {title}', { title: t(target.nv.def.title) })}`
-        : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z) ? t('Get out of the goo!') : null);
+        : me.st !== PSTATE.DEAD && fx.inFire(me.x, me.z) ? t('You are standing in the fire!')
+          : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z) ? t('Get out of the goo!') : null);
   }
   hud.update(dt);
 }

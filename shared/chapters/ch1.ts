@@ -50,6 +50,7 @@ export function build() {
   const shutter = b.door(15, 8, 15, 10, 'shutter', 'SUDS & BUBBLES');
   b.pick('smg', 11, 12); b.pick('shotgun', 12, 12); b.pick('smg', 13, 12); b.pick('shotgun', 14, 12); b.pick('smg', 12, 11);
   b.pick('ammo', 9, 12); b.pick('ammo', 10, 12); b.pick('ammo', 11, 11);
+  b.pick('bat', 13, 11); b.pick('bat', 14, 11);                 // something close-in from the start
   for (const z of [7, 8, 9, 10]) b.pick('medkit', 5, z);
   b.note(14, 6, 'Corkboard flyer', 'SWEET DREAMS NIGHT! At 3 a.m. Dreamwell\'s gentle Hush mist drifts through downtown. Close your eyes, Mallow Bay. A rested city is a happy city!');
   b.label('SAFE ROOM', 10, 6.6, 26, RED); b.label('SUDS & BUBBLES 24H', 10, 11.6, 16, TEAL);
@@ -103,6 +104,7 @@ export function build() {
   b.pick('shotgun', 34, 72); b.pick('smg', 35, 72); b.pick('shotgun', 36, 72); b.pick('rifle', 37, 72); b.pick('rifle', 38, 72);
   b.pick('ammo', 40, 73); b.pick('ammo', 33, 73); b.pick('ammo', 34, 73);
   b.pick('medkit', 33, 76); b.pick('medkit', 34, 76);
+  b.pick('firebomb', 39, 72);                                   // the first throwable
   b.note(37, 70, 'Order spike', 'Order 3:02 a.m. 2x large pineapple. Note: "pls hurry, my whole street is sleepwalking and they\'re all humming the same song??"');
   b.label("TONY'S PIZZA", 38, 63.7, 26, PINK);
   b.lamp(38, 69.5);
@@ -156,7 +158,7 @@ export function build() {
   b.label('PAY STATION', 48, 118.4, 18, TEAL);
   b.label('RAMP UP: ROOF', 25, 131.5, 20, GOLD);
   b.lamp(75, 117.5); b.lamp(25, 131.5);                  // the only light in the garage marks the ramps
-  b.arrow(44, 111, E); b.arrow(64, 111, E); b.arrow(75, 113, S); b.arrow(68, 124, WEST);
+  b.arrow(41.5, 111, E); b.arrow(64, 111, E); b.arrow(75, 113, S); b.arrow(71.5, 124, WEST);
   b.arrow(53, 121.5, N); b.arrow(44, 121.5, S); b.arrow(34, 124, WEST); b.arrow(25, 127, S);
   b.arrow(36, 138.5, E); b.arrow(60, 138.5, E); b.arrow(83, 136, N);
   // Roof deck: open sky, a few parked cars, light poles, the rifle stash at the overlook.
@@ -218,6 +220,7 @@ export function build() {
   b.prop('desk', 127, 117, 2, 1); b.prop('desk', 134, 117, 2, 1); b.prop('shelf', 125, 112, 1, 3);
   for (const x of [127, 128, 129, 130]) b.pick('medkit', x, 112);
   b.pick('ammo', 135, 119); b.pick('ammo', 136, 119); b.pick('ammo', 137, 119);
+  b.pick('armor', 131, 112); b.pick('rattle', 134, 119);
   b.pick('rifle', 133, 112); b.pick('shotgun', 134, 112); b.pick('rifle', 135, 112); b.pick('smg', 136, 112); b.pick('smg', 137, 112); // tier 2 waits for the second half (tram line on)
   b.label('SAFE ROOM', 131, 114, 26, RED); b.label('SHHH', 131, 118.5, 18, CREAM);
   b.carve(138, 114, 138, 116, F.INTERIOR);
@@ -236,7 +239,7 @@ export function build() {
   for (const z of [138, 142, 146]) b.prop('counter', 153, z, 8, 1, { color: 0xe8e6f2 });
   b.prop('crate', 163, 136); b.prop('barrel', 150, 150);
   b.item('fuse', 'fuse', 162, 149, 'fuse');
-  b.pick('medkit', 151, 137);
+  b.pick('medkit', 151, 137); b.pick('armor', 152, 137);       // off-route reward
   b.label('LATHER LAUNDRY', 148, 141.5, 16, TEAL, E);
   // Fuse 2: on a dumpster lid in the south cross alley.
   b.prop('dumpster', 157, 172, 2, 1); b.item('fuse', 'fuse', 159, 172, 'fuse');
@@ -250,6 +253,7 @@ export function build() {
   // Noodle bar: side pocket with supplies before the tram.
   b.carve(134, 72, 141, 78, F.TILES);
   b.prop('counter', 135, 74, 1, 4); b.pick('medkit', 137, 73); b.pick('ammo', 137, 77);
+  b.pick('machete', 138, 73);                                   // off-route reward
   b.label('NOODLE BAR', 139, 75, 16, PINK, WEST);
   // Alley clutter.
   for (const [x, z] of [[142, 100], [146, 125], [142, 160], [168, 150], [172, 132], [172, 104], [168, 84]]) b.prop('dumpster', x, z);
@@ -272,6 +276,7 @@ export function build() {
   car(150, 43, E, 2, 1); car(160, 49, WEST, 2, 1); b.prop('van', 165, 42, 3, 1, { color: 0x63e6be }); b.prop('crate', 156, 52); b.prop('barrier', 147, 47, 1, 3);
   b.pick('medkit', 123, 54); b.pick('medkit', 124, 54); b.pick('ammo', 125, 55); b.pick('ammo', 126, 55); b.pick('ammo', 134, 55); b.pick('ammo', 133, 55);
   b.pick('launcher', 125, 54); // before the big tram holdout
+  b.pick('rattle', 126, 54);
   b.label('CHERRY ST TRAM STOP', 130, 53.5, 22, PINK);
   b.label('CHERRY STREET', 158, 47.5, 30, CREAM);
   for (const [x, z] of [[121, 52], [134, 51.6], [146, 40.6], [158, 55], [170, 40.6], [126, 40.6]]) b.lamp(x, z);
@@ -299,7 +304,7 @@ export function build() {
   for (const [x, z] of [[87, 41], [93, 41], [87, 47], [93, 47]]) b.lamp(x, z);
   b.arrow(97, 44.5, WEST); b.arrow(82, 38, WEST);
   // Bell Street: a short dead end north of the corner.
-  b.carve(86, 22, 89, 33, F.ASPHALT); car(87, 24); b.pick('ammo', 88, 23);
+  b.carve(86, 22, 89, 33, F.ASPHALT); car(87, 24); b.pick('ammo', 88, 23); b.pick('firebomb', 89, 23);
 
   // ------------------------------------------------------------------
   // 11. Kettle Corner Diner (checkpoint: walk-in pantry)
@@ -320,6 +325,7 @@ export function build() {
   b.prop('shelf', 60, 42, 1, 5); b.prop('shelf', 67, 42, 1, 3);
   for (const z of [42, 43, 44, 45]) b.pick('medkit', 61, z);
   b.pick('ammo', 65, 46); b.pick('ammo', 66, 46); b.pick('ammo', 67, 46);
+  b.pick('machete', 65, 42); b.pick('armor', 64, 46);
   b.pick('shotgun', 66, 42); b.pick('smg', 66, 43); b.pick('rifle', 66, 44); b.pick('autoshotgun', 66, 45); b.pick('launcher', 65, 43); b.pick('magnum', 65, 44);
   b.label('SAFE ROOM', 64, 44, 22, RED); b.label('TAKE A PIE', 64, 45.6, 12, CREAM);
   b.carve(64, 47, 65, 47, F.ASPHALT);
@@ -369,6 +375,7 @@ export function build() {
   b.note(65, 90, 'Whiteboard', 'NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot\'s girl Wren by the kettle. SIGN IT.');
   b.note(63, 89, 'Birthday card', 'Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.)');
   b.pick('medkit', 96, 90); b.pick('medkit', 97, 90); b.pick('ammo', 94, 75); b.pick('ammo', 94, 74); b.pick('ammo', 64, 75); b.pick('ammo', 64, 74); b.pick('ammo', 86, 90); b.pick('ammo', 86, 89);
+  b.pick('firebomb', 87, 89); b.pick('rattle', 87, 90);         // before the ignition holdout
   b.label('MAINTENANCE BAY', 80, 80.3, 24, CREAM);
   for (const [x, z] of [[68, 82], [86, 82], [68, 90], [92, 88], [80, 76]]) b.lamp(x, z);
   b.arrow(80, 75.5, S); b.arrow(88, 79.5, S);

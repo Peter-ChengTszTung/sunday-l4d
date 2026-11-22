@@ -1,4 +1,4 @@
-import { DROOLER } from '../../shared/constants';
+import { DROOLER, FIRE } from '../../shared/constants';
 // Pooled comic-book effects: tracers, star bursts, goo blobs and poof clouds.
 // Particles shrink instead of fading so they stay opaque and cel-flat.
 import * as pc from 'playcanvas';
@@ -16,6 +16,10 @@ interface Tracer { ent: pc.Entity; life: number }
 /** Drooler goo in flight: a ballistic arc from (x0, z0) to (x1, z1). */
 interface Glob { ent: pc.Entity; x0: number; z0: number; x1: number; z1: number; t: number; flight: number }
 interface Puddle { ent: pc.Entity; id: number; x: number; z: number; r: number; age: number; life: number; bub: number }
+/** A firebomb's burning patch: scorch disc plus a steady stream of flame blobs. `snd`: seconds to the next crackle. */
+interface Flame { ent: pc.Entity; id: number; x: number; z: number; r: number; age: number; life: number; snd: number }
+/** A Rattle Bomb shaking on the floor until it goes off. */
+interface Rattle { ent: pc.Entity; x: number; z: number; t: number; snd: number }
 export interface P3 { x: number; y: number; z: number }
 /** Most particles of one kind alive at once; further spawns are dropped. */
 const POOL_MAX = 220;
@@ -41,6 +45,15 @@ const PUDDLE_MESH = toMesh(device, merge([
   make(ring(0, 0.12, 10), 0xc8ffb0, trs(0.15, 0.008, -0.45)),
 ]));
 const puddleMat = makeUnlit({ alpha: 0.82, blend: 'normal' });
+// Scorch mark under a fire: a dark disc with a glowing rim.
+const SCORCH_MESH = toMesh(device, merge([
+  make(ring(0, 1, 28), 0xff922b),
+  make(ring(0, 0.9, 28), 0x3a1f1a, trs(0, 0.004, 0)),
+  make(ring(0, 0.45, 20), 0x1a1226, trs(0.1, 0.008, -0.05)),
+]));
+const FLAME_COLORS = [0xff5a1f, 0xff922b, 0xffd43b, 0xfff1a8];
+const ROPE_COLORS = [0xff8fab, 0xfff5f5];
+const ropeMats = ROPE_COLORS.map((color) => makeUnlit({ color, fog: false }));
 
 export class FX {
   private stars: Pool = { items: [], free: [], mesh: STAR_MESH, mat: starMat, star: true };
@@ -52,6 +65,16 @@ export class FX {
   private spareGlobs: pc.Entity[] = [];
   private sparePuddles: pc.Entity[] = [];
   private shells: pc.Entity[] = [];
+  private flames: Flame[] = [];
+  private spareScorch: pc.Entity[] = [];
+  private rattles: Rattle[] = [];
+  /** Snatcher scarves drawn this frame (see `rope`); `ropeN` of them are in use. */
+  private ropes: pc.Entity[] = [];
+  private ropeN = 0;
+  /** A burning patch wants its next crackle: returns seconds until the one after. */
+  onCrackle: ((x: number, z: number) => number) | null = null;
+  /** A Rattle Bomb shakes (several times a second until it blows). */
+  onRattle: ((x: number, z: number) => void) | null = null;
   /** Called when a glob lands (for the splat sound). */
   onSplat: ((x: number, z: number) => void) | null = null;
 
@@ -81,11 +104,96 @@ export class FX {
   private parkGlob(g: Glob): void { g.ent.enabled = false; this.spareGlobs.push(g.ent); }
   private parkPuddle(p: Puddle): void { p.ent.enabled = false; this.sparePuddles.push(p.ent); }
 
-  /** Remove every glob and puddle (chapter reset). */
+  /** Remove every glob, puddle, fire and rattle (chapter reset). */
   clearGoo(): void {
     for (const g of this.globs) this.parkGlob(g);
     for (const p of this.puddles) this.parkPuddle(p);
     this.globs.length = 0; this.puddles.length = 0;
+    for (const f of this.flames) this.parkFlame(f);
+    this.flames.length = 0;
+    for (const r of this.rattles) this.dropShell(r.ent);
+    this.rattles.length = 0;
+  }
+
+  /** A firebomb burst: a flash of flame, then a patch that burns for `life` seconds. */
+  fire(id: number, x: number, z: number, r: number, life: number): void {
+    while (this.flames.length >= FIRE.max) this.parkFlame(this.flames.shift()!);
+    let ent = this.spareScorch.pop();
+    if (ent) ent.enabled = true;
+    else { ent = meshEntity(SCORCH_MESH, puddleMat); app.root.addChild(ent); }
+    ent.setPosition(x, 0.03 + (id % 7) * 0.002, z);
+    ent.setLocalScale(0.01, 1, 0.01);
+    this.flames.push({ ent, id, x, z, r, age: 0, life, snd: 0 });
+    _p.x = x; _p.y = 0.3; _p.z = z;
+    this.burst(_p, 0xff922b, 18, 7, 0.26);
+    this.burst(_p, 0xffd43b, 8, 5, 0.3, true, 0.4, 3);
+  }
+  private parkFlame(f: Flame): void { f.ent.enabled = false; this.spareScorch.push(f.ent); }
+  /** True if (x, z) is inside a burning patch. */
+  inFire(x: number, z: number): boolean {
+    for (const f of this.flames) if (f.age > 0.2 && Math.hypot(x - f.x, z - f.z) < f.r) return true;
+    return false;
+  }
+
+  /** A Rattle Bomb at (x, z) shaking for `secs` seconds (the boom comes from the server's 'blast'). */
+  lure(x: number, z: number, secs: number): void {
+    const ent = this.shell();
+    this.rattles.push({ ent, x, z, t: secs, snd: 0 });
+  }
+
+  /** Draw a Snatcher's scarf from `a` to `b` for this frame only (call every frame while it holds someone). */
+  rope(a: P3, b: P3): void {
+    const segs = 6;
+    for (let i = 0; i < segs; i++) {
+      let e = this.ropes[this.ropeN];
+      if (!e) { e = meshEntity(TRACER_MESH, ropeMats[this.ropeN % 2]); app.root.addChild(e); this.ropes.push(e); }
+      this.ropeN++;
+      // Striped segments with a little sag in the middle.
+      const k0 = i / segs, k1 = (i + 1) / segs, sag = (k: number) => -Math.sin(k * Math.PI) * 0.25;
+      const x0 = a.x + (b.x - a.x) * k0, y0 = a.y + (b.y - a.y) * k0 + sag(k0), z0 = a.z + (b.z - a.z) * k0;
+      const x1 = a.x + (b.x - a.x) * k1, y1 = a.y + (b.y - a.y) * k1 + sag(k1), z1 = a.z + (b.z - a.z) * k1;
+      const len = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+      e.enabled = len > 0.02;
+      if (!e.enabled) continue;
+      e.setPosition(x0, y0, z0);
+      e.lookAt(x1, y1, z1);
+      e.setLocalScale(0.07, 0.07, len);
+    }
+  }
+
+  private updateFire(dt: number): void {
+    for (let i = this.flames.length - 1; i >= 0; i--) {
+      const f = this.flames[i];
+      f.age += dt;
+      if (f.age >= f.life) { this.parkFlame(f); this.flames.splice(i, 1); continue; }
+      const k = Math.min(1, f.age / 0.3) * Math.min(1, (f.life - f.age) / 1.2), s = f.r * k;
+      f.ent.setLocalScale(Math.max(0.01, s), 1, Math.max(0.01, s));
+      // Flame tongues: blobs that rise, swell and pop, thinning out as the fire dies.
+      for (let n = Math.random() < dt * 34 * k ? (Math.random() < 0.4 ? 2 : 1) : 0; n > 0; n--) {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * s * 0.92;
+        const c = FLAME_COLORS[(Math.random() * FLAME_COLORS.length) | 0];
+        this.spawn(this.blobs, c, f.x + Math.cos(a) * d, 0.1, f.z + Math.sin(a) * d, (Math.random() - 0.5) * 0.5, 1.6 + Math.random() * 1.6, (Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.18, 0.45 + Math.random() * 0.3, -1.5, 0.9);
+      }
+      if (Math.random() < dt * 3 * k) this.spawn(this.blobs, 0x4a4458, f.x + (Math.random() - 0.5) * s, 1.2, f.z + (Math.random() - 0.5) * s, 0, 1.2, 0, 0.3, 0.9, -0.3, 1.5);
+      if ((f.snd -= dt) <= 0) f.snd = this.onCrackle?.(f.x, f.z) ?? 1;
+    }
+    for (let i = this.rattles.length - 1; i >= 0; i--) {
+      const r = this.rattles[i];
+      r.t -= dt;
+      if (r.t <= 0) { this.dropShell(r.ent); this.rattles.splice(i, 1); continue; }
+      // Hops and spins faster as the fuse runs down.
+      const rate = 9 + (1 - Math.min(1, r.t / 5)) * 14;
+      r.ent.setPosition(r.x, 0.14 + Math.abs(Math.sin(r.t * rate)) * 0.22, r.z);
+      r.ent.setLocalEulerAngles(Math.sin(r.t * rate * 1.3) * 50, r.t * 400, 0);
+      if ((r.snd -= dt) <= 0) {
+        r.snd = 0.2;
+        this.onRattle?.(r.x, r.z);
+        this.spawn(this.stars, Math.random() < 0.5 ? 0xffd43b : 0x74c0fc, r.x, 0.5, r.z, (Math.random() - 0.5) * 3, 2.5, (Math.random() - 0.5) * 3, 0.16, 0.35, 4);
+      }
+    }
+    // Scarves not redrawn this frame disappear.
+    for (let i = this.ropeN; i < this.ropes.length; i++) this.ropes[i].enabled = false;
+    this.ropeN = 0;
   }
 
   private updateGoo(dt: number): void {
@@ -236,6 +344,7 @@ export class FX {
   /** `camRot` is the camera's world rotation, used to billboard the stars. */
   update(dt: number, camRot: pc.Quat): void {
     this.updateGoo(dt);
+    this.updateFire(dt);
     this.step(this.stars, dt, camRot);
     this.step(this.blobs, dt, camRot);
     for (const t of this.tracers) {

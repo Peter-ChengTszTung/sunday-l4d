@@ -220,7 +220,8 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       g.fillRect(x * PX + (i * PX) / 4, z * PX, PX / 4, PX);
     }
     const glyph = (x: number, z: number, rot: number, draw: () => void) => { g.save(); g.translate(x * PX, z * PX); g.rotate(rot); g.scale(s, s); draw(); g.restore(); };
-    for (const a of def.arrows) glyph(a.x, a.z, a.rot, () => {
+    // Arrow rot is a yaw (tip at (sin rot, cos rot), so PI/2 points +X); canvas rotation turns the other way.
+    for (const a of def.arrows) glyph(a.x, a.z, -a.rot, () => {
       g.fillStyle = 'rgba(255,231,163,0.9)'; g.strokeStyle = '#1a1226'; g.lineWidth = 3; g.lineJoin = 'round';
       g.beginPath(); g.moveTo(0, 32); g.lineTo(-22, 2); g.lineTo(-9, 2); g.lineTo(-9, -30); g.lineTo(9, -30); g.lineTo(9, 2); g.lineTo(22, 2); g.closePath();
       g.stroke(); g.fill();

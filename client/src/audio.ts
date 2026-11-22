@@ -228,6 +228,28 @@ export class Sfx {
     this.track(o);
   }
 
+  /** Struck metal (a pot, a tray, a blade): three inharmonic partials, the higher ones dying first. */
+  private ping(f: number, vol: number, decay: number, when = 0): void {
+    for (const [r, k] of [[1, 1], [2.76, 0.5], [5.4, 0.22]] as const) this.tone('triangle', f * r, f * r * 0.995, vol * k, 0.001, decay / Math.sqrt(r), when);
+  }
+
+  /** A rough growl: a low buzz through a dark filter, its level fluttered fast so it rattles in the throat. */
+  private growl(f0: number, f1: number, vol: number, attack: number, decay: number, when = 0): void {
+    const g = this.env(vol, attack, decay, when);
+    if (!g || !this.ctx) return;
+    const c = this.ctx, t = c.currentTime + when, end = t + attack + decay;
+    const o = c.createOscillator(), flut = c.createOscillator(), lp = c.createBiquadFilter(), am = this.gain(0.6, g);
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0 * this.pj, t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1 * this.pj), end);
+    lp.type = 'lowpass'; lp.frequency.value = f0 * this.pj * 9; lp.Q.value = 1.5;
+    flut.frequency.value = rnd(22, 32);
+    flut.connect(this.gain(0.4)).connect(am.gain);
+    o.connect(lp).connect(am);
+    o.start(t); flut.start(t); o.stop(end + 0.05); flut.stop(end + 0.05);
+    this.track(o);
+  }
+
   /** A short run of radio crackle (the shared pop buffer through a highpass). */
   private pops(vol: number, hp: number, dur: number, when = 0): void {
     const g = this.env(vol, 0.005, dur, when);
@@ -447,7 +469,8 @@ export class Sfx {
   // ------------------------------------------------------------------ weapons
   /** A gunshot: yours when `x`/`z` are omitted, else a teammate's at that position. */
   shoot(weapon: number, x?: number, z?: number): void {
-    const remote = x !== undefined && z !== undefined, id = WEAPONS[weapon]?.id;
+    const remote = x !== undefined && z !== undefined, w = WEAPONS[weapon], id = w?.id;
+    if (w?.melee || w?.thrown) { this.swing(w.id, remote ? [x, z] : null); return; }
     const v = (remote ? 0.7 : 1) * rnd(0.9, 1.05);
     this.emit(remote ? [x, z] : null, { reach: 2.5, wet: 0.4, jit: id === 'smg' || id === 'rifle' ? 0.06 : 0.04, prio: !remote }, () => {
       const crack = (vol: number) => this.hiss('highpass', 5200, 2600, 0.7, vol * v, 0.0008, 0.014);
@@ -492,6 +515,99 @@ export class Sfx {
       }
     });
   }
+  /** A melee swing or a throw (`shoot` with a close-in or throwable index): a whoosh shaped by the weapon. */
+  private swing(id: string, pos: [number, number] | null): void {
+    const v = (pos ? 0.7 : 1) * rnd(0.85, 1.05);
+    this.emit(pos, { reach: 1.2, wet: 0.15, jit: 0.08, prio: !pos }, () => {
+      switch (id) {
+        // A fat, woody whoosh with a little air thump under it.
+        case 'bat': this.hiss('bandpass', 320, 900, 1.1, 0.32 * v, 0.07, 0.11); this.tone('sine', 110, 80, 0.08 * v, 0.05, 0.08); break;
+        // Quick, bright and thin: "tsip".
+        case 'machete': this.hiss('bandpass', 1800, 5200, 2.2, 0.24 * v, 0.03, 0.06); this.hiss('highpass', 6000, 8000, 0.7, 0.05 * v, 0.02, 0.05); break;
+        // Slow and heavy: a deep push of air and a little effort "hng".
+        case 'axe':
+          this.hiss('bandpass', 220, 650, 0.9, 0.42 * v, 0.14, 0.18); this.tone('sine', 85, 55, 0.14 * v, 0.12, 0.16);
+          this.vocal(rnd(280, 330), 230, 560 * 1.2, 1450 * 1.2, 0.12 * v, 0.01, 0.12);
+          break;
+        // Throwables: a cute "hup!" and an arcing whoosh; the bottle sloshes, the rattle chatters as it leaves the hand.
+        default:
+          this.vocal(rnd(340, 420), rnd(420, 480), 650 * 1.25, 1080 * 1.25, 0.16 * v, 0.01, 0.09);
+          this.hiss('bandpass', 600, 2200, 1.2, 0.2 * v, 0.05, 0.16, 0.04);
+          if (id === 'firebomb') for (let i = 0; i < 3; i++) this.tone('sine', rnd(260, 380), rnd(500, 700), 0.05 * v, 0.004, 0.04, 0.02 + i * 0.05);
+          else if (id === 'rattle') for (let i = 0; i < 4; i++) this.tone('triangle', rnd(2800, 4000), 2600, 0.04 * v, 0.001, 0.015, i * 0.03);
+      }
+    });
+  }
+  /** Your swing connected: a hollow toy "bonk" over a smack, or (`heavy`, the axe) a deep chunky thwack. */
+  meleeHit(heavy: boolean): void {
+    this.emit(null, { jit: 0.1, wet: 0.2, prio: true }, () => {
+      if (heavy) {
+        this.tone('sine', 170, 50, 0.55, 0.002, 0.2); this.hiss('bandpass', 1500, 300, 0.9, 0.45, 0.002, 0.12);
+        this.hiss('lowpass', 900, 120, 0.7, 0.3, 0.004, 0.18, 0.02); this.tone('triangle', 330, 240, 0.1, 0.002, 0.06);
+      } else {
+        this.tone('triangle', rnd(560, 640), 260, 0.3, 0.001, 0.09); this.tone('sine', 220, 120, 0.28, 0.002, 0.1);
+        this.hiss('bandpass', 2200, 700, 1, 0.25, 0.001, 0.05);
+      }
+    });
+  }
+  /** Last `clang` time: an SMG spraying a Tinpot rings it at most ~9 times a second. */
+  private clangAt = -1;
+  /** A bullet bouncing off a Tinpot's pot: a bright ping, the pot's hollow clonk, now and then a ricochet "pyew". */
+  clang(x: number, z: number): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.clangAt < 0.11) return;
+    this.clangAt = now;
+    this.emit([x, z], { reach: 1.5, wet: 0.35, jit: 0.08 }, () => {
+      this.hiss('highpass', 4000, 2500, 0.7, 0.18, 0.001, 0.02);
+      this.ping(rnd(1150, 1700), 0.2, 0.35);
+      this.tone('sine', 520, 470, 0.12, 0.001, 0.07);
+      if (Math.random() < 0.3) this.tone('sine', rnd(2800, 3400), rnd(1500, 1900), 0.04, 0.005, 0.2, 0.02);
+    });
+  }
+  /** Your Pillow Vest soaked up part of a hit: a soft "pomf", a feathery rustle and a tiny reassuring blip. */
+  armorHit(): void {
+    this.emit(null, { jit: 0.1 }, () => {
+      this.hiss('lowpass', 1100, 220, 0.6, 0.32, 0.008, 0.14); this.tone('sine', 160, 90, 0.2, 0.006, 0.1);
+      this.hiss('highpass', 4500, 3000, 0.6, 0.05, 0.03, 0.3, 0.03);
+      this.tone('triangle', 620, 820, 0.05, 0.004, 0.07, 0.02);
+    });
+  }
+  /** A Hot Sauce bottle smashing: glass crash and tinkling shards, then a "fwoomp" that opens into a roar. */
+  fireStart(x: number, z: number): void {
+    this.emit([x, z], { reach: 2, wet: 0.45, prio: true, jit: 0.05 }, () => {
+      this.hiss('highpass', 3500, 6000, 0.6, 0.35, 0.001, 0.12);
+      for (let i = 0; i < 5; i++) this.tone('triangle', rnd(2600, 5200), rnd(2400, 5000), 0.06, 0.001, rnd(0.05, 0.12), rnd(0, 0.18));
+      this.hiss('bandpass', 300, 1800, 0.8, 0.5, 0.2, 0.15, 0.04); this.tone('sine', 60, 110, 0.3, 0.2, 0.4, 0.04);
+      this.hiss('lowpass', 1800, 500, 0.6, 0.35, 0.05, 0.6, 0.24);
+      this.pops(0.18, 700, 0.8, 0.2);
+    });
+    this.dip(0.2, 0.3);
+  }
+  /** One burst from a burning patch: a soft roar (overlapping into a bed), crackle and the odd snap. Returns seconds until the next. */
+  fireCrackle(x: number, z: number): number {
+    this.emit([x, z], { reach: 0.9, wet: 0.2, jit: 0.15 }, () => {
+      this.hiss('lowpass', rnd(500, 750), 350, 0.6, 0.07, 0.15, rnd(0.35, 0.6));
+      this.pops(rnd(0.1, 0.18), rnd(500, 900), rnd(0.15, 0.35));
+      if (Math.random() < 0.25) this.hiss('bandpass', rnd(1500, 2500), 900, 1.5, 0.12, 0.001, 0.03, rnd(0, 0.2));
+    });
+    return rnd(0.3, 0.5);
+  }
+  /**
+   * One shake of the Rattle Bomb (called ~5 times a second): a there-and-back of plastic beads, a hollow
+   * body knock that survives walls, and now and then a toy bell. Loud on purpose: readable at 25 m.
+   */
+  rattle(x: number, z: number): void {
+    this.emit([x, z], { reach: 3, wet: 0.35, prio: true, jit: 0.05 }, () => {
+      for (let s = 0; s < 2; s++) {
+        const w = s * rnd(0.08, 0.1);
+        this.hiss('bandpass', rnd(3800, 4800), 3500, 1.6, 0.22, 0.003, 0.05, w);
+        for (let i = 0; i < 4; i++) this.tone('triangle', rnd(2600, 4200), 2400, 0.1, 0.001, 0.014, w + i * rnd(0.008, 0.016));
+        this.tone('triangle', rnd(760, 860), 680, 0.1, 0.002, 0.04, w);
+      }
+      if (Math.random() < 0.35) { const f = pick([1568, 1760, 2093, 2349]); this.tone('sine', f, f, 0.06, 0.002, 0.25); }
+    });
+  }
   /** Launcher grenade going off: bigger and boomier than the puffer pop, with a crackle. */
   blast(x: number, z: number, power = 1): void {
     const d = Math.hypot(x - this.lis.x, z - this.lis.z), v = power < 1 ? 0.6 : 1;
@@ -508,6 +624,7 @@ export class Sfx {
   reload(weapon = 0): void {
     const w = WEAPONS[weapon], T = w?.reload ?? 1.5, keep = (s: AudioScheduledSourceNode | null) => { if (s) this.pending.push(s); };
     this.cancelReload();
+    if (w?.melee || w?.thrown) return; // nothing to reload
     this.emit(null, { jit: 0.04 }, () => {
       switch (w?.id) {
         case 'shotgun': case 'autoshotgun': {
@@ -535,17 +652,30 @@ export class Sfx {
   }
   reloadDone(weapon = 0): void {
     this.pending.length = 0;
-    const id = WEAPONS[weapon]?.id;
+    const w = WEAPONS[weapon], id = w?.id;
+    if (w?.melee || w?.thrown) return;
     this.emit(null, { jit: 0.04 }, () => {
       if (id === 'shotgun') { this.hiss('bandpass', 1900, 900, 1, 0.14, 0.004, 0.05); this.hiss('bandpass', 2300, 1300, 1, 0.16, 0.004, 0.05, 0.12); this.tone('square', 420, 330, 0.08, 0.002, 0.04, 0.12); }
       else if (id === 'sniper') { this.tone('square', 700, 560, 0.08, 0.002, 0.03); this.tone('square', 980, 900, 0.1, 0.002, 0.04, 0.13); }
       else { this.hiss('bandpass', 2600, 1300, 1, 0.1, 0.004, 0.05); this.tone('square', 640, 1100, 0.15, 0.002, 0.06, 0.03); }
     });
   }
-  /** Weapon swap: a cloth swish and a click as it seats. */
+  /**
+   * Weapon swap: a cloth swish and a click as it seats. Close-in weapons: a hand squeezing the taped grip and
+   * a palm slap (a wooden knock for the bat, a soft blade ring for the machete and axe). Throwables slosh or rattle.
+   */
   draw(weapon = 0): void {
-    const big = WEAPONS[weapon]?.slot === 'primary';
+    const w = WEAPONS[weapon], big = w?.slot === 'primary';
     this.emit(null, { jit: 0.06 }, () => {
+      if (w?.melee) {
+        this.hiss('bandpass', 1400, 700, 1.4, 0.07, 0.015, 0.08);
+        this.tone('sine', w.id === 'axe' ? 140 : 190, 110, 0.12, 0.003, 0.05, 0.09);
+        if (w.id === 'bat') this.tone('triangle', 420, 330, 0.05, 0.002, 0.04, 0.1);
+        else { this.hiss('highpass', 4500, 7500, 0.7, 0.045, 0.06, 0.12, 0.02); this.ping(w.id === 'axe' ? 1500 : 2600, 0.03, 0.3, 0.1); }
+        return;
+      }
+      if (w?.thrown === 'fire') for (let i = 0; i < 3; i++) this.tone('sine', rnd(240, 340), rnd(480, 640), 0.05, 0.004, 0.04, 0.06 + i * 0.06);
+      else if (w?.thrown === 'lure') for (let i = 0; i < 5; i++) this.tone('triangle', rnd(2800, 4000), 2600, 0.035, 0.001, 0.015, 0.05 + i * 0.025);
       this.hiss('bandpass', 800, 1800, 0.8, 0.07, 0.03, 0.1);
       this.tone('square', 1300, 1100, 0.05, 0.001, 0.02, 0.12);
       if (big) this.tone('square', 850, 760, 0.06, 0.001, 0.03, 0.19);
@@ -624,12 +754,24 @@ export class Sfx {
   }
   /** A zombie popping on death; size follows the type, Brutes fall like a wardrobe. */
   pop(x: number, z: number, type = 0): void {
-    const big = type === ZT.BRUTE, s = big ? 2.1 : type === ZT.CHARGER || type === ZT.PUFFER ? 1.3 : 1;
+    const big = type === ZT.BRUTE, voiced = type === ZT.WEEPER || type === ZT.PIGGYBACK;
+    const s = big ? 2.1 : type === ZT.CHARGER || type === ZT.PUFFER ? 1.3 : type === ZT.SNATCHER || type === ZT.WEEPER ? 1.15 : type === ZT.PIGGYBACK ? 0.8 : 1;
     this.emit([x, z], { jit: 0.1, wet: 0.3, prio: big }, () => {
       this.tone('sine', 520 / s, 90 / s, 0.32, 0.002, 0.14 * s); this.hiss('highpass', 1400, 3000, 0.5, 0.18, 0.002, 0.08);
       this.hiss('lowpass', 1600, 200, 0.7, 0.22, 0.002, 0.1 * s);
       if (big) { this.vocal(55, 30, 315, 560, 0.8, 0.05, 1.3); this.tone('sine', 70, 28, 0.8, 0.004, 0.5, 0.3); this.hiss('lowpass', 900, 60, 0.5, 0.55, 0.004, 0.5, 0.3); }
-      else if (Math.random() < 0.35) { const [a, b] = pick(VOWELS); this.vocal(rnd(110, 150), rnd(60, 80), a, b, 0.3, 0.02, 0.35); }
+      else if (!voiced && Math.random() < 0.35) { const [a, b] = pick(VOWELS); this.vocal(rnd(110, 150), rnd(60, 80), a, b, 0.3, 0.02, 0.35); }
+      switch (type) {
+        // Pots and trays clattering to the ground.
+        case ZT.TINPOT:
+          for (let i = 0, w = 0.03; i < 4; i++, w += rnd(0.05, 0.13)) this.ping(rnd(700, 1900), 0.12 - i * 0.02, 0.25, w);
+          this.hiss('highpass', 3000, 2000, 0.6, 0.08, 0.002, 0.15, 0.03);
+          break;
+        case ZT.RAINCOAT: this.hiss('highpass', 2500, 4000, 0.8, 0.07, 0.01, 0.12, 0.02); break; // plastic crinkle
+        case ZT.SNATCHER: this.hiss('bandpass', 1600, 900, 3, 0.1, 0.05, 0.35, 0.05); break; // a last wheeze
+        case ZT.WEEPER: this.vocal(300, 180, 450 * 1.15, 800 * 1.15, 0.25, 0.03, 0.6, 0.1); break; // a final whimper
+        case ZT.PIGGYBACK: this.vocal(560, 380, 800, 2000, 0.18, 0.01, 0.12, 0.05); break; // "hee-"
+      }
     });
   }
   /** The horde call: screams from all around, over a rising siren-like swell. */
@@ -676,8 +818,71 @@ export class Sfx {
       case ZT.ALARM:
         this.emit(at, { ...o, reach: 1 }, () => { this.tone('triangle', 2000, 1980, 0.06, 0.001, 0.025); this.tone('triangle', 1600, 1580, 0.06, 0.001, 0.025, 0.5); });
         return 1;
+      case ZT.SNATCHER:
+        this.emit(at, o, () => {
+          // Either a dry two-part cough or a wheezy hum through a scarf.
+          if (Math.random() < 0.5) {
+            for (let i = 0; i < 2; i++) { const w = i * rnd(0.15, 0.22); this.hiss('bandpass', 1100, 550, 1.3, 0.22, 0.004, 0.09, w); this.vocal(rnd(130, 160), 110, 560, 1450, 0.16, 0.004, 0.08, w); }
+          } else { this.hiss('bandpass', 1700, 2300, 5, 0.07, 0.25, 0.35); this.vocal(rnd(105, 120), 98, 320, 900, 0.22, 0.15, 0.6); }
+        });
+        return rnd(2.6, 4.2);
+      case ZT.PIGGYBACK:
+        // A little "hee-hee-hee" cackle, each giggle a touch lower.
+        this.emit(at, o, () => { for (let i = 0, n = 3 + ((Math.random() * 3) | 0); i < n; i++) this.vocal(rnd(430, 520) * (1 - i * 0.04), rnd(360, 420), 800, 2000, 0.2, 0.008, 0.06, i * rnd(0.09, 0.12)); });
+        return rnd(2, 3.5);
+      case ZT.WEEPER:
+        // Only while she sits: hitching breaths in, a wavering wail out, sometimes a sniffle. Carries ~30 m.
+        if (st !== ZSTATE.IDLE) return 0.5;
+        this.emit(at, { ...o, reach: 2.2, wet: 0.45, jit: 0.06 }, () => {
+          for (let i = 0; i < 3; i++) this.hiss('bandpass', 1000 + i * 150, 1500, 2.5, 0.08, 0.01, 0.05, i * 0.11);
+          this.vocal(rnd(330, 380), rnd(230, 260), 450 * 1.15, 800 * 1.15, 0.3, 0.08, rnd(0.6, 0.9), 0.38);
+          if (Math.random() < 0.5) this.hiss('bandpass', 2400, 3200, 3, 0.05, 0.03, 0.1, rnd(1.2, 1.4));
+        });
+        return rnd(1.8, 2.8);
     }
     return 4;
+  }
+  /** Snatcher tell (~0.9 s): the scarf whirling overhead, whooshes coming faster and brighter over a rising whistle. */
+  lasso(x: number, z: number): void {
+    this.emit([x, z], { reach: 1.6, wet: 0.3, prio: true, jit: 0.04 }, () => {
+      for (let i = 0, w = 0; i < 7; i++) { const k = i / 6; this.hiss('bandpass', 400 + 1400 * k, 700 + 2000 * k, 2, 0.12 + 0.12 * k, 0.04, 0.07, w); w += 0.2 - 0.12 * k; }
+      this.tone('sine', 520, 1400, 0.06, 0.75, 0.12); this.tone('triangle', 260, 700, 0.05, 0.75, 0.12);
+      this.hiss('bandpass', 900, 1700, 3, 0.07, 0.6, 0.15, 0.1); // a wheezy inhale
+    });
+  }
+  /** The lasso catches someone: a whip crack, a taut twang and a startled "eep!". */
+  snatch(x: number, z: number): void {
+    this.emit([x, z], { reach: 1.6, wet: 0.3, prio: true, jit: 0.05 }, () => {
+      this.hiss('highpass', 3200, 1600, 0.8, 0.5, 0.001, 0.03);
+      this.tone('triangle', 190, 170, 0.25, 0.002, 0.3); this.tone('sawtooth', 95, 88, 0.08, 0.002, 0.25);
+      this.hiss('bandpass', 1200, 500, 1.2, 0.2, 0.005, 0.15, 0.01);
+      this.vocal(rnd(440, 520), rnd(700, 800), 650 * 1.25, 1080 * 1.25, 0.35, 0.01, 0.2, 0.06);
+    });
+  }
+  /** The Weeper stirs: the sob catches, then a low rattling growl with a slow beating underneath. Back off. */
+  weeperWarn(x: number, z: number): void {
+    this.emit([x, z], { reach: 2, wet: 0.3, prio: true, jit: 0.04 }, () => {
+      this.hiss('bandpass', 1300, 700, 2, 0.12, 0.004, 0.18);
+      this.growl(78, 62, 0.4, 0.35, 0.9, 0.12);
+      this.vocal(rnd(72, 82), 60, 450, 800, 0.35, 0.3, 0.9, 0.15);
+      this.tone('sine', 110, 104, 0.12, 0.4, 0.7, 0.1); this.tone('sine', 116.5, 110, 0.1, 0.4, 0.7, 0.1);
+    });
+  }
+  /**
+   * She is awake (~1 s): a gasp, then a two-throated shriek that beats against itself, a rasp and a growl
+   * underneath. Ducks the beds; when close, a quiet dissonant stab in your ear.
+   */
+  weeperScream(x: number, z: number): void {
+    const d = Math.hypot(x - this.lis.x, z - this.lis.z);
+    this.emit([x, z], { reach: 2.6, wet: 0.5, prio: true, jit: 0.03 }, () => {
+      this.hiss('bandpass', 1500, 3200, 1.5, 0.25, 0.03, 0.12);
+      this.vocal(rnd(760, 820), 480, 1000, 2500, 0.55, 0.05, 0.9, 0.08);
+      this.vocal(rnd(830, 880), 530, 1150, 2900, 0.35, 0.07, 0.85, 0.1);
+      this.hiss('bandpass', 2600, 1800, 2, 0.15, 0.06, 0.8, 0.08);
+      this.growl(90, 55, 0.3, 0.1, 0.8, 0.1);
+    });
+    this.dip(0.45, 0.7);
+    if (d < 25) { const s = 1 - d / 25; this.flat(() => { this.tone('sine', 233, 225, 0.06 * s, 0.05, 1.1); this.tone('sine', 247, 236, 0.06 * s, 0.05, 1.1); }); }
   }
   /** Leaper tell: a stuttering rise that breaks into a shriek (high register, fast rhythm). */
   leap(x: number, z: number): void {

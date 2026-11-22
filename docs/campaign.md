@@ -56,6 +56,13 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - *Sleep-Charger*: a sleeper stuck in the "running late" dream, sprinting for a bus that left hours ago. Sleep mask shoved up, dressing gown flapping, one arm swollen from clutching a pillow. It lowers its head and scrapes its slippers before it runs, and it runs in a straight line until something stops it, usually a wall, sometimes you.
 - *Drooler*: a mouth-breather who slept face-down on a pillow soaked in Hush. Its cheeks fill with lavender goo and it gargles before it spits. The goo pools and stings anything awake, so sleepers walk through it and survivors don't.
 - *Alarm Clock*: a light sleeper who never let go of the bedside clock. It shies away from people, but the moment it sees someone awake its dream says "time to get up" and it rings. The dream hates that sound, so every sleeper nearby shuffles over to hush it. Shoot it before it rings out.
+- *Snatcher*: a sleeper tangled in the "falling" dream, forever grabbing for something to hold. Tall, thin, wrapped in a long striped scarf it never took off. It whirls the scarf, lassoes whoever is awake and hauls them close, the way you would pull a blanket back over yourself.
+- *Piggyback*: a small one in an animal onesie, dreaming of being carried up to bed. It jumps on a survivor's shoulders and steers them off into the dark, giggling.
+- *Weeper*: a sleeper having the saddest dream in Mallow Bay. She sits and sobs and wants only to be left alone. Light, noise or company wakes her, and what wakes up is furious. She goes for whoever did it, and once they are down she runs off crying.
+- *Tinpot*: a sleepwalking cook who wandered through the kitchen first: saucepan on the head, baking tray on the chest. Bullets mostly ring off the front.
+- *Raincoat*: fell asleep waiting for the bus in a storm slicker. Fire does nothing through the oilskin.
+
+**How the infected arrive.** The campaign brings them in one at a time (shared/constants.ts `INTRO`): chapter 1 opens with walkers only, then the Leaper, Puffer, Drooler and finally the Charger; chapter 2 adds the Alarm Clock, Tinpot, Weeper and Snatcher, then the Raincoat; the Piggyback from chapter 3. A room started on a later chapter has everything before it.
 
 **What the survivors learn, chapter by chapter:**
 1. The fog came from City Hall's "Sweet Dreams Night" machines, which Dreamwell sponsored. Only people who were asleep turned. A Dr. W. Lowell asked for a delay and was refused. Dot has a daughter called Wren.

@@ -93,6 +93,7 @@ export function build() {
   b.pick('smg', 8, 15); b.pick('shotgun', 9, 15); b.pick('rifle', 10, 15); b.pick('rifle', 11, 15); b.pick('shotgun', 12, 15);
   b.pick('ammo', 14, 8); b.pick('ammo', 14, 9); b.pick('ammo', 14, 10);
   for (const x of [7, 8, 9, 10]) b.pick('medkit', x, 8);
+  b.pick('armor', 11, 8); b.pick('firebomb', 15, 8); b.pick('bat', 13, 15); b.pick('machete', 14, 15);
   b.label('SAFE ROOM', 11, 10.6, 24, RED); b.label("SWITCHMAN'S HUT", 11, 12.6, 14, SODIUM);
   b.lamp(11, 11);
   b.carve(16, 9, 16, 11, F.DIRT);
@@ -137,7 +138,7 @@ export function build() {
   // Car shop (side pocket south of the yard).
   b.fill(27, 55, 42, 68); b.carve(28, 57, 41, 67, F.INTERIOR); b.carve(33, 55, 36, 56, F.INTERIOR);
   box(29, 59, 2, 6); b.prop('shelf', 41, 58, 1, 5); b.prop('counter', 33, 66, 5, 1, { color: 0x6f7f9a });
-  b.pick('shotgun', 39, 64); b.pick('medkit', 32, 58); b.pick('ammo', 40, 66);
+  b.pick('shotgun', 39, 64); b.pick('medkit', 32, 58); b.pick('ammo', 40, 66); b.pick('firebomb', 40, 65);   // off-route reward
   b.label('CAR SHOP', 35, 61, 16, SODIUM); b.lamp(35, 62);
   // East half: the water tower in the open middle, cover scattered around it.
   b.prop('tank', 70, 25, 4, 4, { color: 0x8a5a3a });
@@ -150,6 +151,7 @@ export function build() {
   for (const [x, z] of [[66, 21], [76, 32], [67, 33], [60, 46], [81, 30], [88, 36], [55, 22]]) b.prop('crate', x, z);
   b.prop('barrel', 67, 27); b.prop('barrel', 77, 26); b.prop('barrel', 94, 48); b.prop('barrel', 56, 40);
   b.pick('ammo', 66, 30); b.pick('ammo', 67, 30); b.pick('ammo', 76, 29); b.pick('ammo', 76, 30); b.pick('medkit', 68, 24); b.pick('ammo', 60, 20);
+  b.pick('rattle', 68, 30);                                      // before the hill-switch holdout
   for (const [x, z] of [[66, 26], [77, 26], [66, 32], [77, 32]]) b.lamp(x, z);
   b.lamp(52, 46); b.lamp(88, 52);
   b.arrow(56, 44, N); b.arrow(64, 35, E); b.arrow(87.5, 50, S);
@@ -187,6 +189,7 @@ export function build() {
   for (const x of [84, 85, 86, 87]) b.pick('medkit', x, 72);
   b.pick('ammo', 97, 66); b.pick('ammo', 97, 67); b.pick('ammo', 97, 68);
   b.pick('shotgun', 92, 72); b.pick('rifle', 93, 72); b.pick('smg', 94, 72); b.pick('autoshotgun', 95, 72); b.pick('rifle', 93, 71); // the container maze is next
+  b.pick('armor', 88, 72); b.pick('axe', 96, 72); b.pick('rattle', 97, 69);
   const officeLever = b.obj('lever', 98, 72, 'Unlatch the back door');
   b.label('SAFE ROOM', 89.5, 68, 22, RED); b.label("YARDMASTER'S OFFICE", 89.5, 70.4, 12, SODIUM);
   b.lamp(89.5, 69);
@@ -348,7 +351,7 @@ export function build() {
   b.prop('barrier', 136, 66, 1, 4); b.prop('barrier', 152, 66, 1, 4); b.prop('pallet', 126, 63, 2, 1); b.prop('crate', 162, 52);
   b.pick('ammo', 148, 52); b.pick('ammo', 128, 78); b.pick('medkit', 160, 78); b.pick('ammo', 176, 66);
   for (const [x, z] of [[124, 45], [148, 45], [136, 56], [160, 56], [148, 68], [124, 68], [172, 74]]) b.lamp(x, z);
-  b.arrow(142.5, 43, S); b.arrow(146, 70, E); b.arrow(170, 77, E);
+  b.arrow(142.5, 43, S); b.arrow(148, 70.5, E); b.arrow(170, 77, E);
   zz(150, 74, E);
   // Hank's locker room (tank crew).
   b.fill(113, 70, 122, 80); b.carve(114, 71, 121, 79, F.INTERIOR); b.carve(122, 74, 122, 75, F.INTERIOR);
@@ -361,6 +364,7 @@ export function build() {
   b.fill(168, 42, 177, 48); b.carve(169, 43, 176, 47, F.INTERIOR); b.carve(172, 48, 173, 48, F.INTERIOR);
   b.prop('counter', 169, 43, 6, 1, { color: 0x6f7f9a }); b.prop('terminal', 170, 44); b.prop('terminal', 173, 44);
   b.pick('shotgun', 176, 47); b.pick('launcher', 175, 47); b.pick('ammo', 169, 47); // Hank, the Brute, is on the mixing floor
+  b.pick('firebomb', 174, 47);
   b.label('MIX CONTROL', 172.5, 46, 11, CREAM);
   // Stairs up to the labs: main (east) and back stairs (west).
   b.carve(172, 81, 175, 86, F.TILES); b.carve(124, 81, 126, 86, F.TILES);
@@ -400,6 +404,7 @@ export function build() {
   b.label('TO WREN, FROM MUM ♥', 152.5, 102.4, 11, PINK, 0);              // a child's drawing
   b.label('FORMULATION: DR. W. LOWELL', 149.5, 98.6, 13, LAV, 0); b.label('TERMINAL 4', 151.5, 94.2, 10, GOLD, 0);
   b.pick('ammo', 140, 102); b.pick('ammo', 140, 103); b.pick('ammo', 159, 92); b.pick('ammo', 159, 93); b.pick('medkit', 145, 101);
+  b.pick('rattle', 141, 102);                                    // for the terminal four holdout
   for (const [x, z] of [[144, 94], [156, 98], [148, 101]]) b.lamp(x, z);
   b.arrow(155.5, 90.5, S);
   // Sound lab (side door into Wren's lab).
@@ -425,6 +430,7 @@ export function build() {
   for (const x of [159, 160, 161, 162]) b.pick('medkit', x, 113);
   b.pick('ammo', 168, 113); b.pick('ammo', 169, 113); b.pick('ammo', 170, 113);
   b.pick('smg', 164, 110); b.pick('shotgun', 165, 110); b.pick('rifle', 166, 110); b.pick('sniper', 167, 110); b.pick('autoshotgun', 168, 110); b.pick('launcher', 166, 108);
+  b.pick('armor', 163, 113); b.pick('armor', 164, 113); b.pick('axe', 169, 110); b.pick('machete', 170, 110); b.pick('firebomb', 171, 113); b.pick('rattle', 172, 113);   // last stop before Bertha
   const breakLever = b.obj('lever', 172, 109, 'Unbolt the pier door');
   b.label('SAFE ROOM', 165, 109, 20, RED); b.label('STAFF BREAK ROOM', 165, 111.4, 11, LAV);
   b.lamp(165, 108.5);
@@ -457,7 +463,7 @@ export function build() {
   b.label('NET SHED', 123, 113, 12, CREAM);
   b.fill(133, 109, 144, 116); b.carve(134, 110, 143, 115, F.INTERIOR); b.carve(138, 116, 139, 116, F.INTERIOR);
   b.prop('desk', 135, 111, 2, 1); b.prop('shelf', 143, 110, 1, 4); b.prop('radio', 140, 110);
-  b.pick('medkit', 134, 115); b.pick('ammo', 142, 115);
+  b.pick('medkit', 134, 115); b.pick('ammo', 142, 115); b.pick('armor', 135, 115);   // off-route reward
   b.label('HARBOUR OFFICE', 138.5, 113, 11, CREAM);
   for (const x of [80, 96, 112, 126, 146, 160, 174]) b.lamp(x, x % 2 ? 117.4 : 122.6);
   for (const x of [170, 132, 110]) b.arrow(x, 119.5, WEST);
@@ -528,6 +534,7 @@ export function build() {
   b.label('BERTHA', 18.5, 147.6, 26, '#fff3e0', 0); b.label('No. 9 DIESEL, 1958', 30, 147.8, 11, CREAM, 0);
   b.label('FLATCAR', 33, 154, 11, CREAM, 0);
   b.pick('ammo', 30, 154); b.pick('ammo', 31, 154); b.pick('ammo', 32, 154); b.pick('medkit', 20, 154); b.pick('ammo', 42, 147); b.pick('ammo', 43, 147); b.pick('medkit', 44, 154);
+  b.pick('rattle', 33, 154);                                     // for Bertha's long crank
   b.pick('ammo', 60, 154); b.pick('ammo', 61, 154); b.pick('medkit', 72, 146);
   for (const [x, z] of [[19, 154], [30, 155.5], [40, 148], [14, 146], [56, 148], [76, 145], [64, 160], [88, 155], [104, 148], [122, 160], [22, 168], [50, 162]]) b.lamp(x, z);
   b.arrow(80, 143, WEST); b.arrow(62, 147, WEST); b.arrow(44, 152, WEST);

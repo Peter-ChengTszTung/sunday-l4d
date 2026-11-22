@@ -359,7 +359,7 @@ export function buildWorld(L: Level): World {
   const doorTarget = (v: (typeof doorViews)[number]) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
 
   // ---------------------------------------------------------------- pickups
-  const RING: Record<string, number> = { medkit: 0xff6b8a, ammo: 0xa9e34b, item: 0xffd43b };
+  const RING: Record<string, number> = { medkit: 0xff6b8a, ammo: 0xa9e34b, item: 0xffd43b, armor: 0x74c0fc, firebomb: 0xff7a3a, rattle: 0xff7a3a };
   /** Ground ring colour: fixed for supplies, by tier for weapons (blue = basic, orange-gold = tier 2). */
   const ringColor = (kind: string): number => RING[kind] ?? ((WEAPONS.find((w) => w.id === kind)?.tier ?? 1) >= 2 ? 0xffa53a : 0x74c0fc);
   const arrowMesh = mesh(make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
@@ -380,6 +380,8 @@ export function buildWorld(L: Level): World {
   const bullet = (x: number) => make(cylinder(8), 0xffc94a, trs(x, 0.28, 0, 0, 0, 0, 0.05, 0.22, 0.05));
   const FLOAT: Record<string, () => pc.Mesh> = {
     medkit: () => inkModel([[0.55, 0.38, 0.28, 0xfff5f5], [0.3, 0.09, 0.3, 0xff4d6d, 0, 0, 0, 0], [0.09, 0.3, 0.3, 0xff4d6d, 0, 0, 0, 0]]),
+    // Pillow Vest: a plump pillow with two straps.
+    armor: () => inkModel([[0.5, 0.56, 0.2, 0xf6f2ff], [0.08, 0.6, 0.22, 0x74c0fc, -0.14, 0, 0, 0], [0.08, 0.6, 0.22, 0x74c0fc, 0.14, 0, 0, 0], [0.52, 0.07, 0.22, 0x4a78c2, 0, -0.08, 0, 0]]),
     ammo: () => inkModel([[0.62, 0.36, 0.42, 0x7fa650], [0.64, 0.1, 0.44, 0xffd43b, 0, 0, 0, 0]], [bullet(-0.16), bullet(0), bullet(0.16)]),
     fuel: () => inkModel([[0.42, 0.55, 0.26, 0xe8413c], [0.1, 0.14, 0.1, 0xffd43b, 0.12, 0.33, 0]]),
     fuse: () => inkModel([[0.18, 0.5, 0.18, 0xe8e6f2], [0.22, 0.08, 0.22, 0xc9a04a, 0, -0.22, 0], [0.22, 0.08, 0.22, 0xc9a04a, 0, 0.22, 0]]),
@@ -408,7 +410,7 @@ export function buildWorld(L: Level): World {
     const float = new pc.Entity('float');
     float.setLocalPosition(0, 0.75, 0);
     switch (p.kind) {
-      case 'medkit': case 'ammo': float.addChild(meshEntity(floatMesh(p.kind), toonMat)); break;
+      case 'medkit': case 'ammo': case 'armor': float.addChild(meshEntity(floatMesh(p.kind), toonMat)); break;
       case 'obj': float.addChild(meshEntity(arrowMesh, objMat)); break;
       case 'item': float.addChild(meshEntity(floatMesh(p.look ?? 'part'), toonMat)); break;
       default: {

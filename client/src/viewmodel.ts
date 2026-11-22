@@ -3,7 +3,7 @@
 import * as pc from 'playcanvas';
 import { box, cylinder, sphere, star, make, merge, inflateBox, insideOut, toMesh, trs } from './geo';
 import { app, device, VM, Batch, inkBox, meshEntity, makeUnlit, toonVM, toonInkMat, setRot, setTint } from './gfx';
-import type { WeaponDef } from '../../shared/constants';
+import { WEAPONS, type WeaponDef } from '../../shared/constants';
 
 type GunId = WeaponDef['id'];
 type P3 = [number, number, number];
@@ -106,6 +106,39 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       part(0.022, 0.045, 0.035, 0x54506e, 0, 0.135, 0.07);
       part(0.022, 0.04, 0.022, 0xff6b6b, 0, 0.135, -0.3);
       break;
+    // Close-in weapons: the business end points down -Z like a barrel; the rig tips them upright (see ViewModel).
+    case 'bat': // Bonk Bat: fat wooden slugger with a red tip band and taped grip.
+      tube(0.026, 0.2, 0x54506e, 0, 0.03, 0.0);
+      tube(0.034, 0.03, 0xffe066, 0, 0.03, 0.1);
+      tube(0.046, 0.52, 0xffc078, 0, 0.03, -0.36);
+      tube(0.05, 0.07, 0xff6b6b, 0, 0.03, -0.6); tip();
+      break;
+    case 'machete': // Snip-Snap: a big pair of garden shears' single blade, mint handle.
+      part(0.04, 0.055, 0.17, 0x63e6be, 0, 0.03, 0.0);
+      part(0.09, 0.03, 0.03, 0xffe066, 0, 0.03, -0.1);
+      part(0.016, 0.1, 0.5, 0xc3bdd8, 0, 0.045, -0.36); tip();
+      part(0.018, 0.03, 0.5, 0xffffff, 0, -0.01, -0.36);
+      break;
+    case 'axe': // Big Chop: fire axe, red head with a silver edge.
+      tube(0.024, 0.66, 0x8a5a3c, 0, 0.03, -0.24); tip();
+      // The blade hangs on the -Y side: held upright (the rig tips the tip up) that side faces forward, away from you.
+      part(0.034, 0.2, 0.16, 0xff6b6b, 0, -0.06, -0.5);
+      part(0.022, 0.05, 0.2, 0xc3bdd8, 0, -0.175, -0.5);
+      part(0.04, 0.07, 0.1, 0x54506e, 0, 0.065, -0.5);
+      break;
+    // Throwables.
+    case 'firebomb': // Hot Sauce: a squat red bottle with a yellow label and a rag in the neck.
+      tube(0.055, 0.17, 0xe8413c, 0, 0.05, -0.04);
+      tube(0.057, 0.06, 0xffe066, 0, 0.05, -0.04);
+      tube(0.024, 0.09, 0xe8413c, 0, 0.05, -0.17);
+      part(0.03, 0.03, 0.07, 0xfff5f5, 0, 0.05, -0.24); tip();
+      break;
+    case 'rattle': // Rattle Bomb: a baby rattle with a fuse.
+      tube(0.02, 0.17, 0xffe066, 0, 0.05, 0.03);
+      tube(0.075, 0.14, 0x74c0fc, 0, 0.05, -0.13);
+      tube(0.079, 0.035, 0xff8fab, 0, 0.05, -0.13);
+      part(0.015, 0.015, 0.05, 0x2b2540, 0, 0.05, -0.225); tip();
+      break;
   }
   return { b, muzzle, pump };
 }
@@ -164,6 +197,45 @@ const ballMesh = toMesh(device, make(sphere(12, 10)));
 const VM_FOV = 52;
 const _mv = new pc.Vec3(), _mq = new pc.Quat();
 
+/** One pose of a close-in swing at progress `k` (0..1): rig offset (x, y, z) from its rest position and rotation (rx, ry, rz). */
+type SwingKey = [k: number, x: number, y: number, z: number, rx: number, ry: number, rz: number];
+/** Rest pose of every close-in weapon: upright at the right of the screen (positive rx tips the business end up). */
+const HELD: SwingKey = [0, 0, 0, 0, 1.05, 0.25, -0.2];
+const rest = (k: number): SwingKey => [k, HELD[1], HELD[2], HELD[3], HELD[4], HELD[5], HELD[6]];
+/**
+ * First-person swings, one style per weapon. `secs`: how long the whole motion takes (under the
+ * weapon's `rate`); `keys`: poses to ease through; `alt`: a second set used on every other swing.
+ * Positive ry turns the tip toward the left of the screen.
+ */
+const SWINGS: Partial<Record<GunId, { secs: number; keys: SwingKey[]; alt?: SwingKey[] }>> = {
+  // Bonk Bat: a flat baseball swing. Wound up over the right shoulder, then levelled and swept right to left.
+  bat: {
+    secs: 0.46,
+    keys: [rest(0), [0.2, 0.03, 0.04, 0.04, 0.8, -0.55, -0.45], [0.48, -0.2, -0.03, -0.12, 0.18, 0.75, 0.25], [0.62, -0.36, -0.05, -0.06, 0.22, 1.5, 0.45], rest(1)],
+  },
+  // Snip-Snap: quick diagonal cuts that alternate, forehand (top right to bottom left) then backhand.
+  machete: {
+    secs: 0.3,
+    keys: [rest(0), [0.16, 0.07, 0.11, 0.02, 1.55, -0.25, -0.55], [0.5, -0.27, -0.15, -0.14, -0.3, 0.95, 0.75], rest(1)],
+    alt: [rest(0), [0.16, -0.3, -0.1, 0.0, 0.25, 1.15, 0.85], [0.5, 0.1, 0.1, -0.14, 1.05, -0.7, -0.7], rest(1)],
+  },
+  // Big Chop: hauled up overhead, slammed straight down the middle, and stuck for a beat before it comes back.
+  axe: {
+    secs: 0.64,
+    // Kept inside the frame the whole way: raised beside the crosshair rather than over it, and the head lands in view.
+    keys: [rest(0), [0.3, -0.03, 0.08, 0.05, 1.55, 0.1, -0.1], [0.47, -0.1, 0.05, -0.2, 0.12, 0.12, 0], [0.66, -0.1, 0.02, -0.18, 0.02, 0.12, 0], rest(1)],
+  },
+};
+const _swing: SwingKey = [0, 0, 0, 0, 0, 0, 0];
+/** The swing pose at progress `k`, eased between the two keys around it (into `_swing`). */
+function swingPose(keys: SwingKey[], k: number): SwingKey {
+  let i = 1;
+  while (i < keys.length - 1 && keys[i][0] < k) i++;
+  const a = keys[i - 1], b = keys[i], u = Math.min(1, Math.max(0, (k - a[0]) / (b[0] - a[0] || 1))), e = u * u * (3 - 2 * u);
+  for (let j = 1; j < 7; j++) _swing[j] = a[j] + (b[j] - a[j]) * e;
+  return _swing;
+}
+
 export class ViewModel {
   private root = new pc.Entity('viewmodel');
   private cam = new pc.Entity('vm-camera');
@@ -176,6 +248,13 @@ export class ViewModel {
   private swap = 0;
   private reload = 0; // 0..1 progress, 0 = idle
   private shoveT = 0;
+  /** Close-in swing (1 -> 0 over a swing) and throw flick. */
+  private swingT = 0;
+  private tossT = 0;
+  private melee: boolean[];
+  private ids: GunId[];
+  /** Swings made so far (alternating styles use it). */
+  private swings = 0;
   private flashT = 0;
   private bob = 0;
   private swayX = 0;
@@ -183,6 +262,8 @@ export class ViewModel {
   visible = true;
 
   constructor(ids: GunId[]) {
+    this.ids = ids;
+    this.melee = ids.map((id) => !!WEAPONS.find((w) => w.id === id)?.melee);
     // Parked far below the level so nothing in the world layer is ever near it.
     this.root.setPosition(0, -500, 0);
     const cam = this.cam;
@@ -224,6 +305,7 @@ export class ViewModel {
   }
 
   fire(): void {
+    if (this.melee[this.current]) { this.swingT = 1; this.swings++; return; }
     this.kick = 1;
     this.flashT = 0.055;
     const [x, y, z] = this.guns[this.current].muzzle;
@@ -253,6 +335,8 @@ export class ViewModel {
   }
   setReload(progress: number): void { this.reload = progress; }
   shove(): void { this.shoveT = 1; }
+  /** Throwing the carried throwable: the free hand flicks forward. */
+  toss(): void { this.tossT = 1; }
 
   update(dt: number, moving: number, lookDX: number, lookDY: number): void {
     this.root.enabled = this.visible;
@@ -260,6 +344,8 @@ export class ViewModel {
     this.kick = Math.max(0, this.kick - dt * 9);
     this.swap = Math.max(0, this.swap - dt * 4.5);
     this.shoveT = Math.max(0, this.shoveT - dt * 3.2);
+    this.swingT = Math.max(0, this.swingT - dt / (SWINGS[this.ids[this.current]]?.secs ?? 0.4));
+    this.tossT = Math.max(0, this.tossT - dt * 3.4);
     this.flashT -= dt;
     this.flash.enabled = this.flashT > 0;
     this.bob += dt * (4 + moving * 9);
@@ -272,11 +358,24 @@ export class ViewModel {
       -0.15 + Math.abs(Math.sin(this.bob * 0.5)) * amp - this.swap * 0.3 - r * 0.16 + this.swayY - this.shoveT * 0.1,
       -0.4 + this.kick * 0.05,
     );
-    setRot(this.rig, this.kick * 0.16 - r * 0.9 - this.swap * 0.8, 0.04 + this.swayX * 2, r * 0.5);
+    if (this.melee[this.current]) {
+      // Held upright at the right of the screen; each weapon swings its own way (SWINGS).
+      const sw = SWINGS[this.ids[this.current]];
+      const p = this.swingT > 0 && sw ? swingPose(this.swings % 2 === 0 && sw.alt ? sw.alt : sw.keys, 1 - this.swingT) : HELD;
+      const lp = this.rig.getLocalPosition();
+      this.rig.setLocalPosition(lp.x + p[1], lp.y + p[2], lp.z + p[3]);
+      setRot(this.rig, p[4] - this.swap * 0.8, p[5] + this.swayX * 2, p[6]);
+    } else setRot(this.rig, this.kick * 0.16 - r * 0.9 - this.swap * 0.8, 0.04 + this.swayX * 2, r * 0.5);
     const pump = this.guns[this.current].pump;
     if (pump) pump.setLocalPosition(0, 0.01, -0.36 + Math.sin(Math.min(1, this.kick * 1.4) * Math.PI) * 0.09);
     // Shove: an open palm sweeps across the screen.
-    this.shoveHand.enabled = this.shoveT > 0;
+    this.shoveHand.enabled = this.shoveT > 0 || this.tossT > 0;
+    if (this.tossT > 0 && this.shoveT <= 0) {
+      // Throw: the left hand comes up from the bottom corner and flicks forward.
+      const k = 1 - this.tossT;
+      this.shoveHand.setLocalPosition(-0.2 + k * 0.08, -0.2 + Math.sin(k * Math.PI) * 0.16, -0.3 - k * 0.2);
+      this.shoveHand.setLocalScale(0.07, 0.07, 0.07);
+    }
     if (this.shoveT > 0) {
       const k = 1 - this.shoveT;
       this.shoveHand.setLocalPosition(-0.28 + k * 0.42, -0.14 + Math.sin(k * Math.PI) * 0.07, -0.34 - Math.sin(k * Math.PI) * 0.14);

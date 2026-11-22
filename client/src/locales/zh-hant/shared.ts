@@ -34,4 +34,13 @@ export default {
   "{name} is back in the fight!": "{name} 重返戰場！",
   "Here they come! Hold the line!": "牠們來了！守住防線！",
   "Room {code} is full ({max} players max).": "房間 {code} 已滿（最多 {max} 人）。",
+  "Bonk Bat": "敲敲球棒",
+  "Snip-Snap": "喀嚓大剪",
+  "Big Chop": "大劈斧",
+  "Hot Sauce": "辣醬瓶",
+  "Rattle Bomb": "搖鈴炸彈",
+  "The Weeper is quiet now.": "哭泣者安靜下來了。",
+  "The Weeper runs off, sobbing.": "哭泣者啜泣著跑走了。",
+  "{name} woke the Weeper!": "{name} 吵醒了哭泣者！",
+  "The Weeper is awake!": "哭泣者醒了！",
 } satisfies Record<string, string>;

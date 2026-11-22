@@ -69,6 +69,7 @@ export function build() {
   b.pick('smg', 8, 147); b.pick('smg', 9, 147); b.pick('shotgun', 10, 147); b.pick('shotgun', 11, 147); b.pick('rifle', 12, 147);
   b.pick('ammo', 20, 143); b.pick('ammo', 20, 144); b.pick('ammo', 19, 143);
   for (const z of [142, 143, 144, 145]) b.pick('medkit', 8, z);
+  b.pick('armor', 8, 146); b.pick('bat', 9, 146); b.pick('machete', 10, 146); b.pick('firebomb', 20, 145);
   b.label('SAFE ROOM', 17.5, 143.6, 22, RED); b.label('TRIAGE', 10.5, 145.5, 20, MINT);
   b.lamp(10.5, 143.5); b.lamp(17.5, 145);
   b.carve(12, 137, 15, 139, F.TILES);
@@ -156,7 +157,7 @@ export function build() {
   b.pick('ammo', 83, 143);
   b.label('PHARMACY', 89.5, 144, 22, LAV); b.label("NORI'S DESK: DO NOT TOUCH", 92, 148.6, 10, CREAM);
   b.lamp(89, 148);
-  b.arrow(88, 139, S);
+  b.arrow(89, 139, S);
 
   // ------------------------------------------------------------------
   // 5. Staff corridor and staff rooms (keycard sweep)
@@ -186,7 +187,7 @@ export function build() {
   // Quiet room (chapel): dark, a little ammo.
   b.carve(41, 103, 43, 103, F.TILES); b.carve(37, 92, 48, 102, F.WOOD);
   for (const z of [95, 98]) { b.prop('bench', 38, z, 4, 1); b.prop('bench', 44, z, 4, 1); }
-  b.pick('ammo', 42, 93);
+  b.pick('ammo', 42, 93); b.pick('firebomb', 43, 93);          // off-route reward
   b.label('QUIET ROOM', 42.5, 100.5, 14, LAV);
   // Lab (rifle).
   b.carve(56, 103, 58, 103, F.TILES); b.carve(51, 92, 64, 102, F.TILES);
@@ -228,6 +229,7 @@ export function build() {
   b.prop('shelf', 97, 93, 1, 3, { color: 0xffd0a8 }); b.prop('bush', 81, 102); b.prop('bush', 96, 106);
   b.prop('bench', 89, 103, 3, 1); b.prop('desk', 94, 95, 2, 1);
   b.pick('ammo', 82, 93); b.pick('ammo', 83, 93); b.pick('ammo', 98, 109); b.pick('ammo', 98, 108); b.pick('medkit', 91, 108); b.pick('medkit', 81, 109);
+  b.pick('rattle', 84, 93);                                     // before the muzak holdout
   b.label('STAFF ELEVATOR', 87, 94.5, 18, GOLD); b.label('STAFF CARD REQUIRED', 87, 96.5, 11, RED);
   b.label('ELEVATOR', 86.5, 88, 14, GOLD, E);
   for (const [x, z] of [[84, 98], [94, 98], [84, 108], [94, 108], [89, 93]]) b.lamp(x, z);
@@ -241,7 +243,7 @@ export function build() {
   b.label('MMM... SOUP', 92, 82, 12, SOUP);
   b.prop('bed', 81, 73, 2, 1, { color: GURNEY }); b.prop('bench', 94, 80, 1, 3);
   b.lamp(84, 78); b.lamp(93, 76);
-  b.arrow(83, 74, WEST);
+  b.arrow(84.5, 74, WEST);
   // Corridor A runs west the whole length of the floor.
   b.carve(4, 72, 79, 75, F.TILES);
   gurney(70, 72); gurney(52, 75); gurney(33, 72); gurney(18, 75);
@@ -338,7 +340,7 @@ export function build() {
   b.label('SLEEP TRIALS', 42, 36.5, 24, LAV);
   b.pick('ammo', 46, 26); b.pick('ammo', 31, 36);
   for (const [x, z] of [[30, 12], [42, 12], [54, 12], [30, 26], [42, 26], [54, 26], [42, 19]]) b.lamp(x, z);
-  b.arrow(30, 31.5, E); b.arrow(46, 32.5, E); b.arrow(58, 20, N);
+  b.arrow(30, 33, E); b.arrow(46, 32.5, E); b.arrow(58, 20, N);
   // Observation room (checkpoint): one-way glass onto the ward, a monitoring desk.
   b.carve(61, 12, 62, 13, F.TILES);
   const obsEntry = b.door(63, 12, 63, 13, 'shutter', 'OBSERVATION');
@@ -352,6 +354,7 @@ export function build() {
   for (const x of [64, 65, 66, 67]) b.pick('medkit', x, 17);
   b.pick('ammo', 74, 6); b.pick('ammo', 75, 6); b.pick('ammo', 76, 6);
   b.pick('sniper', 69, 17); b.pick('shotgun', 70, 17); b.pick('rifle', 71, 17); b.pick('smg', 72, 17); b.pick('autoshotgun', 73, 17);
+  b.pick('armor', 68, 17); b.pick('bat', 74, 17); b.pick('firebomb', 75, 17);
   const obsLever = b.obj('lever', 76, 10, 'Unlock the stairwell door');
   b.label('SAFE ROOM', 70, 12, 22, RED); b.label('OBSERVATION', 70, 14.5, 14, LAV);
   b.lamp(70, 11);
@@ -369,6 +372,7 @@ export function build() {
   for (const x of [66, 72, 78]) { b.prop('desk', x, 24, 3, 1); b.prop('shelf', x, 21, 3, 1); }
   b.prop('counter', 70, 31, 1, 7, { color: 0xc9b8ff }); b.prop('bed', 80, 33, 2, 3, { color: 0xe8dcff });
   b.pick('medkit', 85, 22); b.pick('rifle', 84, 37); b.pick('ammo', 65, 37);
+  b.pick('armor', 84, 22);                                      // off-route reward
   b.label('NAP POD SHOWROOM', 80, 30, 14, LAV); b.label('DR. W. LOWELL', 73, 26, 12, CREAM);
   b.lamp(75, 30);
 
@@ -398,10 +402,11 @@ export function build() {
   b.prop('barrier', 118, 27, 1, 3); b.prop('barrier', 113, 34, 3, 1); b.prop('pallet', 96, 4, 2, 1);
   b.pick('ammo', 120, 35); b.pick('ammo', 121, 35); b.pick('ammo', 122, 35); b.pick('medkit', 122, 36); b.pick('ammo', 89, 3);
   b.pick('launcher', 119, 35); b.pick('sniper', 120, 36); // before the skybridge holdout; long roof sightlines
+  b.pick('rattle', 121, 36);
   b.label('HELIPAD', 106, 4.5, 26, CREAM);
   b.label('SKYBRIDGE', 121, 32, 16, GOLD, E);
   for (const [x, z] of [[90, 4], [124, 4], [89, 31], [124, 26], [124, 35], [100, 44], [113, 44]]) b.lamp(x, z);
-  b.arrow(92, 7, E); b.arrow(112, 28, E); b.arrow(122, 31, E);
+  b.arrow(92, 7, E); b.arrow(114, 30.5, E); b.arrow(122, 31, E);
   // The skybridge control panel and shutter.
   const skyPanel = b.obj('lever', 124, 30, 'Raise the skybridge shutter (LOUD)');
   b.carve(125, 31, 125, 33, F.INTERIOR);
@@ -434,7 +439,7 @@ export function build() {
   for (const [x, z] of [[156, 7], [159, 7], [162, 7], [156, 11], [159, 11], [162, 11]]) b.prop('pillar', x, z, 1, 1, { color: pastel() });
   b.prop('counter', 166, 6, 1, 5, { color: 0xc9b8ff }); b.prop('shelf', 168, 12, 3, 1, { color: 0xe8dcff });
   b.note(161, 14, 'Dream Shop window poster', 'COMING SOON: Hush HX-9 Pillow Mist! Dreamwell, because Mallow Bay deserves to rest. [scrawled:] the one Wren said NO to');
-  b.pick('medkit', 169, 5); b.pick('ammo', 154, 5);
+  b.pick('medkit', 169, 5); b.pick('ammo', 154, 5); b.pick('rattle', 168, 5);   // off-route reward
   b.label('DREAMWELL DREAM SHOP', 161, 9, 14, LAV);
   b.lamp(161, 10);
   // Dark shopfronts on the east side.
@@ -467,6 +472,7 @@ export function build() {
   for (const x of [160, 161, 162, 163]) b.pick('medkit', x, 68);
   b.pick('ammo', 168, 68); b.pick('ammo', 169, 68); b.pick('ammo', 170, 68);
   b.pick('launcher', 158, 76); b.pick('shotgun', 159, 76); b.pick('rifle', 160, 76); b.pick('smg', 161, 76); b.pick('autoshotgun', 162, 76);
+  b.pick('axe', 163, 76); b.pick('armor', 164, 68); b.pick('firebomb', 171, 68);
   const stockLever = b.obj('lever', 173, 76, 'Unbolt the back door');
   b.label('SAFE ROOM', 166, 71, 22, RED); b.label('STOCKROOM: PLUSHIES', 166, 73.5, 12, LEMON);
   b.lamp(166, 72);
@@ -524,6 +530,7 @@ export function build() {
   b.prop('shelf', 118, 85, 1, 5); b.prop('desk', 114, 90, 2, 1);
   b.pick('medkit', 104, 93); b.pick('medkit', 105, 93); b.pick('ammo', 117, 93); b.pick('ammo', 116, 93); b.pick('ammo', 115, 93);
   b.pick('magnum', 106, 93); b.pick('launcher', 107, 93); b.pick('rifle', 108, 93); // before the freight lift finale
+  b.pick('axe', 109, 93);
   b.label('MALL SECURITY', 111, 91.5, 16, CREAM); b.label('BREAKERS', 113, 85.6, 12, GOLD);
   b.lamp(111, 89);
   // Loading-dock corridor (opened by the breakers).
@@ -565,6 +572,7 @@ export function build() {
   b.prop('car', 134, 135, 2, 1, { color: 0xffd43b }); b.prop('van', 158, 136, 1, 3, { color: 0xe6c3d3, rot: N });
   b.prop('container', 113, 146, 1, 4, { color: 0x7aa59c }); b.prop('container', 160, 152, 3, 1, { color: 0xeedfa6 });
   b.pick('ammo', 105, 135); b.pick('ammo', 163, 141); b.pick('medkit', 160, 134); b.pick('ammo', 128, 157); b.pick('medkit', 163, 134);
+  b.pick('rattle', 162, 141);                                   // by the lift button, for the long finale
   b.label('BAYSIDE GALLERIA DELIVERIES', 132, 142.5, 20, CREAM);
   for (const [x, z] of [[108, 138], [122, 136], [140, 140], [156, 140], [118, 154], [134, 154], [150, 154], [162, 148], [114, 168], [140, 168], [168, 170], [150, 130]]) b.lamp(x, z);
   b.arrow(112, 136, E); b.arrow(140, 136, E); b.arrow(158, 146, E);

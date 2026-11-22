@@ -13,7 +13,7 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 [hidden] { display: none !important; }
 
 /* Comic sticker look: thick ink border + hard offset shadow. */
-.card, #ammo, #hpwrap, #team .mate, #prompt, #room, #objective, #holdout, #medkit {
+.card, #ammo, #hpwrap, #team .mate, #prompt, #room, #objective, #holdout, #medkit, #armor, #throwable {
   border: 3px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); border-radius: 14px;
 }
 
@@ -76,6 +76,11 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 #hpbar { height: 100%; width: 100%; background: var(--green); transition: width 0.15s, background 0.2s; border-right: 3px solid var(--ink); }
 #hptext { position: absolute; inset: 0; display: grid; place-items: center; font-size: 18px; text-shadow: 0 2px 0 var(--ink), 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 -2px 0 var(--ink); }
 #medkit { width: 44px; height: 44px; display: grid; place-items: center; background: var(--cream); color: var(--pink); font-size: 24px; position: relative; }
+#vitals { display: flex; flex-direction: column; gap: 5px; }
+#armor { width: 280px; height: 12px; background: #3a3050; overflow: hidden; }
+#armorbar { height: 100%; width: 100%; background: #74c0fc; transition: width 0.15s; border-right: 3px solid var(--ink); }
+#throwable { height: 44px; display: grid; place-items: center; padding: 0 12px; background: var(--cream); color: var(--ink); font-size: 13px; position: relative; white-space: nowrap; }
+#throwable small { position: absolute; right: -8px; top: -8px; background: var(--ink); color: var(--cream); font-size: 11px; border-radius: 6px; padding: 1px 5px; }
 #medkit small { position: absolute; right: -8px; top: -8px; background: var(--ink); color: var(--cream); font-size: 11px; border-radius: 6px; padding: 1px 5px; }
 
 #ammo { position: absolute; right: 14px; bottom: 14px; background: rgba(26, 18, 38, 0.82); padding: 8px 14px; text-align: right; min-width: 170px; }

@@ -38,7 +38,8 @@ the URL hash), and opening it shows a one-click join.
 | `R` | reload |
 | `E` | pick up / use, hold to help up a downed teammate |
 | `Q` (hold) | use medkit |
-| `1` `2` / wheel | primary / sidearm |
+| `1` `2` `3` / wheel | primary / sidearm / close-in weapon |
+| `G` | throw the carried throwable |
 | `Space` `F` `M` | jump / flashlight / mute |
 
 **The campaign:** four chapters (*The Long Lullaby*, briefed in `docs/campaign.md`), each a
@@ -64,9 +65,21 @@ single-use: the first survivor to grab one takes it, so share them out. Each amm
 every survivor once. Medkits (one carried, healing most of your missing health) are rolled each
 attempt and scale with the squad's size. Loot comes back on a checkpoint restart.
 
-**The horde:** walkers, plus three specials — the *Leaper* (pounces from range), the
-*Puffer* (explodes into goo that calls more walkers) and the *Brute* (one or two per run, hits
-like a truck). At 0 HP you go down and bleed out unless a teammate helps you up (solo, you can get
+**Close-in weapons** go on your belt (key `3`) beside your guns: the *Bonk Bat* (wide swing,
+one-hits commons), the *Snip-Snap* (fast) and the *Big Chop* (slow, heavy, good on specials). They
+never run out and they are silent, so a swing wakes nobody. **Throwables** (one carried, `G`): the
+*Hot Sauce* firebomb leaves a burning patch for 9 s (it burns you too) and the *Rattle Bomb* draws
+every common nearby for 5 s, then explodes. A **Pillow Vest** gives 50 armour that soaks up half of
+each bite or hit until it is used up (goo and fire go straight through).
+
+**The horde:** walkers, plus specials that the campaign introduces one at a time (chapter 1 opens
+with walkers only): the *Leaper* (pounces from range), the *Puffer* (explodes into goo that calls
+more walkers), the *Drooler* (spits goo pools), the *Charger* (bull-rushes and pins), the *Alarm
+Clock* (rings for a mini-horde), the *Snatcher* (lassoes a survivor and reels them in: shoot it or
+shove the victim free), the *Piggyback* (rides a survivor away from the team: shove it off) and the
+*Weeper* (sits sobbing; linger near her or hurt her and she flattens whoever woke her). Two uncommon
+commons join the hordes later: the *Tinpot* (bullets do a quarter damage to its front until it is shoved) and the
+*Raincoat* (fireproof). The *Brute* (one or two per run) hits like a truck. At 0 HP you go down and bleed out unless a teammate helps you up (solo, you can get
 yourself up once per attempt). Going down again before a medkit or a safe room counts: the
 third down (second on Nightmare) knocks you out. Knocked-out players are rescued next to a
 teammate after 15/30/45 s (Easy/Normal/Hard; on Nightmare only at the next safe room), and every
@@ -122,7 +135,12 @@ npm test           # boots a server, joins two bots, plays join → combat → r
 npm run check:maps # validates every chapter (reachability per door state, pacing estimate)
 ```
 
-**Map viewer:** with `npm run dev`, open <http://localhost:3000/tools/maps.html>. It shows each
+**Guide:** with `npm run dev`, open <http://localhost:3000/tools/guide.html>. Three tabs, in English or
+Traditional Chinese (picker in the header; the same saved choice as the game):
+- *Infected* and *Weapons & gear*: the model (drag to turn, pose buttons), stats read straight from
+  `shared/constants.ts`, when each infected type first appears in the campaign, how to beat it and
+  shots-to-kill tables.
+- *Maps* (`guide.html#maps`; the old `tools/maps.html` redirects there): it shows each
 chapter top-down (floors, props, loot, doors, lamps, quest areas and the routed critical path),
 the validator report and estimated play time, per-step radio lines and lore notes. Click a step
 to focus it (doors shown as at that step); "play from this step" opens the game jumped there.
