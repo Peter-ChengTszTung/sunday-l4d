@@ -1462,7 +1462,7 @@ function updateEntities(dt: number): void {
     c.t += dt;
     c.x += c.vx * dt; c.z += c.vz * dt;
     c.chibi.group.setPosition(c.x, 0, c.z);
-    c.chibi.tumble(Math.min(1.5, c.t * 6), Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35);
+    c.chibi.tumble(Math.min(1.5, c.t * 6), Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35, Math.min(1, c.t / 0.4), dt);
     if (c.t > 0.4) {
       fx.poof({ x: c.x, y: 0.2 * c.scale, z: c.z }, 0xf3f0ff, c.scale > 1.5 ? 14 : 6, 0.3 * c.scale);
       c.chibi.dispose();
