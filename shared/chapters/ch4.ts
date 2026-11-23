@@ -233,6 +233,10 @@ export function build() {
   b.pick('shotgun', 11, 49); b.pick('smg', 12, 49); b.pick('rifle', 10, 49); b.pick('ammo', 3, 49); b.pick('medkit', 3, 39); b.pick('ammo', 11, 43);
   b.label('HOLLOW MART 24h', 7.5, 34.6, 12, MINT, 0); b.label('OPEN', 7, 38.5, 10, RED);
   b.lamp(7.5, 45);
+  // Maple Loop pulls everyone east from the station; the mart's guns sit just west. A lit shopfront,
+  // its name big on the road where you step out of the car park, and ammo on the kerb lead there.
+  b.lamp(5.4, 35.4); b.lamp(9.6, 35.4); b.label('HOLLOW MART 24h', 12, 31.5, 18, MINT, N);
+  b.pick('ammo', 9, 33);
 
   // ------------------------------------------------------------------
   // 3. Maple Loop: the long open street east to the cul-de-sac bulb, lots on both sides
@@ -457,6 +461,7 @@ export function build() {
   b.prop('shelf', 92, 100, 1, 4); b.prop('crate', 87, 100);
   b.pick('ammo', 88, 105); b.pick('medkit', 91, 105); b.pick('ammo', 89, 101);
   b.label('EQUIPMENT', 89.5, 102.5, 9, CREAM);
+  b.lamp(85.4, 101.4); b.label('EQUIPMENT', 83.6, 102.5, 14, CREAM, E);          // its door, lit and named from the field
   for (const [x, z] of [[31, 88], [31, 100], [74, 108], [82, 92], [48, 108], [66, 90]]) b.prop(x === 31 ? 'pine' : 'tree', x, z);
   b.pick('ammo', 44, 104); b.pick('ammo', 45, 104); b.pick('medkit', 33, 96); b.pick('ammo', 70, 100);
   b.pick('rattle', 46, 104);                                     // before the flood gate holdout
