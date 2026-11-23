@@ -693,8 +693,9 @@ export function build() {
   b.carve(134, 150, 155, 163, F.GRASS);                                        // Bridge Park (north entry)
   b.carve(154, 148, 158, 157, F.DIRT);                                         // weir landing
   b.carve(159, 150, 171, 151, F.CONCRETE);                                     // the old weir
+  b.carve(164, 150, 166, 151, F.WATER);                                        // ...washed out mid-river: the bridge is the only way over
   b.carve(172, 118, 178, 178, F.DIRT);                                         // far bank river road
-  b.label('OLD WEIR', 165, 149.4, 10, SKY, E); b.label('BRIDGE PARK', 144, 152, 12, MINT, 0);
+  b.label('OLD WEIR', 161.5, 149.4, 10, SKY, E); b.label('WASHED OUT', 167.5, 152.6, 9, RED, E); b.label('BRIDGE PARK', 144, 152, 12, MINT, 0);
   // Park: picnic benches, pines (cover; the far bank shambles in from here).
   for (const [x, z] of [[138, 154], [146, 157], [140, 160]]) b.prop('bench', x, z, 2, 1);
   for (const [x, z] of [[135, 151], [150, 152], [152, 160], [143, 151], [136, 162]]) b.prop(hash2(x, z) < 0.5 ? 'pine' : 'tree', x, z);
@@ -704,12 +705,11 @@ export function build() {
   b.prop('container', 135, 174, 4, 2, { color: 0x7a8a52 });                    // supply tent
   b.prop('barrier', 145, 165, 1, 4); b.prop('barrier', 151, 168, 3, 1); b.prop('barrier', 154, 172, 1, 3); b.prop('crate', 143, 176);
   b.prop('barrel', 157, 176); b.prop('crate', 150, 164);
-  const boomLever = b.obj('lever', 157, 166, 'Raise the army boom gate');
+  const boomLever = b.obj('lever', 153, 164, 'Raise the army boom gate');   // the control box at the foot of the bridge ramp
   b.pick('ammo', 141, 165); b.pick('ammo', 142, 165); b.pick('ammo', 141, 164); b.pick('ammo', 152, 176); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173);
-  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 156, 170); b.pick('rifle', 137, 169); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 169);
-  b.pick('rattle', 143, 165); b.pick('firebomb', 157, 170);      // for the boom gate holdout
+  b.pick('medkit', 141, 173); b.pick('medkit', 142, 173); b.pick('medkit', 152, 170); b.pick('rifle', 137, 169); b.pick('launcher', 138, 168); b.pick('autoshotgun', 136, 169);
+  b.pick('rattle', 143, 165); b.pick('firebomb', 153, 170);      // for the boom gate holdout
   b.label('ARMY CHECKPOINT', 146, 169.4, 14, OLIVE, 0); b.label('CONVOY ASSEMBLY', 146, 171, 9, CREAM, 0);
-  b.label('BOOM GATE', 156, 168.6, 10, GOLD, N);
   for (const [x, z] of [[138, 164.4], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152]]) b.lamp(x, z);
   b.arrow(136, 176.7, E); b.arrow(150, 167.5, E);
   // The watchtower: a sandbagged block in the plaza's north-west corner, a ladder on its east and
@@ -724,20 +724,29 @@ export function build() {
   b.label('WATCHTOWER', 134.5, 165.4, 8, OLIVE, 0);
   b.lamp(133.4, 165.5);
   b.level(0);
-  // The bridge deck, the boom gate and Dot's No. 9 bus on the far span.
+  // The old bridge: a deck one storey over the river (railings both sides), a ramp up from the plaza
+  // and one down to the far bank's river road. The army boom gate bars the deck at its west end;
+  // Dot's No. 9 is parked mid-span, nose to the far bank.
+  b.label('MALLOW RIVER', 165, 158, 14, SKY, E);
+  b.stairs(155, 164, 158, 171, '+x');                                          // plaza ramp, 8 wide
+  b.stairs(172, 164, 175, 171, '-x');                                          // far-bank ramp
+  b.label('OLD BRIDGE', 156.5, 167.5, 12, PEACH, E);
+  b.level(1);
   b.carve(159, 164, 171, 171, F.ASPHALT);
-  b.label('OLD BRIDGE', 165, 164.5, 12, PEACH, E); b.label('MALLOW RIVER', 165, 158, 14, SKY, E);
-  const boomGate = b.door(160, 164, 160, 171, 'barricade', 'ARMY BOOM GATE');
-  b.fill(162, 166, 171, 169); b.walls(162, 166, 171, 169, WALL.BUILDING, 3.1);
-  b.carve(163, 167, 170, 168, F.SAFE);
+  for (let x = 162; x <= 170; x += 4) b.label('— —', x, 165, 14, '#f2e6c0', E);
+  const boomGate = b.door(160, 164, 160, 171, 'boom', 'ARMY BOOM GATE');
+  b.label('BOOM GATE', 159.5, 167.5, 9, GOLD, N);
+  b.fill(162, 166, 168, 169); b.walls(162, 166, 168, 169, WALL.BUILDING, 3.1);
+  b.carve(163, 167, 167, 168, F.SAFE);
   b.carve(162, 167, 162, 168, F.ASPHALT);
   const busDoor = b.door(162, 167, 162, 168, 'shutter', 'No. 9');
-  b.prop('bus', 172, 166, 5, 4, { color: 0xffc94a });                         // the No. 9's nose on the far bank
-  b.label('No. 9', 166.5, 165.4, 14, GOLD, E); b.label('MALLOW BAY TRANSIT', 166.5, 170.6, 9, CREAM, E);
-  b.lamp(161, 164.4); b.lamp(171.6, 170);
+  b.prop('bus', 169, 166, 2, 4, { color: 0xffc94a });                         // the No. 9's nose, pointing home
+  b.label('No. 9', 165, 165.4, 14, GOLD, E); b.label('MALLOW BAY TRANSIT', 165, 170.6, 9, CREAM, E);
+  b.lamp(159.2, 164.2); b.lamp(159.2, 171.8); b.lamp(171.8, 164.2); b.lamp(171.8, 171.8);
+  b.level(0);
   // Far bank: river road under the pines, a last Snoozle board.
   for (const z of [124, 133, 141, 155, 162, 175]) b.prop('pine', z % 2 ? 178 : 172, z);
-  b.prop('pine', 177, 147); b.prop('rock', 173, 128); b.prop('bush', 176, 168);
+  b.prop('pine', 177, 147); b.prop('rock', 173, 128); b.prop('bush', 177, 168);
   billboard(177, 156, 1, 5, 175.4, 158.5, WEST);
   b.label('RIVER ROAD', 175, 138, 12, CREAM, N);
   b.pick('ammo', 175, 120);
@@ -850,7 +859,7 @@ export function build() {
       ['Wren', 'The far bank\'s out of range. They\'re still coming. Hold them!'],
     ],
   });
-  b.gather({ x0: 163, z0: 167, x1: 170, z1: 168 }, {
+  b.gather({ x0: 163, z0: 167, x1: 167, z1: 168, lv: 1 }, {
     objective: 'Everybody on Dot\'s bus!', closes: [busDoor],
     radio: [
       ['Dot', 'Wren, honey. Come down. There\'s a seat.'],

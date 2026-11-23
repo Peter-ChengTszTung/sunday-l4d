@@ -354,6 +354,16 @@ export function buildWorld(L: Level): World {
       g.fillStyle = '#7a5235'; g.fillRect(0, 0, 128, 128);
       for (let y = 0; y < 128; y += 32) { g.fillStyle = y % 64 ? '#b5894f' : '#a0743f'; g.fillRect(0, y + 3, 128, 26); }
       g.strokeStyle = '#1a1226'; g.lineWidth = 6; g.beginPath(); g.moveTo(8, 8); g.lineTo(120, 120); g.moveTo(120, 8); g.lineTo(8, 120); g.stroke();
+    } else if (kind === 'boom') {
+      // Army checkpoint barrier: olive panel, a red-and-white striped arm across it, a stop disc.
+      g.fillStyle = '#5f6b3f'; g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#4a5530'; for (let y = 8; y < 128; y += 24) g.fillRect(0, y, 128, 4);
+      g.fillStyle = '#f4f4ff'; g.fillRect(0, 44, 128, 26); g.fillStyle = '#e03131';
+      for (let x = -26; x < 128; x += 32) { g.beginPath(); g.moveTo(x, 70); g.lineTo(x + 16, 70); g.lineTo(x + 42, 44); g.lineTo(x + 26, 44); g.fill(); }
+      g.strokeStyle = '#1a1226'; g.lineWidth = 3; g.strokeRect(0, 44, 128, 26);
+      // No lettering: the one texture shows on both faces, so words read mirrored from one side.
+      g.fillStyle = '#e03131'; g.beginPath(); g.arc(64, 98, 16, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#f4f4ff'; g.lineWidth = 4; g.beginPath(); g.arc(64, 98, 11, 0, Math.PI * 2); g.stroke();
     } else if (kind === 'bridge') {
       // The underside of a raised drawbridge leaf: steel deck plates, rivet lines, hazard bands top and bottom.
       g.fillStyle = '#5a6074'; g.fillRect(0, 0, 128, 128);
