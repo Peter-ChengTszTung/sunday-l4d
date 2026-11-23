@@ -130,6 +130,10 @@ export function build() {
   gurney(34, 53, 1, 2); b.prop('bench', 37, 58, 1, 2);
   b.label('AMBULANCE ENTRANCE', 35.5, 56, 12, RED, E);
   b.lamp(35.5, 60);
+  // The bay is behind the start, so the way back to it is signposted from the ER: a lit doorway, its
+  // name on the ER floor, and ammo just inside to draw the eye down the corridor.
+  b.lamp(35.5, 49.5); b.label('AMBULANCE BAY', 35.5, 46.4, 14, RED, 0);
+  b.pick('ammo', 35, 51);
 
   // ------------------------------------------------------------------
   // 2. Emergency Room (curtained bays) and Radiology (keycard)
@@ -339,6 +343,7 @@ export function build() {
     b.carve(x0, 69, x0 + 5, 70, F.INTERIOR); b.carve(x0, 71, x0 + 5, 76, F.TILES);
     b.prop('counter', x0 + 2, 69, 4, 1, { color: 0xf0e2b6 }); b.prop('shelf', x0 + 1, 76, 4, 1);
     b.label(name, x0 + 3, 67.8, 12, col);
+    b.lamp(x0 + 3, 73.5);                                                  // a lit kitchen reads as worth a look from the court
   }
   b.pick('ammo', 125, 75); b.pick('ammo', 126, 75); b.pick('medkit', 149, 75); b.pick('ammo', 157, 74); b.pick('ammo', 157, 75);
   // Loading-dock corridor (opened by the breakers), under the dock catwalk.
