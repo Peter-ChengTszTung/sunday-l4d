@@ -262,10 +262,10 @@ export function build() {
   // ------------------------------------------------------------------
   b.carve(80, 7, 92, 11, F.TILES); b.carve(80, 12, 98, 22, F.TILES);
   b.carve(84, 23, 87, 23, F.TILES); b.carve(93, 23, 96, 23, F.TILES);  // two ways in from the main lobby
-  b.carve(85, 4, 88, 5, F.TILES);                                         // the elevator car
-  const elevDoor = b.door(85, 6, 88, 6, 'shutter', 'STAFF ELEVATOR');
+  // The car comes down to the muzak and faults with its doors shut: it never opens. Fault mode
+  // releases the fire stairs beside it, and that is the way up.
+  b.door(85, 6, 88, 6, 'lift', 'STAFF ELEVATOR');
   const elevButton = b.obj('terminal', 90, 7, 'Call the staff elevator (muzak!)');
-  b.pick('ammo', 88, 4); b.label('FAULT', 86.5, 4.8, 12, RED);           // the car came down, and that is all it will do
   // Fire stairs: locked while the elevator is in service. Two wide, rising north to the 2F hall.
   b.carve(94, 9, 95, 10, F.TILES);
   b.stairs(94, 6, 95, 8, '-z', F.TILES);
@@ -756,8 +756,9 @@ export function build() {
     ],
   });
   b.use(elevButton, {
-    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [elevDoor, fireDoor],
+    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [fireDoor],
     radio: [
+      ['Dot', 'Call it down. If that old car faults, it unlocks the fire stairs. Up is up, sweet peas.'],
       ['Mochi', 'Elevator music. Of course there\'s elevator music.'],
       ['Pip', 'The zombies LIKE it! Why do they like it?!'],
       ['Nori', 'It\'s a lullaby. Huh.'],

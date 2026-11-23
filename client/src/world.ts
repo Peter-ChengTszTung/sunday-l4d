@@ -364,6 +364,14 @@ export function buildWorld(L: Level): World {
       // No lettering: the one texture shows on both faces, so words read mirrored from one side.
       g.fillStyle = '#e03131'; g.beginPath(); g.arc(64, 98, 16, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#f4f4ff'; g.lineWidth = 4; g.beginPath(); g.arc(64, 98, 11, 0, Math.PI * 2); g.stroke();
+    } else if (kind === 'lift') {
+      // Brushed-steel elevator doors: two leaves, a centre seam, a dark sill and header.
+      const grad = g.createLinearGradient(0, 0, 128, 0);
+      grad.addColorStop(0, '#9aa3b4'); grad.addColorStop(0.45, '#d6dbe6'); grad.addColorStop(0.5, '#8c94a6'); grad.addColorStop(0.55, '#d6dbe6'); grad.addColorStop(1, '#9aa3b4');
+      g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#2a2f3d'; g.fillRect(0, 0, 128, 10); g.fillRect(0, 120, 128, 8); g.fillRect(62, 10, 4, 110);
+      g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1;
+      for (let x = 6; x < 128; x += 9) { if (x > 58 && x < 70) continue; g.beginPath(); g.moveTo(x, 12); g.lineTo(x, 118); g.stroke(); }
     } else if (kind === 'bridge') {
       // The underside of a raised drawbridge leaf: steel deck plates, rivet lines, hazard bands top and bottom.
       g.fillStyle = '#5a6074'; g.fillRect(0, 0, 128, 128);

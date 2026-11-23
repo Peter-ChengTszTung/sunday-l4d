@@ -220,7 +220,8 @@ export function validateChapter(L: Level): ChapterReport {
   });
 
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));
-  for (const d of def.doors) if (!usedDoors.has(d.id)) warnings.push(`door ${d.id} at ${d.x0},${d.z0} is never opened`);
+  // A lift may stay shut for good (a faulted car is set dressing); any other door that never opens is a mistake.
+  for (const d of def.doors) if (!usedDoors.has(d.id) && d.kind !== 'lift') warnings.push(`door ${d.id} at ${d.x0},${d.z0} is never opened`);
 
   // Wanderer regions (server populates each once per attempt).
   const reg = wandererRegions(L);
