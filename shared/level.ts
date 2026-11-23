@@ -68,6 +68,7 @@ export interface Prop { type: PropType; x: number; z: number; w: number; d: numb
 export interface Pickup {
   id: number; kind: PickupKind; x: number; z: number;
   /** Floor height it lies on (metres). */ y: number;
+  /** Never thinned by the server's per-attempt loot roll (the supply cache at a holdout). */ keep?: boolean;
   /** obj/item: model to show. */ look?: ObjLook | ItemLook;
   /** obj: the use prompt ("Start the generator"). item: its name ("fuel can"). */ label?: string;
   /** item: collect-step group key. */ group?: string;
@@ -412,6 +413,49 @@ export class LevelBuilder {
    * (ammo piles line the route), in a fixed rotation of kinds. Appended after everything authored, so
    * existing pickup ids do not move. Chapters that place their own small meds near a pile keep theirs.
    */
+  /**
+   * Every holdout (a `use` step with `hold`, or a `holdout` step) gets a supply cache at its stand: an
+   * ammo pile and a plaster on the nearest free floor to the machine (walked to, so never through a
+   * wall). They are `keep`: the server's loot roll never thins them, so the stash is always there.
+   */
+  private stockHolds(): void {
+    const { W, H, WH } = this;
+    const used = new Set<number>();
+    const nodeOf = (p: { x: number; z: number; y?: number }) => Math.round((p.y ?? 0) / STOREY) * WH + Math.floor(p.z / TILE) * W + Math.floor(p.x / TILE);
+    for (const p of this.pickups) used.add(nodeOf(p));
+    for (const n of this.notes) used.add(nodeOf(n));
+    const keep = this.lv;
+    for (const s of this.steps) {
+      if (!s.hold) continue;
+      const lv = Math.round((s.at.y ?? 0) / STOREY), o = lv * WH;
+      const sx = Math.floor(s.at.x / TILE), sz = Math.floor(s.at.z / TILE);
+      const open = (x: number, z: number) => {
+        if (x < 0 || z < 0 || x >= W || z >= H) return false;
+        const i = o + z * W + x;
+        return !this.solid[i] && !this.propCell[i] && this.floor[i] !== F.NONE && this.floor[i] !== F.WATER && this.doorCell[i] < 0 && !this.ramp[i];
+      };
+      // Breadth-first out from the machine (a solid tile itself, so it seeds its open neighbours).
+      const seen = new Set<number>([sz * W + sx]), queue: [number, number, number][] = [[sx, sz, 0]], spots: [number, number][] = [];
+      for (let q = 0; q < queue.length && spots.length < 2; q++) {
+        const [x, z, d] = queue[q];
+        if (d > 0 && !used.has(o + z * W + x)) spots.push([x, z]);
+        if (d >= 4) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, nz = z + dz, c = nz * W + nx;
+          if (seen.has(c) || !open(nx, nz)) continue;
+          seen.add(c); queue.push([nx, nz, d + 1]);
+        }
+      }
+      if (spots.length < 2) throw new Error(`holdout "${s.objective}": no free floor within 4 tiles for its supply cache`);
+      this.lv = lv;
+      spots.forEach(([x, z], k) => {
+        used.add(o + z * W + x);
+        this.pickups[this.pick(k === 0 ? 'ammo' : 'plaster', x, z)].keep = true;
+      });
+    }
+    this.lv = keep;
+  }
+
   private scatterMeds(): void {
     const ROTA: SmallMed[] = ['plaster', 'vitamins', 'plaster', 'cocoa', 'plaster', 'vitamins'];
     const small = new Set<string>(ROTA);
@@ -514,6 +558,7 @@ export class LevelBuilder {
     if (!this.spawns.length) throw new Error(`${meta.id}: call start() with spawn points`);
     if (!this.steps.length) throw new Error(`${meta.id}: a chapter needs quest steps`);
     this.finishStoreys();
+    this.stockHolds();
     this.scatterMeds();
     return {
       ...meta, theme: meta.theme ?? this.theme, W: this.W, H: this.H, levels: this.levels,

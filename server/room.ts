@@ -613,15 +613,16 @@ export class Room {
    */
   private thinLoot(): void {
     const shuffle = <T>(a: T[]): T[] => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    const meds = this.def.pickups.filter((p) => p.kind === 'medkit' && !this.taken.has(p.id));
+    // `keep` loot (a holdout's supply cache) is never rolled away.
+    const meds = this.def.pickups.filter((p) => p.kind === 'medkit' && !p.keep && !this.taken.has(p.id));
     const inSafe = new Set(this.L.safeRooms().flat());
     this.safeMeds = this.L.safeRooms().map((r) => shuffle(r.filter((id) => this.def.pickups[id].kind === 'medkit' && !this.taken.has(id))));
     this.medOrder = shuffle(meds.filter((p) => !inSafe.has(p.id)).map((p) => p.id));
-    this.smallOrder = shuffle(this.def.pickups.filter((p) => medIndex(p.kind) > 0 && !this.taken.has(p.id)).map((p) => p.id));
+    this.smallOrder = shuffle(this.def.pickups.filter((p) => medIndex(p.kind) > 0 && !p.keep && !this.taken.has(p.id)).map((p) => p.id));
     const squad = this.squad();
     this.thinned = new Set([...this.medOrder.slice(this.medLimit()), ...this.smallOrder.slice(this.smallLimit()), ...this.safeMeds.flatMap((r) => r.slice(squad))]);
     for (const id of this.thinned) this.taken.add(id);
-    const ammo = shuffle(this.def.pickups.filter((p) => p.kind === 'ammo' && !this.taken.has(p.id)));
+    const ammo = shuffle(this.def.pickups.filter((p) => p.kind === 'ammo' && !p.keep && !this.taken.has(p.id)));
     for (const p of ammo.slice(Math.ceil(ammo.length * LOOT.ammo))) this.taken.add(p.id);
   }
   private squad(): number { return Math.max(1, this.players.size); }
