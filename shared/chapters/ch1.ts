@@ -345,7 +345,7 @@ export function build() {
   b.carve(118, 40, 175, 55, F.ASPHALT);
   b.paint(118, 40, 175, 41, F.SIDEWALK); b.paint(118, 52, 142, 55, F.CONCRETE);
   b.prop('bus', 122, 46, 12, 3, { color: CHERRY });                     // the cream-and-cherry tram
-  const tramLever = b.obj('lever', 128, 52, 'Power up the tram (the bell is LOUD)');
+  const tramLever = b.obj('lever', 128, 52, 'Power up the tram line (the bell is LOUD)');
   b.prop('bench', 131, 54, 3, 1); b.prop('bench', 139, 55, 3, 1); b.prop('barrier', 140, 51, 1, 3);
   car(150, 43, E, 2, 1); car(160, 49, WEST, 2, 1); b.prop('van', 165, 42, 3, 1, { color: 0x63e6be }); b.prop('crate', 156, 52); b.prop('barrier', 147, 47, 1, 3);
   b.pick('medkit', 123, 54); b.pick('medkit', 124, 54); b.pick('ammo', 125, 55); b.pick('ammo', 126, 55); b.pick('ammo', 134, 55); b.pick('ammo', 133, 55);
@@ -378,7 +378,7 @@ export function build() {
   b.walls(100, 0, 117, 103, WALL.ROCK, 6);
   b.carve(100, 42, 116, 47, F.INTERIOR);
   b.carve(117, 42, 117, 47, F.ASPHALT);
-  const underpass = b.door(117, 42, 117, 47, 'barricade', 'TRAM LINE');
+  const underpass = b.door(117, 42, 117, 47, 'shutter', 'TRAM LINE GATE');   // an electric roller gate on the tram line's power
   b.prop('barrel', 108, 42); b.prop('crate', 112, 47);
   b.label('RAIL UNDERPASS', 108, 44.5, 22, CREAM, WEST);
   b.arrow(120, 44.5, WEST);
@@ -540,7 +540,8 @@ export function build() {
   b.use(tramLever, {
     objective: 'Power up the heritage tram', horde: true, hold: 90, opens: [underpass],
     radio: [
-      ['Dot', 'Fuses in, pull the lever, then get up on that footbridge. Bell rings till she\'s clear.'],
+      ['Dot', 'Fuses in, pull the lever. The line powers the underpass gate too.'],
+      ['Dot', 'Tram bell rings till she\'s warmed up. Get up on that footbridge.'],
       ['Taro', 'Ah. A dinner bell.'],
       ['Mochi', 'We ARE dinner. Everybody face out!'],
     ],
