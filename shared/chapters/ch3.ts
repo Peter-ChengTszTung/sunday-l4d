@@ -149,6 +149,9 @@ export function build() {
   b.prop('counter', 18, 46, 1, 6, { color: 0x6f7f9a }); b.prop('desk', 21, 52, 2, 1);
   b.pick('rifle', 22, 47); b.pick('ammo', 23, 47);
   b.label('SIGNAL BOX', 21, 49.5, 12, SODIUM); b.lamp(21, 50);
+  // Seen from the yard: a lamp over the signal box door, its name on the ballast, a trail of ammo to it.
+  b.lamp(25.4, 48.6); b.label('SIGNAL BOX', 27.5, 49.5, 16, SODIUM, 0);
+  b.pick('ammo', 38, 47); b.pick('ammo', 31, 47);
   b.lamp(19, 13); b.lamp(40, 46);
   b.label('SWITCHING YARD', 30, 7, 26, SODIUM);
   b.label('MALLOW BAY RAIL', 30, 9.5, 12, STEEL);
@@ -159,6 +162,7 @@ export function build() {
   box(29, 59, 2, 6); b.prop('shelf', 41, 58, 1, 5); b.prop('counter', 33, 66, 5, 1, { color: 0x6f7f9a });
   b.pick('shotgun', 39, 64); b.pick('medkit', 32, 58); b.pick('ammo', 40, 66); b.pick('firebomb', 40, 65);   // off-route reward
   b.label('CAR SHOP', 35, 61, 16, SODIUM); b.lamp(35, 62);
+  b.lamp(32.6, 54); b.lamp(37.4, 54); b.label('CAR SHOP', 34.5, 52.6, 16, SODIUM, 0);       // its door, lit from the yard
   // East half: the water tower in the open middle, cover scattered around it. Its pump-house
   // base (storey 0) carries a deck (storey 1) round the tank: two ladders, a perch over the
   // crescendo-1 arena with a reward. Zombies climb both ladders, slowly.
@@ -194,6 +198,10 @@ export function build() {
   b.label('PIT', 92, 8, 14, STEEL, E);
   b.pick('sniper', 91, 5); b.pick('rifle', 92, 5); b.pick('shotgun', 93, 5); b.pick('smg', 92, 6); b.pick('ammo', 93, 12); b.pick('medkit', 100, 13); b.pick('medkit', 89, 13); // engine house overlooks the yard
   b.label('ENGINE HOUSE', 92, 13.5, 16, SODIUM); b.lamp(89, 10); b.lamp(95, 10);
+  // Lit bay doors and the name on the yard floor, so the stash reads from the water tower; ammo leads there.
+  for (const x of [85.5, 91.5, 97.5]) b.lamp(x, 17.4);
+  b.label('ENGINE HOUSE', 91.5, 19.2, 22, SODIUM, 0);
+  b.pick('ammo', 78, 22); b.pick('ammo', 84, 19);
 
   // ------------------------------------------------------------------
   // 3. Office lot and the yardmaster's office (checkpoint)
@@ -400,6 +408,7 @@ export function build() {
   for (const x of [130, 142, 154, 166]) b.lamp(x, 18.5);
   b.level(0);
   b.pick('ammo', 124, 36); b.pick('ammo', 176, 20);
+  b.lamp(121.6, 20.4); b.label('VALVE CATWALK', 121, 22.6, 12, LAV, 0);              // the ladder up, lit from the gate plaza
   for (const [x, z] of [[115, 28], [122, 36], [136, 19], [160, 19], [148, 36], [174, 30], [128, 7], [170, 8]]) b.lamp(x, z);
   fog(124, 30, Math.PI); fog(120, 34, Math.PI);
   b.arrow(120, 33, E); b.arrow(134, 35, E);
@@ -434,6 +443,8 @@ export function build() {
   b.note(120, 72, "Hank's open locker", 'Tank 7 crew: Hank took a 20-min power nap inside Tank 7. Came out... bigger. Do not nap in the tanks. Do not nap anywhere.');
   b.pick('medkit', 114, 77); b.pick('ammo', 115, 77);
   b.label('TANK CREW LOCKERS', 117.5, 73.5, 10, CREAM); b.lamp(117.5, 76);
+  b.lamp(123.4, 73); b.label('TANK CREW LOCKERS', 125.5, 74.5, 12, CREAM, E);     // the door, lit and named from the floor
+  b.pick('ammo', 126, 77);
   b.label('TANK 7', 120, 67.5, 14, RED, 0);
   // Control booth (north-east corner).
   b.fill(168, 42, 177, 48); b.carve(169, 43, 176, 47, F.INTERIOR); b.carve(172, 48, 173, 48, F.INTERIOR);
@@ -441,6 +452,7 @@ export function build() {
   b.pick('shotgun', 176, 47); b.pick('launcher', 175, 47); b.pick('ammo', 169, 47); // Hank, the Brute, is on the mixing floor
   b.pick('firebomb', 174, 47);
   b.label('MIX CONTROL', 172.5, 46, 11, CREAM);
+  b.lamp(171, 49.4); b.label('MIX CONTROL', 172.5, 50.8, 14, CREAM, 0);
   // Two real flights up to the labs, both 2 wide and rising north (-z) out of the south half of
   // the floor, one either side of Wren's lab: the main stairs (east) and the back stairs (west).
   b.fill(160, 62, 160, 64); b.fill(163, 62, 163, 64); b.walls(160, 62, 163, 64, WALL.BUILDING, STOREY);
@@ -675,6 +687,11 @@ export function build() {
   b.prop('truck', 94, 172, 6, 2, { color: 0xe8e3f0 });
   b.pick('rifle', 100, 164); b.pick('sniper', 101, 164); b.pick('autoshotgun', 99, 164); b.pick('launcher', 100, 165); b.pick('ammo', 90, 175); b.pick('ammo', 90, 174); b.pick('medkit', 106, 175);
   b.label('DOCK SHED 3', 98, 166.5, 16, SODIUM); b.lamp(92, 165); b.lamp(104, 170);
+  // The shed's best-in-chapter guns sat dark, 45 tiles off the line to Bertha: light both north doors,
+  // put its name big on the apron facing the bridge, and lay a supply trail from the bridge foot.
+  b.lamp(87.6, 161.4); b.lamp(103.6, 161.4);
+  b.label('DOCK SHED 3', 97, 159.6, 26, SODIUM, 0);
+  b.pick('ammo', 83, 146); b.pick('medkit', 86, 153); b.pick('ammo', 88, 159);
   // Bertha: a stubby cream-and-cherry diesel with a flatcar coupled behind.
   b.prop('bus', 16, 150, 5, 2, { color: CHERRY });                          // her hood
   b.fill(21, 149, 38, 152);
