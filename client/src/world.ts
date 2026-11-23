@@ -83,7 +83,7 @@ export function buildWorld(L: Level): World {
         const ry = hash2(Math.round(l.x * 3) + 7, Math.round(l.z * 3) + 13) < 0.5 ? 0 : Math.PI / 2;
         // (With a floor right above, the panel hangs a hair lower so its ink outline stays out of that floor.)
         b.add(cube, 0x3a3654, at(trs(0, CEIL_H - 0.045 - (S.levels > 1 ? 0.025 : 0), 0, 0, ry, 0, 1.56, 0.09, 0.56)), 'box', 0.018);
-        glows.push(make(cube, 0xf2fbff, trs(l.x, ly + CEIL_H - 0.1, l.z, 0, ry, 0, 1.4, 0.04, 0.4)));
+        glows.push(make(cube, 0xf2fbff, trs(l.x, ly + CEIL_H - 0.1 - (S.levels > 1 ? 0.025 : 0), l.z, 0, ry, 0, 1.4, 0.04, 0.4))); // 3 cm under the panel either way
         glowSpots.push({ x: l.x, y: ly + CEIL_H - 0.3, z: l.z, size: 1.5, color: 0xcfeaff, k: 0.4 });
       }
     } else {
@@ -111,7 +111,9 @@ export function buildWorld(L: Level): World {
       case 'car': case 'van': {
         const c = col ?? 0xff6b6b, van = p.type === 'van', l = Math.min(len - 0.3, 3.8);
         b.add(cube, c, at(trs(0, van ? 1.0 : 0.62, 0, 0, 0, 0, 1.7, van ? 1.5 : 0.7, l)));
-        b.add(cube, 0xbfe6ff, at(trs(0, van ? 1.45 : 1.25, van ? -l * 0.36 : 0.15, 0, 0, 0, 1.45, 0.6, van ? 0.5 : 1.9)));
+        // Windows. The van's are its cab's side windows: a hair wider than the body and under its roof (level
+        // with the roof, they only ever showed as a flickering patch on top).
+        b.add(cube, 0xbfe6ff, at(trs(0, van ? 1.44 : 1.25, van ? -l * 0.36 : 0.15, 0, 0, 0, van ? 1.72 : 1.45, van ? 0.58 : 0.6, van ? 0.5 : 1.9)));
         if (!van) b.add(cube, c, at(trs(0, 1.58, 0.15, 0, 0, 0, 1.5, 0.08, 1.95)), 'none');
         for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(cyl, 0x2b2540, at(trs(sx * 0.85, 0.34, sz * l * 0.32, 0, 0, Math.PI / 2, 0.34, 0.26, 0.34)), 'smooth');
         for (const sx of [-1, 1]) b.add(cube, 0xfff3a8, at(trs(sx * 0.55, 0.7, -l / 2 - 0.01, 0, 0, 0, 0.3, 0.18, 0.06)), 'none');
@@ -161,7 +163,7 @@ export function buildWorld(L: Level): World {
         b.add(cube, 0xff6b6b, at(trs(0, 0.75, 0, 0, 0, 0, wid * 0.42, 0.12, len - 0.08)), 'none');
         // Splayed concrete foot, white reflector blocks along the stripe.
         b.add(cube, 0xa9a6ba, at(trs(0, 0.12, 0, 0, 0, 0, wid * 0.62, 0.24, len - 0.06)), 'box', 0.02);
-        for (let i = 0, n = Math.max(2, Math.round(len / 1.0)); i < n; i++) b.add(cube, 0xfff6e0, at(trs(0, 0.75, -len / 2 + (i + 0.5) * (len / n), 0, 0, 0, wid * 0.44, 0.13, len / n * 0.34)), 'none');
+        for (let i = 0, n = Math.max(2, Math.round(len / 1.0)); i < n; i++) b.add(cube, 0xfff6e0, at(trs(0, 0.75, -len / 2 + (i + 0.5) * (len / n), 0, 0, 0, wid * 0.44, 0.15, len / n * 0.34)), 'none'); // 1.5 cm proud of the stripe (5 mm flickered)
         break;
       case 'pallet':
         b.add(cube, 0xb5894f, at(trs(0, 0.15, 0, 0, 0, 0, wid * 0.85, 0.3, len * 0.85)));
@@ -259,14 +261,19 @@ export function buildWorld(L: Level): World {
         for (let i = 1, n = Math.max(1, Math.round(len / 1.0)); i < n; i++) b.add(cube, 0x3a3554, at(trs(0, 0.62, -len / 2 + i * (len / n), 0, 0, 0, wid * 0.81, 0.9, 0.02)), 'none');
         if (r < 0.45) { b.add(cube, 0x54506e, at(trs(0, 1.3, (r - 0.2) * len * 0.5, 0, 0, 0, 0.36, 0.28, 0.4)), 'box', 0.018); b.add(cube, 0x9fe8ff, at(trs(0, 1.5, (r - 0.2) * len * 0.5, 0.4, 0, 0, 0.3, 0.16, 0.03)), 'none'); }
         break;
-      case 'pillar':
-        b.add(cube, col ?? 0xbdb5cc, at(trs(0, CEIL_H / 2, 0, 0, 0, 0, wid * 0.6, CEIL_H, len * 0.6)));
+      case 'pillar': {
+        // Up to the ceiling. Under another storey that hangs 3 cm below the floor above (arch.ts): the top goes
+        // between the two, since on the floor line itself it flickered with that floor.
+        const lv = p.lv ?? 0, ph = lv + 1 < def.levels && floorOf(p.x, p.z, lv + 1) !== F.NONE ? CEIL_H - 0.015 : CEIL_H;
+        // (The shaft stops a hair under the capital's top, or the two tops fight.)
+        b.add(cube, col ?? 0xbdb5cc, at(trs(0, (ph - 0.02) / 2, 0, 0, 0, 0, wid * 0.6, ph - 0.02, len * 0.6)));
         // Plinth, capital and a painted safety band.
         b.add(cube, 0x8f88a6, at(trs(0, 0.2, 0, 0, 0, 0, wid * 0.72, 0.4, len * 0.72)), 'box', 0.02);
-        b.add(cube, 0x8f88a6, at(trs(0, CEIL_H - 0.18, 0, 0, 0, 0, wid * 0.74, 0.36, len * 0.74)), 'box', 0.02);
+        b.add(cube, 0x8f88a6, at(trs(0, ph - 0.18, 0, 0, 0, 0, wid * 0.74, 0.36, len * 0.74)), 'box', 0.02);
         b.add(cube, 0xffd43b, at(trs(0, 1.25, 0, 0, 0, 0, wid * 0.61, 0.3, len * 0.61)), 'none');
         b.add(cube, 0x2b2540, at(trs(0, 1.25, 0, 0, 0, 0, wid * 0.615, 0.08, len * 0.615)), 'none');
         break;
+      }
       case 'gen':
         b.add(cube, 0xf2c14e, at(trs(0, 0.7, 0, 0, 0, 0, 1.6, 1.4, 1.3)));
         b.add(cube, 0x2b2540, at(trs(0, 0.85, -0.66, 0, 0, 0, 1.0, 0.6, 0.04)), 'none');
@@ -362,7 +369,9 @@ export function buildWorld(L: Level): World {
     const sx = w >= dd ? w : 0.4, sz = w >= dd ? 0.4 : dd;
     let tex = doorTex.get(d.kind);
     if (!tex) { tex = canvasTexture(() => paintDoor(d.kind)); doorTex.set(d.kind, tex); textures.push(tex); }
-    const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setScale(sx, CEIL_H, sz))), doorMat));
+    // With storeys the door stops 3 cm under the floor above (at the hung ceiling): its top on that floor flickered.
+    const dh = S.levels > 1 ? 0.03 : 0;
+    const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setTRS(new pc.Vec3(0, -dh / 2, 0), pc.Quat.IDENTITY, new pc.Vec3(sx, CEIL_H - dh, sz)))), doorMat));
     e.render!.meshInstances[0].setParameter('uTex', tex);
     const x = ((d.x0 + d.x1 + 1) / 2) * T, z = ((d.z0 + d.z1 + 1) / 2) * T;
     // A flat map's door slides away whole: a shutter up into the wall above, the others down into the

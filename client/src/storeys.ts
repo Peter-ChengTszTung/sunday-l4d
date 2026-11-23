@@ -70,10 +70,11 @@ export function buildStoreys(ctx: Ctx, batchFor: (x: number, z: number) => Batch
     const put = (g: ReturnType<typeof newGeo>, c: V3, a0: number, a1: number, c0: number, c1: number, y0: number, y1: number, normals = true) =>
       horiz ? aabb(g, c, a0, y0, c0, a1, y1, c1, normals) : aabb(g, c, c0, y0, a0, c1, y1, a1, normals);
     if (hangs || rail) {
-      const c0 = e - side * 0.22, c1 = e + side * (hangs ? 0.06 : 0), y0 = hangs ? yb - SLAB_T : yb, y1 = rail ? yb + 0.1 : yb - 0.004, t = 0.02;
+      // Hanging, the edge drops a hair below the slab's underside (level with it, the two flickered seen from below).
+      const c0 = e - side * 0.22, c1 = e + side * (hangs ? 0.06 : 0), y0 = hangs ? yb - SLAB_T - 0.015 : yb, y1 = rail ? yb + 0.1 : yb - 0.015, t = 0.02;
       const solid = newGeo(), hull = newGeo();
       put(solid, edgeC, lo, hi, c0, c1, y0, y1);
-      put(hull, [1, 1, 1], lo - t, hi + t, Math.min(c0, c1) - t, Math.max(c0, c1) + t, hangs ? y0 - t : yb + 0.004, rail ? y1 + t : y1);
+      put(hull, [1, 1, 1], lo - t, hi + t, Math.min(c0, c1) - t, Math.max(c0, c1) + t, hangs ? y0 - t : yb + 0.025, rail ? y1 + t : y1); // (2.5 cm clear of the floor: 4 mm flickered; and of cornice lips)
       b.raw(solid, hull);
     }
     if (!rail) return;
@@ -122,7 +123,7 @@ export function buildStoreys(ctx: Ctx, batchFor: (x: number, z: number) => Batch
       // either side of the ramp the walker actually follows.
       const a0 = low + sgn * i * run, y = yb + (i + 0.5) * rise;
       put(mul(tread, i % 2 ? 0.9 : 1), a0, a0 + sgn * run, yb, y);
-      put(ink, a0 - sgn * 0.012, a0 + sgn * 0.045, y - 0.04, y + 0.005); // a dark nosing so every step reads
+      put(ink, a0 - sgn * 0.012, a0 + sgn * 0.045, y - 0.04, y + 0.012); // a dark nosing so every step reads (1.2 cm proud: at 5 mm it flickered from afar)
     }
     b.raw(g);
     // Open sides get a stringer and a handrail (the foot of the flight stays open where you can step on from the side).

@@ -173,7 +173,9 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const lbox = (c: V3, u0: number, u1: number, y0: number, y1: number, o0: number, o1: number) => { const a = P(u0, y0, o0), b = P(u1, y1, o1); aabb(walls, c, a[0], a[1], a[2], b[0], b[1], b[2]); };
         // Ink strokes are beams with thickness: where this stretch stands on a slab or ends under one, keep them
         // inside it, or they show as stray lines on the ceiling below and the floor above. (Never on a flat map.)
-        const inkLo = yb > 0 ? 0.003 : -1e9, inkHi = multi && (piece.indoor || !piece.roof) ? h - 0.002 : 1e9;
+        // Under one, 1.5 cm short of it: 2 mm was closer than the depth buffer resolves at range, and the
+        // strokes flickered through the floor upstairs.
+        const inkLo = yb > 0 ? 0.003 : -1e9, inkHi = multi && (piece.indoor || !piece.roof) ? h - 0.015 : 1e9;
         const line = (u0: number, y0: number, u1: number, y1: number, o = 0.02, t = 0.016) => {
           const a = P(u0, Math.min(Math.max(y0, inkLo + t), inkHi - t), o), b = P(u1, Math.min(Math.max(y1, inkLo + t), inkHi - t), o);
           beam(ink, a[0], a[1], a[2], b[0], b[1], b[2], t);
@@ -237,7 +239,14 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         if (!piece.roof) { /* the top meets a floor above: no roofline */ } else if (h >= 2.5) {
           // Cornice: a lighter lip along the roofline, mitred past the ends of the run.
           const top = mix3(c, WHITE, 0.3);
-          lbox(top, hL !== h ? -1.14 : -1, hR !== h ? 1.14 : 1, h - 0.42, h, 0, 0.14);
+          // Its top stands 6-15 mm proud of the roof: level with it, the lip (and its mitred ends) overlapped the
+          // roof of a neighbour of the same height and flickered. Under a floor over the open side (a walkway
+          // along the facade) it stops 1.5 cm short of that floor instead.
+          const ky = Math.round((yb + h) / STOREY), ax = x + dx, az = z + dz;
+          const floored = Math.abs(yb + h - ky * STOREY) < 1e-3 && ky < levels && inb(ax, az) && def.floor[ky * WH + az * W + ax] !== F.NONE;
+          // (Each wall direction a few mm apart, so two lips meeting at an outside corner don't share a top.)
+          const dl = di * 0.003;
+          lbox(top, hL !== h ? -1.14 : -1, hR !== h ? 1.14 : 1, h - 0.42 - dl, floored ? h - 0.015 - dl : h + 0.006 + dl, 0, 0.14);
           rect(mul(c, 0.6), -1, 1, h - 0.72, h - 0.6, 0.012);
           line(-1, h, 1, h, 0.14, 0.022); line(-1, h - 0.42, 1, h - 0.42, 0.14, 0.014);
         } else line(-1, h, 1, h, 0, 0.022);
@@ -329,9 +338,10 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         ceil.uv.push(x, z, x + 1, z, x + 1, z + 1, x, z + 1);
         for (let i = 0; i < 4; i++) { ceil.nor.push(0, -1, 0); ceil.col.push(c[0], c[1], c[2]); }
         ceil.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
-        // Structural beams: concrete every 4 tiles in plain interiors, timber every 3 in wooden rooms.
-        if (f === F.INTERIOR && x % 4 === 0) aabb(walls, mul(c, 0.72), x0 - 0.16, yc - 0.3, z0, x0 + 0.16, yc, z1);
-        if (f === F.WOOD && z % 3 === 0) aabb(walls, rgb(0x8a5f3f), x0, yc - 0.22, z0 - 0.1, x1, yc, z0 + 0.1);
+        // Structural beams: concrete every 4 tiles in plain interiors, timber every 3 in wooden rooms. Up to the
+        // ceiling (yq), not the slab line: under another storey their tops were the floor above, and flickered.
+        if (f === F.INTERIOR && x % 4 === 0) aabb(walls, mul(c, 0.72), x0 - 0.16, yc - 0.3, z0, x0 + 0.16, yq, z1);
+        if (f === F.WOOD && z % 3 === 0) aabb(walls, rgb(0x8a5f3f), x0, yc - 0.22, z0 - 0.1, x1, yq, z0 + 0.1);
         // An upstairs room with open air beside it (a lookout, a treehouse deck, a covered bridge) is a canopy:
         // posts along its open edges, at each end of a run and every other tile, or its ceiling hangs in the sky.
         if (k > 0) {
@@ -358,7 +368,7 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
               done.push(key);
               const t0 = goesOn ? -0.1 : -e * 0.02, t1 = goesOn ? 0.1 : -e * 0.22;
               const ux0 = cx - dx * 0.02 + tx * t0, uz0 = cz - dz * 0.02 + tz * t0, ux1 = cx - dx * 0.22 + tx * t1, uz1 = cz - dz * 0.22 + tz * t1;
-              aabb(walls, rgb(0x54506e), Math.min(ux0, ux1), yb, Math.min(uz0, uz1), Math.max(ux0, ux1), yc, Math.max(uz0, uz1));
+              aabb(walls, rgb(0x54506e), Math.min(ux0, ux1), yb, Math.min(uz0, uz1), Math.max(ux0, ux1), yq, Math.max(uz0, uz1)); // to the ceiling, not the floor above (flickered)
               for (const [qx, qz] of [[ux0, uz0], [ux1, uz1], [ux0, uz1], [ux1, uz0]]) beam(ink, qx, yb + 0.02, qz, qx, yc - 0.02, qz, 0.011);
             }
           }
@@ -399,7 +409,8 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
         const ex = (x + ox) * T, ez = (z + oz) * T; // edge origin
         // An entrance's header stands proud of the ceiling line, unless a floor is laid over either side of it.
         const floored = multi && k + 1 < levels && (def.floor[nd + WH] !== F.NONE || def.floor[md + WH] !== F.NONE);
-        const th = 0.15, ylo = yb + (entrance ? CEIL_H - 0.55 : CEIL_H - 0.4), yhi = yb + (entrance && !floored ? CEIL_H + 0.95 : CEIL_H);
+        // Under a floor the header stops 1.5 cm short of it (the ceiling hangs at 3 cm): level with it, it flickered.
+        const th = 0.15, ylo = yb + (entrance ? CEIL_H - 0.55 : CEIL_H - 0.4), yhi = yb + (entrance && !floored ? CEIL_H + 0.95 : floored ? CEIL_H - 0.015 : CEIL_H);
         const a0 = ox ? z * T : x * T, a1 = a0 + T; // extent along the edge
         const bx0 = ox ? ex - th : a0, bx1 = ox ? ex + th : a1, bz0 = ox ? a0 : ez - th, bz1 = ox ? a1 : ez + th;
         aabb(walls, col, bx0, ylo, bz0, bx1, yhi, bz1);

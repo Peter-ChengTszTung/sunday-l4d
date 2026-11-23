@@ -345,7 +345,7 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
   const strip = (c: V3, xa: number, ya: number, za: number, xb: number, yb: number, zb: number, hull: boolean) => {
     const solid = newGeo(); aabb(solid, c, xa, y + ya, za, xb, y + yb, zb);
     let h: Geo | undefined;
-    if (hull) { h = newGeo(); const t = 0.02; aabb(h, [1, 1, 1], Math.min(xa, xb) - t, y + (ya === 0 ? 0.004 : ya), Math.min(za, zb) - t, Math.max(xa, xb) + t, y + yb + t, Math.max(za, zb) + t, true); }
+    if (hull) { h = newGeo(); const t = 0.02; aabb(h, [1, 1, 1], Math.min(xa, xb) - t, y + (ya === 0 ? 0.015 : ya), Math.min(za, zb) - t, Math.max(xa, xb) + t, y + yb + t, Math.max(za, zb) + t, true); }
     batchFor((xa + xb) / 2, (za + zb) / 2).raw(solid, h);
   };
   const CW = 0.2, CH = 0.11;

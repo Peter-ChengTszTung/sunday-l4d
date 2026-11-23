@@ -78,6 +78,9 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   const R = (k: number): number => hash2(seedA + k * 131, seedB + k * 71);
   const pick = <V>(r: number, a: readonly V[]): V => a[Math.min(a.length - 1, Math.floor(r * a.length))];
 
+  /** Tops of the parts built so far for the item being placed (reset when the placement changes), for `prim`. */
+  const itemTops: { y: number; x0: number; x1: number; z0: number; z1: number }[] = [];
+  let itemKey = '';
   /** One primitive in item space. `o`: 0 = no ink, 1 = box hull, 2 = smooth hull. */
   function prim(tp: Tpl, color: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, o = 1, rx = 0, ry = 0, rz = 0, into: Geo = S): void {
     let m00 = 1, m01 = 0, m02 = 0, m10 = 0, m11 = 1, m12 = 0, m20 = 0, m21 = 0, m22 = 1;
@@ -95,6 +98,9 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
     const hull = o && into === S ? HULL : null, hb = hull ? hull.pos.length / 3 : 0;
     const t = Math.max(0.007, Math.min(0.02, Math.min(sx * tp.ex, sy * tp.ey, sz * tp.ez) * 0.22));
     const kx = 1 + t / (sx * tp.ex), ky = 1 + t / (sy * tp.ey), kz = 1 + t / (sz * tp.ez);
+    const key = `${ox},${oy},${oz},${ca}`;
+    if (key !== itemKey) { itemKey = key; itemTops.length = 0; }
+    let topY = -Infinity, bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
     for (let i = 0; i < n; i++) {
       const px = P[i * 3] * sx, py = P[i * 3 + 1] * sy, pz = P[i * 3 + 2] * sz;
       const wx = a00 * px + a01 * py + a02 * pz + tx, wy = m10 * px + m11 * py + m12 * pz + ty, wz = a20 * px + a21 * py + a22 * pz + tz;
@@ -102,15 +108,27 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
       let nx = a00 * qx + a01 * qy + a02 * qz, ny = m10 * qx + m11 * qy + m12 * qz, nz = a20 * qx + a21 * qy + a22 * qz;
       const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
       into.pos.push(wx, wy, wz); into.nor.push(nx, ny, nz); into.col.push(cr, cg, cb);
+      topY = Math.max(topY, wy); bx0 = Math.min(bx0, wx); bx1 = Math.max(bx1, wx); bz0 = Math.min(bz0, wz); bz1 = Math.max(bz1, wz);
       if (hull) {
+        let qx2: number, qy2: number, qz2: number;
         if (o === 1) {
           const hx = px * kx, hy = py * ky, hz = pz * kz;
-          hull.pos.push(a00 * hx + a01 * hy + a02 * hz + tx, m10 * hx + m11 * hy + m12 * hz + ty, a20 * hx + a21 * hy + a22 * hz + tz);
-        } else hull.pos.push(wx + nx * t, wy + ny * t, wz + nz * t);
+          qx2 = a00 * hx + a01 * hy + a02 * hz + tx; qy2 = m10 * hx + m11 * hy + m12 * hz + ty; qz2 = a20 * hx + a21 * hy + a22 * hz + tz;
+        } else { qx2 = wx + nx * t; qy2 = wy + ny * t; qz2 = wz + nz * t; }
+        // An outline's underside that lands within a centimetre of what the part stands on (a floor, or the top
+        // of a part of the same item under it: a bottle on its cooler) flickers with it, a dark ring round the
+        // part: sink it 1.5 cm into that surface. Its sides still draw the ring.
+        if (qy2 < wy) {
+          const fy = Math.round(qy2 / STOREY) * STOREY;
+          if (Math.abs(qy2 - fy) < 0.012) qy2 = fy - 0.015;
+          else for (const u of itemTops) if (Math.abs(qy2 - u.y) < 0.012 && qx2 > u.x0 - 0.05 && qx2 < u.x1 + 0.05 && qz2 > u.z0 - 0.05 && qz2 < u.z1 + 0.05) { qy2 = u.y - 0.015; break; }
+        }
+        hull.pos.push(qx2, qy2, qz2);
         hull.nor.push(nx, ny, nz);
       }
     }
     for (let i = 0; i < I.length; i++) into.idx.push(base + I[i]);
+    if (into === S) itemTops.push({ y: topY, x0: bx0, x1: bx1, z0: bz0, z1: bz1 });
     triCount += (I.length / 3) * (hull ? 2 : 1);
     if (hull) for (let i = 0; i < I.length; i++) hull.idx.push(hb + I[i]);
   }
@@ -124,8 +142,14 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
   const G = (c: number, x: number, z: number, r: number, h: number, rx = 0, rz = 0) => prim(BLADE, c, x, 0, z, r, h, r, 0, rx, 0, rz);
   /** Unlit, unfogged bright bit (screens, flames). */
   const GL = (c: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, rx = 0) => prim(BOX, c, x, y, z, sx, sy, sz, 0, rx, 0, 0, glow);
-  /** Flat sheet on the ground (paper, leaf, card), optionally with an ink rim. */
-  function sheet(c: number, x: number, z: number, w: number, d: number, rot: number, rim = true, y = 0.03): void {
+  /**
+   * Flat sheet on the ground (paper, leaf, card), optionally with an ink rim. Piles overlap, so each sheet
+   * lies a few mm above the last (3 layers, 5 mm apart, rims 16 mm under their sheet, so no sheet or rim is
+   * within 5 mm of another): at one height they flickered where they crossed.
+   */
+  let sheetLayer = 0;
+  function sheet(c: number, x: number, z: number, w: number, d: number, rot: number, rim = true, y0 = 0.03): void {
+    const y = y0 + (sheetLayer++ % 3) * 0.005;
     const cr = Math.cos(rot), sr = Math.sin(rot);
     const put = (col: V3, hw: number, hd: number, yy: number) => {
       const p: number[] = [];
@@ -135,7 +159,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
       }
       quad(S, col, [0, 1, 0], p);
     };
-    if (rim) put(rgb(0x1a1226), w / 2 + 0.018, d / 2 + 0.018, y - 0.013);
+    if (rim) put(rgb(0x1a1226), w / 2 + 0.018, d / 2 + 0.018, y - 0.016);
     triCount += rim ? 4 : 2;
     put(rgb(c), w / 2, d / 2, y);
   }
@@ -820,7 +844,7 @@ export function buildDressing(ctx: Ctx, batchFor: (x: number, z: number) => Batc
         for (let b = 0; b < 2 + Math.floor(q * 3); b++) {
           const sx = (R(b) - 0.5) * 0.9, sz = (R(b + 4) - 0.5) * 0.9, rot = R(b + 8) * 6;
           sheet(b % 3 === 2 ? 0xf4ecd8 : PAPER, sx, sz, 0.21, 0.3, rot);
-          if (b % 2 === 0) sheet(pick(R(b + 12), [0x74c0fc, 0xff8fa3, 0x8ce99a, 0xffd43b]), sx - Math.sin(rot) * 0.11, sz - Math.cos(rot) * 0.11, 0.19, 0.05, rot, false, 0.034);
+          if (b % 2 === 0) sheet(pick(R(b + 12), [0x74c0fc, 0xff8fa3, 0x8ce99a, 0xffd43b]), sx - Math.sin(rot) * 0.11, sz - Math.cos(rot) * 0.11, 0.19, 0.05, rot, false, 0.046); // over its sheet's top layer
         }
       } else if (k < 0.66) { clipboard(0, 0, q * 5); if (q < 0.5) sheet(PAPER, 0.34, 0.2, 0.21, 0.3, q * 9); }
       else if (k < 0.8) {
