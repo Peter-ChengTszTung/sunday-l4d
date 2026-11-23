@@ -364,8 +364,9 @@ export function insideOut(g: Geo): Geo {
 export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true, alpha?: ArrayLike<number>): pc.Mesh {
   const mesh = new pc.Mesh(device);
   const n = g.pos.length / 3;
-  mesh.setPositions(g.pos);
-  if (g.nor.length) mesh.setNormals(g.nor);
+  // Typed copies: the mesh keeps these arrays for its lifetime, and the Geo's plain arrays can then be collected.
+  mesh.setPositions(new Float32Array(g.pos));
+  if (g.nor.length) mesh.setNormals(new Float32Array(g.nor));
   const c = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) {
     const has = g.col.length > 0;
@@ -373,7 +374,7 @@ export function toMesh(device: pc.GraphicsDevice, g: Geo, pin = true, alpha?: Ar
     c[i * 4 + 2] = has ? Math.round(g.col[i * 3 + 2] * 255) : 255; c[i * 4 + 3] = alpha ? alpha[i] : 255;
   }
   mesh.setColors32(c);
-  if (g.uv.length) mesh.setUvs(0, g.uv);
+  if (g.uv.length) mesh.setUvs(0, new Float32Array(g.uv));
   mesh.setIndices(n > 65535 ? new Uint32Array(g.idx) : new Uint16Array(g.idx));
   mesh.update(pc.PRIMITIVE_TRIANGLES);
   // Shared meshes outlive any single entity: hold a reference so destroying

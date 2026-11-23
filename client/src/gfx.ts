@@ -9,7 +9,17 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 export const app = new pc.Application(canvas, { graphicsDeviceOptions: { antialias: true, alpha: false, powerPreference: 'high-performance' } });
 app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(pc.RESOLUTION_AUTO);
-app.graphicsDevice.maxPixelRatio = Math.min(window.devicePixelRatio, 2);
+/**
+ * Render scale cap: the engine takes min(this, the live devicePixelRatio) on every resize, so a window
+ * dragged to a sharper screen follows it. Override with `?scale=1` (or 1.5, 2) or localStorage
+ * `chibi.scale` to trade sharpness for speed on weak GPUs.
+ */
+function renderScale(): number {
+  let v = Number(new URLSearchParams(location.search).get('scale'));
+  if (!(v > 0)) { try { v = Number(localStorage.getItem('chibi.scale')); } catch { v = 0; } }
+  return v > 0 ? Math.min(v, 3) : 2;
+}
+app.graphicsDevice.maxPixelRatio = renderScale();
 window.addEventListener('resize', () => app.resizeCanvas());
 // Longest step any update sees (after a hitch or a background tab), so nothing tunnels or overshoots.
 app.maxDeltaTime = 0.05;
@@ -51,20 +61,24 @@ const PARTS = /* glsl */ `
     return cross(b, c) * n.x + cross(c, a) * n.y + cross(a, b) * n.z;
   }`;
 // `ink`: vertices whose colour alpha is 0 are an ink hull baked into the same mesh (see toonInkMat).
-const toonVS = (uv: boolean, parts = false, ink = false) => /* glsl */ `
+// `inst`: hardware-instanced (see INST_FORMAT): the model matrix and tint come per instance, not as uniforms.
+// Instances are scaled uniformly, so the model matrix's upper 3x3 serves for normals.
+const INST_VS = /* glsl */ `attribute vec4 aI0; attribute vec4 aI1; attribute vec4 aI2; attribute vec4 aI3; attribute vec4 aITint; varying vec3 vTint;`;
+const toonVS = (uv: boolean, parts = false, ink = false, inst = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform mat3 matrix_normal;
   varying vec3 vN; varying vec3 vW; varying vec3 vC; ${ink ? 'varying float vInk;' : ''}
-  ${parts ? PARTS : ''}
+  ${parts ? PARTS : ''} ${inst ? INST_VS : ''}
   void main(void) {
     ${parts ? 'int pi = partIndex(); vec3 p = partPos(pi, aPosition), nrm = partNormal(pi, aNormal);' : 'vec3 p = aPosition, nrm = aNormal;'}
-    vec4 w = matrix_model * vec4(p, 1.0);
-    vW = w.xyz; vN = normalize(matrix_normal * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} ${ink ? 'vInk = 1.0 - aColor.a;' : ''}
+    ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(model); vTint = aITint.rgb;' : 'mat4 model = matrix_model; mat3 nmat = matrix_normal;'}
+    vec4 w = model * vec4(p, 1.0);
+    vW = w.xyz; vN = normalize(nmat * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} ${ink ? 'vInk = 1.0 - aColor.a;' : ''}
     gl_Position = matrix_viewProjection * w;
   }`;
-const toonFS = (uv: boolean, ink = false) => /* glsl */ `
+const toonFS = (uv: boolean, ink = false, inst = false) => /* glsl */ `
   varying vec3 vN; varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''} ${ink ? 'varying float vInk; uniform vec3 uInk;' : ''}
-  uniform vec3 uTint; uniform vec3 uSunDir; uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn; uniform float uTorchUse;
+  ${inst ? 'varying vec3 vTint;' : 'uniform vec3 uTint;'} uniform vec3 uSunDir; uniform vec3 uTorchPos; uniform vec3 uTorchDir; uniform float uTorchOn; uniform float uTorchUse;
   uniform vec3 uAmbLo; uniform vec3 uAmbHi; uniform vec3 uSunCol; uniform vec3 uGrade; uniform vec3 uLampWarm; uniform vec3 uLampCool;
   // World light map (see atmo.ts): r = open sky, g = warm street lamps, b = cool ceiling fixtures.
   // With storeys the map holds one copy per storey side by side along u (uLightLv: storeys, storey
@@ -80,7 +94,7 @@ const toonFS = (uv: boolean, ink = false) => /* glsl */ `
   void main(void) {
     ${ink ? 'if (vInk > 0.5) { gl_FragColor = vec4(fogged(vC * uInk, vW), 1.0); return; }' : ''}
     vec3 n = normalize(vN);
-    vec3 base = vC * uTint${uv ? ' * texture2D(uTex, vUv).rgb' : ''};
+    vec3 base = vC * ${inst ? 'vTint' : 'uTint'}${uv ? ' * texture2D(uTex, vUv).rgb' : ''};
     // A floor reads its own storey, a ceiling the storey it hangs over.
     float lv = min(floor(max(vW.y + n.y * 0.1 + 0.01, 0.0) / uLightLv.y), uLightLv.x - 1.0);
     vec2 lp = (vW.xz + n.xz * 0.3) * uLightScale;
@@ -112,18 +126,21 @@ const toonFS = (uv: boolean, ink = false) => /* glsl */ `
     gl_FragColor = vec4(fogged(c, vW), 1.0);
   }`;
 
-const unlitVS = (uv: boolean) => /* glsl */ `
+const unlitVS = (uv: boolean, inst = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection;
-  varying vec3 vW; varying vec3 vC;
-  void main(void) { vec4 w = matrix_model * vec4(aPosition, 1.0); vW = w.xyz; vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} gl_Position = matrix_viewProjection * w; }`;
-const unlitFS = (uv: boolean) => /* glsl */ `
+  varying vec3 vW; varying vec3 vC; ${inst ? INST_VS : ''}
+  void main(void) {
+    ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); vTint = aITint.rgb;' : 'mat4 model = matrix_model;'}
+    vec4 w = model * vec4(aPosition, 1.0); vW = w.xyz; vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} gl_Position = matrix_viewProjection * w;
+  }`;
+const unlitFS = (uv: boolean, inst = false) => /* glsl */ `
   varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''}
-  uniform vec3 uTint; uniform float uAlpha;
+  ${inst ? 'varying vec3 vTint;' : 'uniform vec3 uTint;'} uniform float uAlpha;
   ${FOG}
   void main(void) {
     ${uv ? 'vec4 t = texture2D(uTex, vUv); if (t.a < 0.02) discard;' : 'vec4 t = vec4(1.0);'}
-    gl_FragColor = vec4(fogged(vC * uTint * t.rgb, vW), uAlpha * t.a);
+    gl_FragColor = vec4(fogged(vC * ${inst ? 'vTint' : 'uTint'} * t.rgb, vW), uAlpha * t.a);
   }`;
 
 const outlineVS = (parts = false) => /* glsl */ `
@@ -214,6 +231,7 @@ export function makeOutline(thickness: number, fog = true, parts = false): pc.Sh
 }
 
 export const toonMat = makeToon();
+
 /**
  * Toon material for small models that carry their ink hull in the same mesh, so each is one draw: hull
  * vertices have colour alpha 0, are wound inside-out, and come out as flat fogged ink exactly like `inkBack`.
@@ -240,6 +258,24 @@ export const inkLineMat = makeUnlit({ color: INK, cull: 'none' });
 /** Back-face ink for hulls whose geometry is already inflated. */
 export const inkBack = makeUnlit({ color: INK, cull: 'front' });
 export const inkBackVM = makeUnlit({ color: INK, cull: 'front', fog: false });
+
+// ---------------------------------------------------------------- instancing
+/** Per-instance data for the instanced materials: the model matrix (four columns) then an RGB tint (+ pad). */
+export const INST_FLOATS = 20;
+export const INST_FORMAT = new pc.VertexFormat(device, [
+  { semantic: pc.SEMANTIC_ATTR11, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR12, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR13, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR14, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR15, components: 4, type: pc.TYPE_FLOAT32 },
+]);
+const INST_ATTR = { aI0: pc.SEMANTIC_ATTR11, aI1: pc.SEMANTIC_ATTR12, aI2: pc.SEMANTIC_ATTR13, aI3: pc.SEMANTIC_ATTR14, aITint: pc.SEMANTIC_ATTR15 };
+/** `toonMat` drawn instanced: many small lit shapes of one mesh in a single draw. */
+export const toonInstMat = new pc.ShaderMaterial({ uniqueName: 'ToonInst', attributes: { ...ATTR, ...INST_ATTR }, vertexGLSL: toonVS(false, false, false, true), fragmentGLSL: toonFS(false, false, true) });
+toonInstMat.setParameter('uFogOn', 1); toonInstMat.setParameter('uTorchUse', 1); toonInstMat.setParameter('uCeil', 0); toonInstMat.update();
+/** Double-sided fogged unlit vertex colour, drawn instanced (comic stars). */
+export const unlitInstMat = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
+unlitInstMat.setParameter('uAlpha', 1); unlitInstMat.setParameter('uFogOn', 1); unlitInstMat.cull = pc.CULLFACE_NONE; unlitInstMat.update();
 
 // Scene-wide lighting/fog uniforms shared by every shader above.
 const scope = device.scope;

@@ -5,7 +5,7 @@ import * as pc from 'playcanvas';
 import { TILE, STOREY } from '../../shared/constants';
 import { F, isIndoor, hash2, type PropType } from '../../shared/level';
 import { type Geo } from './geo';
-import { Batch, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
+import { Batch, device, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
 import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css, storeyOfY } from './worldkit';
 import { t } from './i18n';
 
@@ -20,7 +20,8 @@ const ROUND: Partial<Record<PropType, number>> = { tree: 0.3, pine: 0.3, bush: 0
 const INKC = 'rgba(26,18,38,';
 // Chunk textures are streamed: painted when a chunk comes within the fog distance plus LOAD metres of the
 // camera, and freed once it is DROP metres beyond it (the gap is hysteresis, so pacing a boundary is free).
-const LOAD = 12, DROP = 30;
+// Each chunk texture is ~5 MB with mips, so DROP stays tight: a chunk behind the fog is only worth a repaint.
+const LOAD = 12, DROP = 16;
 // Slack on the camera-to-chunk distance: metres, and screen pixels (see `update`; half a pixel is the true bound).
 const SLACK_M = 1, SLACK_PX = 0.75;
 
@@ -320,9 +321,12 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
     }
     const paint = (): HTMLCanvasElement => {
       const cv = document.createElement('canvas');
-      cv.width = aw * PX; cv.height = ah * PX;
+      // Storeys stack down the atlas: on a tall building it could outgrow the GPU's texture limit, so shrink it to fit.
+      const k = Math.min(1, device.maxTextureSize / (aw * PX), device.maxTextureSize / (ah * PX));
+      cv.width = Math.floor(aw * PX * k); cv.height = Math.floor(ah * PX * k);
       const g = cv.getContext('2d')!;
-      g.fillStyle = '#1a1730'; g.fillRect(0, 0, cv.width, cv.height);
+      g.scale(k, k);
+      g.fillStyle = '#1a1730'; g.fillRect(0, 0, aw * PX, ah * PX);
       for (const b of boxes) {
         g.save();
         g.beginPath(); g.rect(0, b.oy * PX, (b.x1 - b.x0 + 1) * PX, (b.z1 - b.z0 + 1) * PX); g.clip();

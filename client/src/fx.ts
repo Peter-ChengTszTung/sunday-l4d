@@ -3,16 +3,27 @@ import { DROOLER, FIRE } from '../../shared/constants';
 // Particles shrink instead of fading so they stay opaque and cel-flat.
 import * as pc from 'playcanvas';
 import { box, sphere, ring, make, merge, toMesh, trs } from './geo';
-import { app, device, meshEntity, makeUnlit, toonMat, outlineMat, tintOf } from './gfx';
+import { app, device, meshEntity, makeUnlit, toonMat, outlineMat, tintOf, toonInstMat, unlitInstMat, INST_FORMAT, INST_FLOATS } from './gfx';
 import { STAR_MESH } from './viewmodel';
 
 interface Particle {
-  ent: pc.Entity; mi: pc.MeshInstance; vx: number; vy: number; vz: number; life: number; max: number; size: number;
+  /** Tint (shared array from tintOf). */ tint: readonly number[]; vx: number; vy: number; vz: number; life: number; max: number; size: number;
   grav: number; spin: number; grow: number; x: number; y: number; z: number;
   /** Floor height under where it was spawned (it bounces there). */ fl: number;
 }
 /** Particles of one kind. `free` is a stack of the indices in `items` that are dead, so spawning never searches. */
-interface Pool { items: Particle[]; free: number[]; mesh: pc.Mesh; mat: pc.Material; star: boolean }
+/** Particles of one kind, all drawn in one instanced draw: `data` is the per-instance buffer (INST_FORMAT) refilled every frame. */
+interface Pool { items: Particle[]; free: number[]; star: boolean; mi: pc.MeshInstance; vb: pc.VertexBuffer; data: Float32Array }
+function makePool(mesh: pc.Mesh, mat: pc.Material, star: boolean): Pool {
+  const cap = POOL_MAX + 1;
+  const vb = new pc.VertexBuffer(device, INST_FORMAT, cap, { usage: pc.BUFFER_DYNAMIC });
+  const ent = meshEntity(mesh, mat, undefined, star ? 'fx-stars' : 'fx-blobs');
+  const mi = ent.render!.meshInstances[0];
+  mi.setInstancing(vb); // not culled: the instances roam anywhere near the camera
+  mi.instancingCount = 0;
+  app.root.addChild(ent);
+  return { items: [], free: [], star, mi, vb, data: new Float32Array(cap * INST_FLOATS) };
+}
 interface Tracer { ent: pc.Entity; life: number }
 /** Drooler goo in flight: a ballistic arc from (x0, y0, z0) to (x1, y1, z1) (y: floor heights; multi-storey maps). */
 interface Glob { ent: pc.Entity; x0: number; z0: number; x1: number; z1: number; y0: number; y1: number; t: number; flight: number }
@@ -30,12 +41,12 @@ const POOL_MAX = 220;
 const BLOB_MESH = toMesh(device, make(sphere(8, 6)));
 // Unit box stretched along -Z so lookAt() points it at the target.
 const TRACER_MESH = toMesh(device, make(box(), undefined, trs(0, 0, -0.5)));
-const starMat = makeUnlit({ cull: 'none' });
+const WHITE: readonly number[] = [1, 1, 1];
 const tracerMat = makeUnlit({ color: 0xfff1a8, fog: false });
 // Launcher grenade: a chunky candy-pink egg with a yellow band.
 const SHELL_MESH = toMesh(device, make(sphere(10, 8), 0xff6fae, trs(0, 0, 0, 0, 0, 0, 0.09, 0.09, 0.13)));
 const SHELL_BAND = toMesh(device, make(sphere(10, 4), 0xffd43b, trs(0, 0, 0, 0, 0, 0, 0.095, 0.095, 0.05)));
-const _q = new pc.Quat(), _spin = new pc.Quat();
+const _q = new pc.Quat(), _spin = new pc.Quat(), _pos = new pc.Vec3(), _scl = new pc.Vec3(), _m = new pc.Mat4();
 const _p: P3 = { x: 0, y: 0, z: 0 };
 export const GOO = 0x8cf07a, GOO_DARK = 0x3a8f52;
 // Unit-radius puddle: a dark rim around a bright pool with a few highlight spots, one mesh.
@@ -61,8 +72,8 @@ const arcMat = makeUnlit({ color: 0xfff1a8, fog: false });
 const ARC_RING = toMesh(device, make(ring(0.78, 1, 28), 0xffd43b));
 
 export class FX {
-  private stars: Pool = { items: [], free: [], mesh: STAR_MESH, mat: starMat, star: true };
-  private blobs: Pool = { items: [], free: [], mesh: BLOB_MESH, mat: toonMat, star: false };
+  private stars = makePool(STAR_MESH, unlitInstMat, true);
+  private blobs = makePool(BLOB_MESH, toonInstMat, false);
   private tracers: Tracer[] = [];
   private globs: Glob[] = [];
   private puddles: Puddle[] = [];
@@ -284,19 +295,16 @@ export class FX {
     if (pool.free.length) p = pool.items[pool.free.pop()!];
     else {
       if (pool.items.length > POOL_MAX) return;
-      const ent = meshEntity(pool.mesh, pool.mat);
-      app.root.addChild(ent);
-      p = { ent, mi: ent.render!.meshInstances[0], vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 1, grav: 0, spin: 0, grow: 0, x: 0, y: 0, z: 0, fl: 0 };
+      p = { tint: WHITE, vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 1, grav: 0, spin: 0, grow: 0, x: 0, y: 0, z: 0, fl: 0 };
       pool.items.push(p);
     }
-    p.mi.setParameter('uTint', tintOf(color));
-    p.ent.enabled = true;
+    p.tint = tintOf(color);
     p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz;
     p.fl = grav > 0 && this.groundAt ? this.groundAt(x, y, z) : 0;
     p.life = life; p.max = life; p.size = size; p.grav = grav; p.grow = grow;
     p.spin = (Math.random() - 0.5) * 12;
     // Nothing would ever retire a particle born dead: hand it straight back.
-    if (!(life > 0)) { p.life = 0; p.ent.enabled = false; pool.free.push(pool.items.indexOf(p)); }
+    if (!(life > 0)) { p.life = 0; pool.free.push(pool.items.indexOf(p)); }
   }
 
   /** Radial burst. `star` = flat comic stars, otherwise chunky blobs. */
@@ -364,25 +372,30 @@ export class FX {
   }
 
   private step(pool: Pool, dt: number, camRot: pc.Quat): void {
-    const items = pool.items;
+    const items = pool.items, data = pool.data;
+    let n = 0;
     for (let i = 0; i < items.length; i++) {
       const p = items[i];
       if (p.life <= 0) continue;
       p.life -= dt;
-      if (p.life <= 0) { p.ent.enabled = false; pool.free.push(i); continue; }
+      if (p.life <= 0) { pool.free.push(i); continue; }
       p.vy -= p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < p.fl + 0.05 && p.grav > 0) { p.y = p.fl + 0.05; p.vy *= -0.35; p.vx *= 0.6; p.vz *= 0.6; }
-      p.ent.setPosition(p.x, p.y, p.z);
       const k = p.life / p.max;
       // Swell first (for poofs), then shrink to nothing.
       const s = Math.max(0.001, p.size * (p.grow ? (1 + p.grow * (1 - k)) * Math.min(1, k * 3.2) : Math.min(1, k * 2.2)));
-      p.ent.setLocalScale(s, s, s);
       if (pool.star) {
         _spin.setFromAxisAngle(pc.Vec3.BACK, p.spin * (p.max - p.life) * 57.3);
-        p.ent.setRotation(_q.copy(camRot).mul(_spin));
-      }
+        _q.copy(camRot).mul(_spin);
+      } else _q.copy(pc.Quat.IDENTITY);
+      _m.setTRS(_pos.set(p.x, p.y, p.z), _q, _scl.set(s, s, s));
+      const o = n++ * INST_FLOATS;
+      data.set(_m.data, o);
+      data[o + 16] = p.tint[0]; data[o + 17] = p.tint[1]; data[o + 18] = p.tint[2]; data[o + 19] = 1;
     }
+    if (n) pool.vb.setData(data);
+    pool.mi.instancingCount = n;
   }
 
   /** `camRot` is the camera's world rotation, used to billboard the stars. */

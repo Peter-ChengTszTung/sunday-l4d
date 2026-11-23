@@ -29,7 +29,7 @@ const cone = cylinder(8, 0, 1);
 const hoop = cylinder(12);
 const cube = box();
 const shadowMesh = toMesh(device, make(ring(0, 0.36, 16)));
-const shadowMat = makeUnlit({ color: 0x0a0614, alpha: 0.38, blend: 'normal', fog: false });
+const shadowMat = makeUnlit({ color: 0x0a0614, alpha: 0.38, blend: 'normal' });
 const DARK = 0x1a1226, STEEL = 0xaab0c4, IRON = 0x7d8399, SLATE = 0x54506e, CREAM = 0xfff3d6, GOO = 0xb8ff6a, TEAR = 0x8fd8ff;
 
 /** `color` darkened (f < 1) or lightened (f > 1). */

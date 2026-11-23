@@ -4,7 +4,7 @@ import * as pc from 'playcanvas';
 import { TILE, STOREY, PLAYER } from '../../shared/constants';
 import { F, WALL, isIndoor, hash2 } from '../../shared/level';
 import { type Geo, sphere, ring, make, merge } from './geo';
-import { device, meshEntity, makeUnlit, makeGlow, rgb, setFog, setAtmosphere, setLightMap, setTime, type V3 } from './gfx';
+import { app, device, meshEntity, makeUnlit, makeGlow, rgb, setFog, setAtmosphere, setLightMap, setTime, type V3 } from './gfx';
 import { type Ctx, newGeo, quad, mix3, mul, lampIndoor, storeyOfY } from './worldkit';
 
 const T = TILE;
@@ -188,7 +188,9 @@ function buildSky(ctx: Ctx, fog: V3): pc.Entity {
   mat.setParameter('uHorizon', rgb(cols[0])); mat.setParameter('uMid', rgb(cols[1])); mat.setParameter('uTop', rgb(cols[2])); mat.setParameter('uHaze', fog);
   mat.update();
   const parts: pc.Entity[] = [];
-  parts.push(meshEntity(ctx.mesh(make(sphere(24, 16), undefined, new pc.Mat4().setScale(300 * SKY_K, 300 * SKY_K, 300 * SKY_K))), mat));
+  // On the engine's Skybox layer, drawn after the world's opaques: early-z then skips every pixel a building covers.
+  const skyLayer = app.scene.layers.getLayerByName('Skybox')!.id;
+  parts.push(meshEntity(ctx.mesh(make(sphere(24, 16), undefined, new pc.Mat4().setScale(300 * SKY_K, 300 * SKY_K, 300 * SKY_K))), mat, skyLayer));
   const h0 = rgb(cols[0]);
   parts.push(meshEntity(ctx.mesh(skyline(ctx, mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(fog, h0, 0.22), mix3(mul(mix3(fog, rgb(cols[1]), 0.25), 0.8), mix3(rgb(0xffd98a), h0, 0.2), night))), ctx.mat(makeUnlit({ fog: false, cull: 'none' }))));
 
