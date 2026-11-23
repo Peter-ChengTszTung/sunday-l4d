@@ -1463,6 +1463,22 @@ function updateMe(dt: number): void {
       const d = Math.hypot(dx, dz);
       if (d < min && d > 0.001) slideMe((dx / d) * (min - d), (dz / d) * (min - d));
     }
+    // Teammates are soft: ease apart from one you stand inside (each client pushes itself, so the two of
+    // you part halfway each). Standing in one put your eye inside their model and the screen went black.
+    // Not off a downed one (you crouch over them to help them up) or while held.
+    if (!me.pinned) for (const m of mates.values()) {
+      if (m.st !== PSTATE.ALIVE || !m.chibi.group.enabled || Math.abs(m.y - me.gy) > 1.2) continue;
+      const min = PLAYER.radius * 2, dx = me.x - m.x, dz = me.z - m.z;
+      if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
+      const d = Math.hypot(dx, dz);
+      if (d >= min) continue;
+      // Exactly on top of each other: split along a fixed axis, the lower id one way, the higher the other.
+      const ux = d > 0.001 ? dx / d : me.id < m.id ? 1 : -1, uz = d > 0.001 ? dz / d : 0;
+      // A gentle nudge (at most 2 m/s): each of you sees the other a little late, and a hard shove on that
+      // stale position can make the pair chase each other across the floor.
+      const push = Math.min((min - d) * Math.min(1, dt * 10), 2 * dt);
+      slideMe(ux * push, uz * push);
+    }
   } else { me.vx = me.vz = 0; me.jy = 0; me.vy = 0; me.onGround = true; }
   // Stairs and ladders are smooth slopes and the camera rides them as they are; a sudden floor change
   // (stepping up onto a ledge) is eased out of the camera instead of snapping it.
@@ -1616,6 +1632,9 @@ function updateEntities(dt: number): void {
     }
     m.chibi.group.setPosition(m.x, m.y, m.z);
     m.chibi.group.setLocalEulerAngles(0, m.ry * RAD, 0);
+    // Your eye inside their body (you walked into them, or a teleport put you there): drawn, its inside and
+    // ink hull would black out the whole screen, so leave them out until you have stepped apart.
+    m.chibi.root.enabled = !(Math.hypot(m.x - cam.x, m.z - cam.z) < 0.55 && cam.y > m.y - 0.1 && cam.y < m.y + 1.9);
     if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE;
     m.swing -= dt;
     m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : pinned.has(m.id) ? 'stagger' : m.swing > 0 ? (WEAPONS[m.gunW]?.id === 'axe' ? 'chop' : WEAPONS[m.gunW]?.id === 'machete' ? 'slash' : 'swing') : m.speed > 1 ? 'run' : 'aim', time, dt);
