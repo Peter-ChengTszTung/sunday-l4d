@@ -28,6 +28,8 @@ export const PLAYER = {
   healTime: 2.2,
   useRange: 2.7,
   bleedRate: 3.2, // hp per second while downed
+  /** Downed: every hit, burn and blast does 1/downDefense of its damage (bleeding out is unchanged), so a teammate has time to get there. */
+  downDefense: 10,
   shoveCd: 0.7,
   shoveRange: 2.4,
   /**

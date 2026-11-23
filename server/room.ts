@@ -1618,6 +1618,8 @@ export class Room {
     // Intensity reads the damage before difficulty: a softer bite on Easy must not make breathers rarer.
     if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
     if (scaled && this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
+    // Down: ten times the defence (PLAYER.downDefense), to buy the team time to come and help you up.
+    if (p.st === PSTATE.DOWN) dmg = r2(dmg / PLAYER.downDefense);
     // A Pillow Vest soaks up part of each bite or hit (not goo, fire or friendly blasts) while it lasts.
     if (scaled && !quiet && p.armor > 0 && p.st === PSTATE.ALIVE) {
       const a = Math.min(p.armor, dmg * ARMOR.absorb);
