@@ -310,6 +310,7 @@ interface Zombie {
   /** `y`: floor height it stands on (follows stairs and ladders through Level.moveSlide). */
   id: number; type: number; x: number; y: number; z: number; ry: number; st: number; hp: number; speed: number;
   offX: number; offZ: number; t: number; hitDone: boolean; target: number; dormant: boolean;
+  /** Spawned by a dev 'dbgz' message: survives the dev `calm` switch. */ dbg?: boolean;
   stun: number; vx: number; vz: number; leapCd: number; lx: number; lz: number;
   /** Special-ability cooldown (charge, spit, ring), separate from the leaper's `leapCd`. */
   sp: number;
@@ -420,6 +421,8 @@ export class Room {
   private L!: Level;
   private flow = new Int16Array(1);
   private tickN = 0;
+  /** Dev-server test switches (the 'dbgf' message): no damage to survivors / no director zombies. */
+  private dbgGod = false; private dbgCalm = false;
   private interval: ReturnType<typeof setInterval>;
   private doors = 0;
   private state: 'play' | 'won' | 'lost' = 'play';
@@ -875,12 +878,18 @@ export class Room {
       }
       case 'r': p.reviving = p.pinned ? 0 : m.id | 0; break;
       case 'dbg': if (this.allowDebug && this.state === 'play') this.debugJump(m.step); break;
+      case 'dbgf':
+        if (!this.allowDebug) break;
+        if (m.god !== undefined) this.dbgGod = !!m.god;
+        if (m.calm !== undefined) this.dbgCalm = !!m.calm;
+        break;
       case 'dbgz': {
         if (!this.allowDebug || this.state !== 'play' || !ZTYPES[m.zt | 0] || !Number.isFinite(m.x) || !Number.isFinite(m.z)) break;
         // No y on the wire: it goes on the requesting survivor's storey.
         const L = this.L, tx = cellOf(m.x), tz = cellOf(m.z), lv = L.lvOf(p.node);
         if (L.solidAt(tx, tz, this.doors, lv)) break;
-        this.spawnZombie(m.zt | 0, m.x, L.heightAt(L.node(tx, tz, lv), m.x, m.z), m.z).leapCd = 0.2; // ready to pounce
+        const zb = this.spawnZombie(m.zt | 0, m.x, L.heightAt(L.node(tx, tz, lv), m.x, m.z), m.z);
+        zb.leapCd = 0.2; zb.dbg = true; // ready to pounce; kept by the calm switch
         break;
       }
     }
@@ -1616,7 +1625,7 @@ export class Room {
    * `scaled`: zombie damage: the difficulty multiplier applies and it raises intensity (off for friendly fire).
    */
   private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false, scaled = true): void {
-    if (p.st === PSTATE.DEAD || this.state !== 'play') return;
+    if (p.st === PSTATE.DEAD || this.state !== 'play' || this.dbgGod) return;
     // Intensity reads the damage before difficulty: a softer bite on Easy must not make breathers rarer.
     if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
     if (scaled && this.diff.dmg !== 1) dmg = r2(dmg * this.diff.dmg);
@@ -2976,6 +2985,7 @@ export class Room {
     if (!this.players.size) return;
     this.time += dt;
     if (this.state === 'play') {
+      if (this.dbgCalm) for (const z of [...this.zombies.values()]) if (!z.dbg) this.zombies.delete(z.id);
       for (const p of this.players.values()) this.place(p);
       this.updatePlayers(dt);
       this.updateHazards(dt);

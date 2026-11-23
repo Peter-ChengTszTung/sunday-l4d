@@ -102,6 +102,9 @@ export type ClientMsg =
   | { t: 'dbg'; step: number }
   // Dev-server only: spawn a zombie of type `zt` (ZT) at (x, z) metres, awake.
   | { t: 'dbgz'; zt: number; x: number; z: number }
+  // Dev-server only: test switches for the whole room. `god`: survivors take no damage. `calm`: every
+  // zombie the director makes is removed at once (ones spawned with 'dbgz' stay). Omitted = unchanged.
+  | { t: 'dbgf'; god?: 0 | 1; calm?: 0 | 1 }
   // Launcher grenade impact claim for the oldest grenade this player fired ('f' with a blast weapon).
   // The server checks range and line of sight from where it was fired, then applies the blast.
   | { t: 'g'; x: number; y: number; z: number; n?: number };
