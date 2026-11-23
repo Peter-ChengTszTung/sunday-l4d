@@ -621,13 +621,23 @@ export function build() {
   // ------------------------------------------------------------------
   // 12. The drawbridge (hill line) over the river
   // ------------------------------------------------------------------
-  b.carve(78, 123, 81, 139, F.ASPHALT);
-  rail(80, 117, 80, 150);
-  const bridgeBarrier = b.door(78, 123, 81, 123, 'fence', 'DRAWBRIDGE RAISED');
-  b.label('HILL LINE', 79.9, 131, 14, GOLD, E); b.label('DRAWBRIDGE', 77.2, 120.5, 12, CREAM, 0);
+  // A steel deck one storey up (railings both sides, the river under it), a ramp down onto the pier
+  // and one down onto the dock apron. Mid-span the leaf stands raised across the deck (a 'bridge'
+  // door): the big red button folds it down flat.
+  b.stairs(78, 119, 81, 122, '+z');                                          // north ramp, up from the pier
+  b.stairs(78, 137, 81, 139, '-z');                                          // south ramp, up from the dock apron
   b.prop('barrier', 76, 121, 1, 2);
-  b.lamp(77.5, 124.5); b.lamp(82.5, 137.5);
-  b.arrow(80, 121, S); b.arrow(80, 135, S);
+  b.label('DRAWBRIDGE', 80, 118.2, 14, CREAM, 0);
+  b.arrow(80, 118, S);
+  rail(80, 141, 80, 150);
+  b.level(1);
+  b.carve(78, 123, 81, 136, F.CONCRETE);
+  rail(80, 123, 80, 136);
+  const bridgeBarrier = b.door(78, 129, 81, 130, 'bridge', 'DRAWBRIDGE RAISED');
+  b.label('HILL LINE', 79.9, 133, 14, GOLD, E); b.label('MIND THE GAP', 80, 127.4, 11, RED, 0);
+  b.lamp(78.2, 124); b.lamp(81.8, 124); b.lamp(78.2, 135); b.lamp(81.8, 135);
+  b.arrow(80, 125, S); b.arrow(80, 134, S);
+  b.level(0);
 
   // ------------------------------------------------------------------
   // 13. Dock siding: an open apron with containers on both sides, Bertha (finale)

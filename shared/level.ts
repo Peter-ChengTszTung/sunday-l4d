@@ -73,7 +73,8 @@ export interface Pickup {
   /** obj: the use prompt ("Start the generator"). item: its name ("fuel can"). */ label?: string;
   /** item: collect-step group key. */ group?: string;
 }
-export interface Door extends Rect { id: number; kind: 'shutter' | 'barricade' | 'fence'; label?: string; lv: number }
+export interface Door extends Rect { id: number; /** `bridge`: a drawbridge leaf standing up across an upstairs deck; it folds down flat when opened. */
+  kind: 'shutter' | 'barricade' | 'fence' | 'bridge'; label?: string; lv: number }
 export interface Note { id: number; x: number; z: number; y: number; title: string; text: string }
 export interface Label { text: string; x: number; z: number; size: number; color: string; rot: number; /** Floor height (m). */ y: number }
 export interface Arrow { x: number; z: number; rot: number; /** Floor height (m). */ y: number }

@@ -354,6 +354,14 @@ export function buildWorld(L: Level): World {
       g.fillStyle = '#7a5235'; g.fillRect(0, 0, 128, 128);
       for (let y = 0; y < 128; y += 32) { g.fillStyle = y % 64 ? '#b5894f' : '#a0743f'; g.fillRect(0, y + 3, 128, 26); }
       g.strokeStyle = '#1a1226'; g.lineWidth = 6; g.beginPath(); g.moveTo(8, 8); g.lineTo(120, 120); g.moveTo(120, 8); g.lineTo(8, 120); g.stroke();
+    } else if (kind === 'bridge') {
+      // The underside of a raised drawbridge leaf: steel deck plates, rivet lines, hazard bands top and bottom.
+      g.fillStyle = '#5a6074'; g.fillRect(0, 0, 128, 128);
+      g.strokeStyle = '#3a3f52'; g.lineWidth = 3;
+      for (let x = 0; x <= 128; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); }
+      for (let y = 22; y <= 106; y += 28) { g.beginPath(); g.moveTo(0, y); g.lineTo(128, y); g.stroke(); }
+      g.fillStyle = '#c9ccdc'; for (let x = 8; x < 128; x += 16) for (let y = 30; y < 100; y += 28) g.fillRect(x, y, 3, 3);
+      for (const y0 of [0, 112]) { g.fillStyle = '#f4f4ff'; g.fillRect(0, y0, 128, 16); g.fillStyle = '#e03131'; for (let x = 0; x < 128; x += 32) g.fillRect(x, y0, 16, 16); }
     } else {
       g.fillStyle = '#4a4e66'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#c9ccdc'; g.lineWidth = 3;
       for (let i = -128; i < 256; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 128, 128); g.moveTo(i + 128, 0); g.lineTo(i, 128); g.stroke(); }

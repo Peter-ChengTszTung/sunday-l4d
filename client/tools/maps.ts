@@ -230,7 +230,7 @@ function draw(): void {
   for (const d of def.doors) {
     if ((d.lv ?? 0) !== lv) continue;
     const isOpen = !!(open & (1 << d.id));
-    g.fillStyle = isOpen ? 'rgba(125,220,106,0.55)' : d.kind === 'barricade' ? '#8a5a35' : d.kind === 'fence' ? '#6f7390' : '#ffd43b';
+    g.fillStyle = isOpen ? 'rgba(125,220,106,0.55)' : d.kind === 'barricade' ? '#8a5a35' : d.kind === 'fence' ? '#6f7390' : d.kind === 'bridge' ? '#9aa0b8' : '#ffd43b';
     g.fillRect(d.x0, d.z0, d.x1 - d.x0 + 1, d.z1 - d.z0 + 1);
     g.strokeStyle = '#000'; g.lineWidth = 2 * px; g.strokeRect(d.x0, d.z0, d.x1 - d.x0 + 1, d.z1 - d.z0 + 1);
     if (scale >= 4) { g.fillStyle = '#000'; g.font = `bold ${Math.max(0.6, 11 * px)}px sans-serif`; g.fillText(`D${d.id}`, d.x0 + 0.1, d.z0 + 0.75); }
