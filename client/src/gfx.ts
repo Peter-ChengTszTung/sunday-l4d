@@ -2,7 +2,7 @@
 // built-in toon material, so lighting, banding, fog and ink are done in a few
 // small custom shaders (GLSL, WebGL2). Colours are authored and lit in sRGB.
 import * as pc from 'playcanvas';
-import { type Geo, box, make, merge, inflateBox, inflateSmooth, toMesh, quatXYZ } from './geo';
+import { type Geo, box, make, merge, inflateBox, inflateSmooth, toMesh, quatXYZ, unionHull, trimHulls, trs } from './geo';
 
 export const INK = 0x1a1226;
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -357,27 +357,54 @@ export const whiteTex = new pc.Texture(device, { width: 1, height: 1, format: pc
 export class Batch {
   private solids: Geo[] = [];
   private hulls: Geo[] = [];
+  /** Per hull: the index of the solid it outlines (-1: a group's or a pre-built one). For `trimHulls`. */
+  private owners: number[] = [];
 
   add(g: Geo, color: number, m: pc.Mat4, outline: 'box' | 'smooth' | 'none' = 'box', thickness = 0.03): void {
     this.solids.push(make(g, color, m));
     if (outline === 'box') {
       const s = m.getScale();
       this.hulls.push(make(inflateBox(g, thickness / s.x, thickness / s.y, thickness / s.z), undefined, m));
+      this.owners.push(this.solids.length - 1);
     } else if (outline === 'smooth') {
       this.hulls.push(inflateSmooth(make(g, undefined, m), thickness));
+      this.owners.push(this.solids.length - 1);
     }
+  }
+
+  /**
+   * Item models (guns, close-in weapons, throwables): trim each part's outline where the part ends inside
+   * another (geo.ts `trimHulls`), so it no longer pokes a dark sliver out through that part's sides. Call
+   * before `build`/`take`. Not for the world batches: it compares every part with every other.
+   */
+  trimHulls(): void {
+    const parts = this.solids.map((solid) => ({ solid, hull: null as Geo | null }));
+    this.owners.forEach((o, k) => { if (o >= 0) parts[o].hull = this.hulls[k]; });
+    trimHulls(parts);
+    this.owners.forEach((o, k) => { if (o >= 0) this.hulls[k] = parts[o].hull!; });
+  }
+
+  /**
+   * Axis-aligned boxes [w, h, d, color, x, y, z] that read as one shape (a trigger guard, a finger loop):
+   * each drawn without its own outline, and one `unionHull` outline `thickness` thick round them all.
+   */
+  group(parts: readonly (readonly [number, number, number, number, number, number, number])[], thickness = 0.03): void {
+    const unit = box();
+    for (const [w, h, d, color, x, y, z] of parts) this.solids.push(make(unit, color, trs(x, y, z, 0, 0, 0, w, h, d)));
+    this.hulls.push(unionHull(parts.map(([w, h, d, , x, y, z]) => ({ lo: [x - w / 2, y - h / 2, z - d / 2], hi: [x + w / 2, y + h / 2, z + d / 2] })), thickness));
+    this.owners.push(-1);
   }
 
   /** Pre-built world-space geometry: `solid` is toon shaded, `hull` (already inflated, outward winding) is drawn as ink. */
   raw(solid: Geo | null, hull?: Geo): void {
     if (solid && solid.idx.length) this.solids.push(solid);
-    if (hull && hull.idx.length) this.hulls.push(hull);
+    if (hull && hull.idx.length) { this.hulls.push(hull); this.owners.push(-1); }
   }
 
   /** Hands over the collected geometry (toon solids, ink hulls) and empties the batch. */
   take(): { solids: Geo[]; hulls: Geo[] } {
     const out = { solids: this.solids, hulls: this.hulls };
-    this.solids = []; this.hulls = [];
+    this.solids = []; this.hulls = []; this.owners = [];
     return out;
   }
 

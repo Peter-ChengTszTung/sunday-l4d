@@ -17,7 +17,8 @@ const INK = 0.012;
 /** Shared trim colours. */
 const DARK = 0x54506e, SOOT = 0x2b2540, PAD = 0x3d3955, GOLD = 0xffe066, BRASS = 0xf0b429, STEEL = 0xc3bdd8, WOOD = 0x8a5a3c;
 /** Shotgun pump: a separate part so the first-person rig can rack it. */
-const PUMP = { w: 0.1, h: 0.075, d: 0.2, color: 0x8a5a3c, t: 0.012, x: 0, y: 0.01, z: -0.36 };
+// Wider than the body's outline (0.085 + 2 x INK): narrower, the body's ink showed as a line along its sides.
+const PUMP = { w: 0.112, h: 0.075, d: 0.2, color: 0x8a5a3c, t: 0.012, x: 0, y: 0.01, z: -0.36 };
 /** How far past the barrel's front face the muzzle point (flash, tracer origin) sits, in gun units. */
 const MUZZLE_GAP = 0.02;
 /**
@@ -36,6 +37,11 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
     b.add(cube, color, trs(x, y, z, rx, 0, 0, w, h, d), 'box', INK);
     lx = x; ly = y; lz = z; ld = d;
   };
+  /**
+   * Same-colour boxes [w, h, d, color, x, y, z] that read as one piece (a trigger guard, a finger loop): one
+   * outline round them all. Each with its own drew a dark line across the next where they join flush.
+   */
+  const group = (...parts: [number, number, number, number, number, number, number][]) => b.group(parts, INK);
   /** Round part: radius r, length len, along Z (barrels, scopes), X (drums) or Y (posts). */
   const tube = (r: number, len: number, color: number, x: number, y: number, z: number, axis: 'z' | 'x' | 'y' = 'z') => {
     b.add(cyl, color, trs(x, y, z, axis === 'z' ? Math.PI / 2 : 0, 0, axis === 'x' ? Math.PI / 2 : 0, r, len, r), 'smooth', INK);
@@ -56,8 +62,7 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
     b.add(orb, color, trs(x, y, z, 0, 0, 0, rx, ry, rz), 'smooth', INK);
   /** Trigger guard and trigger hanging under the body: `z` is the trigger, `y` the underside it hangs from. */
   const trigger = (z: number, y: number, guard = DARK, blade = GOLD) => {
-    part(0.024, 0.012, 0.1, guard, 0, y - 0.055, z - 0.01);
-    part(0.024, 0.055, 0.012, guard, 0, y - 0.027, z - 0.055);
+    group([0.024, 0.012, 0.1, guard, 0, y - 0.055, z - 0.01], [0.024, 0.055, 0.012, guard, 0, y - 0.027, z - 0.055]);
     deco(0.014, 0.036, 0.012, blade, 0, y - 0.02, z, 0.3);
   };
   let muzzle: P3 = [0, 0, 0];
@@ -86,9 +91,8 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       part(0.045, 0.045, 0.16, DARK, 0, 0.065, -0.42); tip();
       part(0.06, 0.08, 0.16, DARK, 0, 0.05, 0.15);
       // Top rail with sights, cooling slots, charging knob, muzzle ring.
-      part(0.03, 0.02, 0.3, DARK, 0, 0.125, -0.14);
       part(0.02, 0.04, 0.02, GOLD, 0, 0.15, -0.27);
-      part(0.045, 0.03, 0.02, DARK, 0, 0.145, 0.0);
+      group([0.03, 0.02, 0.3, DARK, 0, 0.125, -0.14], [0.045, 0.03, 0.02, DARK, 0, 0.145, 0.0]); // rail and rear sight block
       for (const z of [-0.31, -0.265, -0.22]) deco(0.084, 0.035, 0.022, 0x2f9c92, 0, 0.075, z);
       deco(0.083, 0.012, 0.2, 0xb8f2ea, 0, 0.025, -0.1);
       part(0.03, 0.02, 0.03, GOLD, -0.05, 0.09, -0.1);
@@ -187,9 +191,8 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       tube(0.016, 0.03, GOLD, -0.045, 0.165, -0.24, 'x');
       // Bolt knob, wooden fore-end with a folded bipod, barrel ring.
       ball(0xff8fab, 0.115, 0.085, 0.0, 0.02);
-      part(0.065, 0.06, 0.16, WOOD, 0, 0.04, -0.43);
-      part(0.06, 0.025, 0.03, DARK, 0, 0.04, -0.525);
-      for (const x of [-0.024, 0.024]) part(0.012, 0.012, 0.22, DARK, x, 0.035, -0.64);
+      part(0.065, 0.06, 0.16, WOOD, 0, 0.038, -0.43); // a hair under the body: a shared underside flickered
+      group([0.06, 0.025, 0.03, DARK, 0, 0.04, -0.525], [0.012, 0.012, 0.22, DARK, -0.024, 0.035, -0.64], [0.012, 0.012, 0.22, DARK, 0.024, 0.035, -0.64]); // bipod
       tube(0.03, 0.02, 0xff8fab, 0, 0.075, -0.87);
       // Body: box magazine, pale stripe, trigger, cheek rest, butt pad.
       part(0.05, 0.07, 0.1, DARK, 0, -0.02, -0.2);
@@ -206,11 +209,10 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       tube(0.058, 0.012, SOOT, 0, 0.1, -0.5); tip();
       part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.04, 0.25);
       part(0.05, 0.13, 0.06, DARK, 0, -0.01, -0.27, -0.2);
-      part(0.03, 0.07, 0.03, GOLD, 0, 0.215, -0.32);
       part(0.07, 0.08, 0.08, 0xae3ec9, 0, 0.06, 0.08);
       // Middle band, ladder sight crossbars, rear sight.
       tube(0.086, 0.03, 0xae3ec9, 0, 0.1, -0.25);
-      part(0.055, 0.012, 0.012, GOLD, 0, 0.245, -0.32);
+      group([0.03, 0.07, 0.03, GOLD, 0, 0.215, -0.32], [0.055, 0.012, 0.012, GOLD, 0, 0.245, -0.32]); // sight post and crossbar
       deco(0.045, 0.01, 0.034, DARK, 0, 0.215, -0.32);
       part(0.04, 0.03, 0.015, DARK, 0, 0.19, -0.06);
       // A shell seated in the breech.
@@ -264,16 +266,14 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       part(0.04, 0.055, 0.17, 0x63e6be, 0, 0.03, 0.0);
       part(0.09, 0.03, 0.03, GOLD, 0, 0.03, -0.1);
       part(0.016, 0.1, 0.5, STEEL, 0, 0.045, -0.36); tip();
-      part(0.018, 0.03, 0.5, 0xffffff, 0, -0.01, -0.36);
+      part(0.018, 0.03, 0.504, 0xffffff, 0, -0.01, -0.36); // a hair longer than the blade: flush ends flickered
       // Shear pivot bolt, a groove down the blade.
       tube(0.022, 0.03, GOLD, 0, 0.045, -0.15, 'x');
       stud(0.01, 0.034, DARK, 0, 0.045, -0.15, 'x');
       deco(0.02, 0.012, 0.36, 0x9a94b5, 0, 0.07, -0.4);
       // Handle: grip grooves, a finger loop underneath, pommel.
       for (const z of [-0.04, 0.0, 0.04]) deco(0.044, 0.059, 0.012, 0x38d9a9, 0, 0.03, z);
-      part(0.03, 0.015, 0.11, 0x38d9a9, 0, -0.045, 0.0);
-      part(0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, -0.05);
-      part(0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, 0.05);
+      group([0.03, 0.015, 0.11, 0x38d9a9, 0, -0.045, 0.0], [0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, -0.05], [0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, 0.05]);
       part(0.046, 0.062, 0.02, GOLD, 0, 0.03, 0.09);
       break;
     case 'axe': // Big Chop: fire axe, red head with a silver edge.
@@ -284,7 +284,7 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       part(0.04, 0.07, 0.1, DARK, 0, 0.065, -0.5);
       // Head: collar round the haft, white stripe, rivets.
       tube(0.031, 0.13, 0xc94f4f, 0, 0.03, -0.5);
-      deco(0.038, 0.022, 0.16, 0xfff5f5, 0, -0.105, -0.5);
+      deco(0.038, 0.022, 0.164, 0xfff5f5, 0, -0.105, -0.5); // a hair longer than the head: flush ends flickered
       for (const z of [-0.545, -0.455]) stud(0.012, 0.04, GOLD, 0, -0.04, z, 'x');
       // Haft: taped grip between two yellow rings, red end knob.
       tube(0.027, 0.14, DARK, 0, 0.03, -0.01);
@@ -325,6 +325,7 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       deco(0.02, 0.02, 0.012, 0xff922b, 0, 0.05, -0.252);
       break;
   }
+  b.trimHulls(); // no outline slivers where one part ends inside another
   return { b, muzzle, pump };
 }
 

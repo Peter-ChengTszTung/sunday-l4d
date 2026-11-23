@@ -1,6 +1,6 @@
 // Pickup models: supplies (medkit, vest, ammo), the small medical items and the quest items. Pure
 // geometry, so the world (world.ts) and the guide page (tools/guide.ts) draw the very same models.
-import { type Geo, box, cylinder, make, merge, inflateBox, inflateSmooth, insideOut, trs } from './geo';
+import { type Geo, box, cylinder, make, merge, inflateBox, inflateSmooth, insideOut, trs, unionHull, trimHulls } from './geo';
 
 const cube = box();
 /** Ink for hull geometry drawn by the lit toon material (a touch darker than INK, since lights add to it). */
@@ -10,19 +10,39 @@ export const INK_LIT = 0x150f1f;
 // ink hull wound inside-out and coloured ink, so a single back-face-culled toon draw shows both.
 export type BoxPart = [w: number, h: number, d: number, color: number, x?: number, y?: number, z?: number, ink?: number];
 const inkModel = (parts: BoxPart[], extra: Geo[] = []): Geo => inkGeo(parts, extra);
+/** Each single part's hull → that part (for `trimHulls`). Group hulls (`inkGroup`) have none. */
+const hullOf = new WeakMap<Geo, Geo>();
 export function inkGeo(parts: BoxPart[], extra: Geo[] = []): Geo {
   const list: Geo[] = [...extra];
   for (const [w, h, d, color, x = 0, y = 0, z = 0, t = 0.03] of parts) {
-    const m = trs(x, y, z, 0, 0, 0, w, h, d);
-    list.push(make(cube, color, m));
-    if (t > 0) list.push(insideOut(make(inflateBox(cube, t / w, t / h, t / d), INK_LIT, m)));
+    const m = trs(x, y, z, 0, 0, 0, w, h, d), solid = make(cube, color, m);
+    list.push(solid);
+    if (t > 0) { const hull = insideOut(make(inflateBox(cube, t / w, t / h, t / d), INK_LIT, m)); hullOf.set(hull, solid); list.push(hull); }
   }
-  return merge(list);
+  // No outline floating in front of another part (geo.ts trimHulls): pair each part with its own hull.
+  const hulls = new Set(list.filter((g) => hullOf.has(g) || isInk(g)));
+  const solids = list.filter((g) => !hulls.has(g));
+  const pairs = solids.map((solid) => ({ solid, hull: null as Geo | null }));
+  for (const h of hulls) { const own = hullOf.get(h); const k = own ? solids.indexOf(own) : -1; if (k >= 0) pairs[k].hull = h; }
+  trimHulls(pairs);
+  return merge([...pairs.map((p) => p.solid), ...pairs.flatMap((p) => (p.hull ? [p.hull] : [])), ...[...hulls].filter((h) => !hullOf.has(h) || solids.indexOf(hullOf.get(h)!) < 0)]);
 }
+const isInk = (g: Geo): boolean => g.col.length > 0 && Math.abs(g.col[0] - 0x15 / 255) < 1e-4 && Math.abs(g.col[1] - 0x0f / 255) < 1e-4 && Math.abs(g.col[2] - 0x1f / 255) < 1e-4;
+/**
+ * Axis-aligned boxes that read as one shape (a cross, a handle), drawn without their own hulls, plus one
+ * ink hull round them all (geo.ts `unionHull`): a hull per box drew dark strips across its flush neighbours.
+ */
+const inkGroup = (parts: BoxPart[], t: number): Geo[] => [
+  ...parts.map(([w, h, d, c, x = 0, y = 0, z = 0]) => make(cube, c, trs(x, y, z, 0, 0, 0, w, h, d))),
+  insideOut(make(unionHull(parts.map(([w, h, d, , x = 0, y = 0, z = 0]) => ({ lo: [x - w / 2, y - h / 2, z - d / 2], hi: [x + w / 2, y + h / 2, z + d / 2] })), t), INK_LIT)),
+];
 /** Round pickup part (cylinder along Y: radius r, height h) with its ink hull; `rTop` < 1 tapers it (0 = cone). */
 const round = (r: number, h: number, color: number, x: number, y: number, z: number, rTop = 1, t = 0.025): Geo[] => {
   const g = make(cylinder(10, rTop), color, trs(x, y, z, 0, 0, 0, r, h, r));
-  return t > 0 ? [g, insideOut(inflateSmooth(make(g, INK_LIT), t))] : [g];
+  if (t <= 0) return [g];
+  const hull = insideOut(inflateSmooth(make(g, INK_LIT), t));
+  hullOf.set(hull, g);
+  return [g, hull];
 };
 /** Flat trim box turned by `rz` about Z (no ink): embossing and diagonal marks. */
 const slash = (w: number, h: number, d: number, color: number, x: number, y: number, rz: number): Geo => make(cube, color, trs(x, y, 0, 0, 0, rz, w, h, d));
@@ -38,8 +58,7 @@ const FLOAT: Record<string, () => Geo> = {
     [0.55, 0.38, 0.28, 0xfff5f5], [0.3, 0.09, 0.3, 0xff4d6d, 0, -0.03, 0, 0], [0.09, 0.3, 0.3, 0xff4d6d, 0, -0.03, 0, 0],
     [0.56, 0.018, 0.29, 0xcfc8d8, 0, 0.14, 0, 0], [0.56, 0.054, 0.29, 0xff4d6d, 0, -0.165, 0, 0],
     [0.06, 0.07, 0.31, 0xffd43b, -0.19, 0.14, 0, 0], [0.06, 0.07, 0.31, 0xffd43b, 0.19, 0.14, 0, 0],
-    [0.05, 0.07, 0.06, 0x54506e, -0.1, 0.22, 0, 0.02], [0.05, 0.07, 0.06, 0x54506e, 0.1, 0.22, 0, 0.02], [0.26, 0.045, 0.07, 0x54506e, 0, 0.27, 0, 0.02],
-  ]),
+  ], inkGroup([[0.05, 0.07, 0.06, 0x54506e, -0.1, 0.22, 0], [0.05, 0.07, 0.06, 0x54506e, 0.1, 0.22, 0], [0.26, 0.045, 0.07, 0x54506e, 0, 0.27, 0]], 0.02)), // the handle, one outline
   // Pillow Vest: a plump pillow with two straps, shoulder pads, a buckled belt, a heart patch and tufting buttons.
   armor: () => inkModel([
     [0.5, 0.56, 0.2, 0xf6f2ff], [0.08, 0.6, 0.22, 0x74c0fc, -0.14, 0, 0, 0], [0.08, 0.6, 0.22, 0x74c0fc, 0.14, 0, 0, 0], [0.52, 0.07, 0.23, 0x4a78c2, 0, -0.08, 0, 0], // belt a hair deeper than the straps: same depth z-fought where they cross
@@ -100,26 +119,24 @@ const FLOAT: Record<string, () => Geo> = {
   ], [...round(0.04, 0.09, 0xff6b6b, -0.11, 0.25, -0.08), ...round(0.04, 0.09, 0x2b2540, 0.11, 0.25, -0.08)]),
 };
 // Small medical items: each floats under a green cross, so they read as "health" from across a room.
-const SIGN: BoxPart[] = [[0.17, 0.055, 0.055, 0x51cf66, 0, 0.44, 0, 0.018], [0.055, 0.17, 0.055, 0x51cf66, 0, 0.44, 0, 0.018]];
+// One outline round the whole cross (inkGroup): a hull per bar drew dark strips across the other bar.
+const SIGN = (): Geo[] => inkGroup([[0.17, 0.055, 0.055, 0x51cf66, 0, 0.44, 0], [0.055, 0.17, 0.055, 0x51cf66, 0, 0.44, 0]], 0.018);
 // Boo-Boo Plaster: a tin of plasters with one printed on the lid and a loose one stuck across the corner.
 FLOAT.plaster = () => inkModel([
-  [0.4, 0.26, 0.16, 0xfff5f5], [0.41, 0.05, 0.17, 0x63e6be, 0, 0.105, 0, 0], [0.41, 0.03, 0.17, 0x63e6be, 0, -0.115, 0, 0],
-  [0.26, 0.085, 0.175, 0xffc9a3, 0, -0.015, 0, 0], [0.085, 0.085, 0.18, 0xffe8d6, 0, -0.015, 0, 0],
+  [0.4, 0.26, 0.16, 0xfff5f5], [0.41, 0.054, 0.17, 0x63e6be, 0, 0.105, 0, 0], [0.41, 0.034, 0.17, 0x63e6be, 0, -0.115, 0, 0],
+  [0.26, 0.085, 0.175, 0xffc9a3, 0, -0.015, 0, 0], [0.085, 0.09, 0.18, 0xffe8d6, 0, -0.015, 0, 0],
   [0.02, 0.02, 0.183, 0xe8a87c, -0.09, -0.015, 0, 0], [0.02, 0.02, 0.183, 0xe8a87c, 0.09, -0.015, 0, 0],
-  ...SIGN,
-], [slash(0.2, 0.06, 0.02, 0xffc9a3, 0.16, 0.12, -0.6), slash(0.06, 0.062, 0.022, 0xffe8d6, 0.16, 0.12, -0.6)]);
+], [slash(0.2, 0.06, 0.02, 0xffc9a3, 0.16, 0.12, -0.6), slash(0.06, 0.062, 0.022, 0xffe8d6, 0.16, 0.12, -0.6), ...SIGN()]);
 // Gummy Vitamins: an orange jar with a white cap and label, three gummies stuck to it.
 FLOAT.vitamins = () => inkModel([
   [0.07, 0.07, 0.03, 0xff6b6b, -0.07, -0.03, 0.135, 0], [0.07, 0.07, 0.03, 0xffd43b, 0.0, -0.03, 0.14, 0], [0.07, 0.07, 0.03, 0x51cf66, 0.07, -0.03, 0.135, 0],
   [0.07, 0.07, 0.03, 0xff6b6b, 0.07, -0.03, -0.135, 0], [0.07, 0.07, 0.03, 0xffd43b, 0.0, -0.03, -0.14, 0], [0.07, 0.07, 0.03, 0x51cf66, -0.07, -0.03, -0.135, 0],
-  ...SIGN,
-], [...round(0.14, 0.3, 0xffa94d, 0, -0.03, 0), ...round(0.144, 0.14, 0xfff5f5, 0, -0.03, 0, 1, 0), ...round(0.11, 0.05, 0xffa94d, 0, 0.145, 0, 1, 0), ...round(0.15, 0.08, 0xfff5f5, 0, 0.2, 0)]);
+], [...SIGN(), ...round(0.14, 0.3, 0xffa94d, 0, -0.03, 0), ...round(0.144, 0.14, 0xfff5f5, 0, -0.03, 0, 1, 0), ...round(0.11, 0.05, 0xffa94d, 0, 0.145, 0, 1, 0), ...round(0.15, 0.08, 0xfff5f5, 0, 0.2, 0)]);
 // Hot Cocoa: a pink mug, cocoa to the brim, two marshmallows, a handle.
 FLOAT.cocoa = () => inkModel([
-  [0.05, 0.045, 0.06, 0xff8fab, 0.2, 0.07, 0, 0.02], [0.05, 0.045, 0.06, 0xff8fab, 0.2, -0.09, 0, 0.02], [0.045, 0.2, 0.06, 0xff8fab, 0.235, -0.01, 0, 0.02],
   [0.07, 0.05, 0.07, 0xfff5f5, -0.04, 0.165, 0.02, 0.015], [0.06, 0.05, 0.06, 0xfff5f5, 0.05, 0.16, -0.04, 0.015],
-  ...SIGN,
-], [...round(0.17, 0.3, 0xff8fab, 0, -0.01, 0), ...round(0.176, 0.035, 0xfff5f5, 0, 0.125, 0, 1, 0), ...round(0.174, 0.03, 0xffc2d1, 0, -0.06, 0, 1, 0), ...round(0.145, 0.012, 0x7a4a3a, 0, 0.142, 0, 1, 0)]);
+], [...SIGN(), ...inkGroup([[0.05, 0.045, 0.06, 0xff8fab, 0.2, 0.07, 0], [0.05, 0.045, 0.06, 0xff8fab, 0.2, -0.09, 0], [0.045, 0.2, 0.06, 0xff8fab, 0.235, -0.01, 0]], 0.02), // the handle, one outline
+  ...round(0.17, 0.3, 0xff8fab, 0, -0.01, 0), ...round(0.176, 0.035, 0xfff5f5, 0, 0.125, 0, 1, 0), ...round(0.174, 0.03, 0xffc2d1, 0, -0.06, 0, 1, 0), ...round(0.145, 0.012, 0x7a4a3a, 0, 0.142, 0, 1, 0)]);
 
 const geoCache = new Map<string, Geo>();
 /** Geometry of the pickup model `key` (a supply or medical item kind, or a quest item look); unknown keys get the spare part. */

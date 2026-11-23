@@ -181,6 +181,178 @@ export function inflateSmooth(g: Geo, t: number): Geo {
   return g;
 }
 
+/**
+ * One closed outline shell round several axis-aligned boxes (`lo`/`hi` corners), each grown by `t`: the
+ * outer surface of their union, with no walls inside it. Outward winding, no colour. A hull per box
+ * would be `t` bigger than the boxes, so where one box meets a flush neighbour its hull's walls stand
+ * proud of the neighbour's face as a dark line across what should read as one shape (a trigger guard,
+ * a cross, a handle). Built on the grid of the grown boxes' faces: a cell is filled when a box covers it,
+ * and a face is laid wherever a filled cell meets an empty one.
+ */
+export function unionHull(boxes: { lo: number[]; hi: number[] }[], t: number): Geo {
+  const g = empty();
+  const grown = boxes.map((b) => ({ lo: b.lo.map((v) => v - t), hi: b.hi.map((v) => v + t) }));
+  const axes = [0, 1, 2].map((a) => [...new Set(grown.flatMap((b) => [b.lo[a], b.hi[a]]))].sort((p, q) => p - q));
+  const [X, Y, Z] = axes, nx = X.length - 1, ny = Y.length - 1, nz = Z.length - 1;
+  const filled = new Uint8Array(Math.max(0, nx * ny * nz));
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    const c = [(X[i] + X[i + 1]) / 2, (Y[j] + Y[j + 1]) / 2, (Z[k] + Z[k + 1]) / 2];
+    if (grown.some((b) => b.lo.every((v, a) => v < c[a]) && b.hi.every((v, a) => c[a] < v))) filled[(i * ny + j) * nz + k] = 1;
+  }
+  const at = (i: number, j: number, k: number) => i >= 0 && j >= 0 && k >= 0 && i < nx && j < ny && k < nz && filled[(i * ny + j) * nz + k] === 1;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    if (!at(i, j, k)) continue;
+    const lo = [X[i], Y[j], Z[k]], hi = [X[i + 1], Y[j + 1], Z[k + 1]], cell = [i, j, k];
+    for (let a = 0; a < 3; a++) for (const s of [-1, 1]) {
+      const nb = cell.slice(); nb[a] += s;
+      if (at(nb[0], nb[1], nb[2])) continue;
+      // The quad on side s of axis a, wound counter-clockwise seen from outside (along +n).
+      const u = (a + 1) % 3, v = (a + 2) % 3, w = s > 0 ? hi[a] : lo[a];
+      const corner = (cu: number, cv: number) => { const p = [0, 0, 0]; p[a] = w; p[u] = cu; p[v] = cv; return p; };
+      const q = s > 0 ? [corner(lo[u], lo[v]), corner(hi[u], lo[v]), corner(hi[u], hi[v]), corner(lo[u], hi[v])]
+        : [corner(lo[u], lo[v]), corner(lo[u], hi[v]), corner(hi[u], hi[v]), corner(hi[u], lo[v])];
+      const b = g.pos.length / 3, n = [0, 0, 0]; n[a] = s;
+      for (const p of q) { g.pos.push(p[0], p[1], p[2]); g.nor.push(n[0], n[1], n[2]); g.uv.push(0, 0); }
+      g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+  }
+  return g;
+}
+
+interface Face { n: number[]; d: number; poly: number[][] }
+const dot3 = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+/** Flat sides of a convex mesh, outward, each with its outline as an ordered polygon; null when not convex. */
+function facesOf(g: Geo): Face[] | null {
+  const P: number[][] = [];
+  for (let i = 0; i < g.pos.length; i += 3) P.push([g.pos[i], g.pos[i + 1], g.pos[i + 2]]);
+  if (!P.length) return null;
+  const c = [0, 1, 2].map((a) => P.reduce((s, p) => s + p[a], 0) / P.length);
+  const groups: { n: number[]; d: number; pts: number[][] }[] = [];
+  for (let i = 0; i < g.idx.length; i += 3) {
+    const a = P[g.idx[i]], b = P[g.idx[i + 1]], q = P[g.idx[i + 2]];
+    let n = cross3([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [q[0] - a[0], q[1] - a[1], q[2] - a[2]]);
+    const l = Math.hypot(n[0], n[1], n[2]); if (l < 1e-12) continue;
+    n = n.map((x) => x / l);
+    let d = dot3(n, a);
+    if (dot3(n, c) > d) { n = n.map((x) => -x); d = -d; }
+    let f = groups.find((f) => dot3(f.n, n) > 1 - 1e-6 && Math.abs(f.d - d) < 1e-6);
+    if (!f) groups.push(f = { n, d, pts: [] });
+    f.pts.push(a, b, q);
+  }
+  for (const p of P) for (const f of groups) if (dot3(f.n, p) - f.d > 1e-5) return null;
+  return groups.map((f) => {
+    // Order the side's corners round it (a convex hull in the side's own plane, counter-clockwise about n).
+    const u0 = Math.abs(f.n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], u = cross3(f.n, u0), ul = Math.hypot(u[0], u[1], u[2]);
+    const U = u.map((x) => x / ul), V = cross3(f.n, U);
+    const pts = f.pts.map((p) => ({ p, x: dot3(p, U), y: dot3(p, V) })).sort((a, b) => a.x - b.x || a.y - b.y);
+    const cr = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lo: typeof pts = [], hi: typeof pts = [];
+    for (const q of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 1e-14) lo.pop(); lo.push(q); }
+    for (let i = pts.length - 1; i >= 0; i--) { const q = pts[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], q) <= 1e-14) hi.pop(); hi.push(q); }
+    return { n: f.n, d: f.d, poly: lo.slice(0, -1).concat(hi.slice(0, -1)).map((q) => q.p) };
+  });
+}
+/**
+ * `g` with the part inside the convex region `R` (planes n·p <= d, all of them) cut away; triangles across
+ * its boundary are split. No cap: the hole is left open.
+ */
+function cutAway(g: Geo, R: { n: number[]; d: number }[]): Geo {
+  const out: Geo = { pos: [], nor: [], col: [], uv: [], idx: [] };
+  const hasN = g.nor.length > 0, hasC = g.col.length > 0, hasU = g.uv.length > 0;
+  interface V { p: number[]; n: number[]; c: number[]; u: number[] }
+  const vert = (i: number): V => ({
+    p: [g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]], n: hasN ? [g.nor[i * 3], g.nor[i * 3 + 1], g.nor[i * 3 + 2]] : [],
+    c: hasC ? [g.col[i * 3], g.col[i * 3 + 1], g.col[i * 3 + 2]] : [], u: hasU ? [g.uv[i * 2], g.uv[i * 2 + 1]] : [],
+  });
+  const lerp = (a: V, b: V, t: number): V => {
+    const m = (x: number[], y: number[]) => x.map((v, k) => v + (y[k] - v) * t);
+    return { p: m(a.p, b.p), n: m(a.n, b.n), c: m(a.c, b.c), u: m(a.u, b.u) };
+  };
+  const emit = (poly: V[]) => {
+    if (poly.length < 3) return;
+    const b = out.pos.length / 3;
+    for (const v of poly) { out.pos.push(...v.p); if (hasN) out.nor.push(...v.n); if (hasC) out.col.push(...v.c); if (hasU) out.uv.push(...v.u); }
+    for (let k = 1; k + 1 < poly.length; k++) out.idx.push(b, b + k, b + k + 1);
+  };
+  /** Split a convex polygon by plane: [the part outside (n·p > d), the part inside]. */
+  const split = (poly: V[], n: number[], d: number): [V[], V[]] => {
+    const o: V[] = [], i: V[] = [];
+    for (let k = 0; k < poly.length; k++) {
+      const a = poly[k], b = poly[(k + 1) % poly.length], sa = dot3(n, a.p) - d, sb = dot3(n, b.p) - d;
+      if (sa > 0) o.push(a); else i.push(a);
+      if ((sa > 0) !== (sb > 0)) { const x = lerp(a, b, sa / (sa - sb)); o.push(x); i.push(x); }
+    }
+    return [o, i];
+  };
+  for (let t = 0; t < g.idx.length; t += 3) {
+    let rest: V[] = [vert(g.idx[t]), vert(g.idx[t + 1]), vert(g.idx[t + 2])];
+    // Wholly outside one of the planes: untouched.
+    if (R.some((h) => rest.every((v) => dot3(h.n, v.p) - h.d > 0))) { emit(rest); continue; }
+    for (const h of R) {
+      const [o, i] = split(rest, h.n, h.d);
+      emit(o);
+      rest = i;
+      if (rest.length < 3) break;
+    }
+    // Whatever is left lies inside R: dropped.
+  }
+  return out;
+}
+/**
+ * Item models: remove outline that floats in front of another part. Each part's ink hull is `t` bigger
+ * than the part, so wherever the part sits behind, flush with or just under another part's face
+ * (a grip pushed into a slide, a stock butted onto a receiver, a body behind a drum's rim, two bars of
+ * one cross) its hull pokes out in front of that face as a dark line across it. The part never comes
+ * out through that face, so its outline has no business there: the hull is cut away over the face's
+ * footprint, from a hair inside it outwards. Outlines round a part that does come out through a face
+ * (the contact line round a grip under a slide) are kept. `parts` pairs each solid with its hull (null:
+ * none, or a hull of several parts); hulls are replaced in place. Convex solids only.
+ */
+export function trimHulls(parts: { solid: Geo; hull: Geo | null }[], eps = 0.0005): void {
+  const bounds = (pos: number[]) => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < pos.length; i++) { const a = i % 3; lo[a] = Math.min(lo[a], pos[i]); hi[a] = Math.max(hi[a], pos[i]); }
+    return { lo, hi };
+  };
+  const apart = (a: { lo: number[]; hi: number[] }, b: { lo: number[]; hi: number[] }) => [0, 1, 2].some((k) => a.hi[k] < b.lo[k] - 1e-4 || b.hi[k] < a.lo[k] - 1e-4);
+  const info = parts.map((p) => {
+    const P: number[][] = []; for (let i = 0; i < p.solid.pos.length; i += 3) P.push([p.solid.pos[i], p.solid.pos[i + 1], p.solid.pos[i + 2]]);
+    return { verts: P, box: bounds(p.solid.pos), faces: null as Face[] | null, done: false };
+  });
+  const facesFor = (k: number) => { const f = info[k]; if (!f.done) { f.faces = facesOf(parts[k].solid); f.done = true; } return f.faces; };
+  parts.forEach((A, ia) => {
+    if (!A.hull) return;
+    const hullBox = bounds(A.hull.pos);
+    info.forEach((b, ib) => {
+      // Only parts the hull actually reaches.
+      if (ib === ia || apart(hullBox, b.box)) return;
+      const faces = facesFor(ib);
+      if (!faces) return;
+      for (const F of faces) {
+        if (F.poly.length < 3) continue;
+        if (apart(hullBox, bounds(F.poly.flat()))) continue;
+        // A never comes out through F...
+        if (Math.max(...info[ia].verts.map((v) => dot3(F.n, v))) > F.d + 1e-5) continue;
+        // ...but its hull does.
+        let top = -Infinity; for (let i = 0; i < A.hull!.pos.length; i += 3) top = Math.max(top, dot3(F.n, [A.hull!.pos[i], A.hull!.pos[i + 1], A.hull!.pos[i + 2]]));
+        if (top <= F.d + 1e-5) continue;
+        // The slab over F's footprint, from a hair inside F to past the hull.
+        const R = [{ n: F.n.map((x) => -x), d: -(F.d - eps) }, { n: F.n, d: top + 1e-3 }];
+        for (let k = 0; k < F.poly.length; k++) {
+          const p = F.poly[k], q = F.poly[(k + 1) % F.poly.length];
+          let m = cross3([q[0] - p[0], q[1] - p[1], q[2] - p[2]], F.n); const l = Math.hypot(m[0], m[1], m[2]); if (l < 1e-12) continue;
+          m = m.map((x) => x / l);
+          const c = F.poly.reduce((s, v) => [s[0] + v[0] / F.poly.length, s[1] + v[1] / F.poly.length, s[2] + v[2] / F.poly.length], [0, 0, 0]);
+          if (dot3(m, c) > dot3(m, p)) m = m.map((x) => -x); // pointing out of the face
+          R.push({ n: m, d: dot3(m, p) });
+        }
+        A.hull = cutAway(A.hull!, R);
+      }
+    });
+  });
+}
+
 /** Turn `g` inside-out (in place): reversed winding and normals, so back-face culling shows its far side. */
 export function insideOut(g: Geo): Geo {
   for (let i = 0; i < g.idx.length; i += 3) { const t = g.idx[i]; g.idx[i] = g.idx[i + 1]; g.idx[i + 1] = t; }
