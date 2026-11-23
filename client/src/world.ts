@@ -2,7 +2,7 @@
 // root entity so a chapter change can tear the whole world down.
 import * as pc from 'playcanvas';
 import { TILE, CEIL_H, STOREY, WEAPONS } from '../../shared/constants';
-import { F, hash2, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
+import { F, hash2, isIndoor, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
 import { type Geo, box, sphere, cylinder, ring, make, merge, trs, toMesh } from './geo';
 import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
 import { worldGun } from './viewmodel';
@@ -303,7 +303,16 @@ export function buildWorld(L: Level): World {
         const c = col ?? 0xc9a8ff;
         if (p.w === p.d) {
           // Upright storage tank: body, a cream band, a shallow dome and a ladder.
-          const R = wid / 2 - 0.2, H = Math.min(9, 2 + wid);
+          // Under a ceiling (an indoor floor, or a storey built over it) the tank stops below it, dome
+          // included, or it pokes up through the slab into the room above (the Hush Works vats into the labs).
+          const lv = p.lv ?? 0;
+          let covered = false;
+          for (let z = p.z; z < p.z + p.d && !covered; z++) for (let x = p.x; x < p.x + p.w && !covered; x++) {
+            const f = floorOf(x, z, lv);
+            if (f === F.NONE) continue; // off the map
+            covered = isIndoor(f) || (lv + 1 < def.levels && !def.air[(lv + 1) * WH + z * W + x]);
+          }
+          const R = wid / 2 - 0.2, H = covered ? Math.min(9, 2 + wid, CEIL_H - 0.15 - R * 0.3) : Math.min(9, 2 + wid);
           b.add(cyl, c, at(trs(0, H / 2, 0, 0, 0, 0, R, H, R)), 'smooth');
           b.add(cyl, 0xfff1e6, at(trs(0, H * 0.55, 0, 0, 0, 0, R + 0.04, H * 0.16, R + 0.04)), 'smooth');
           b.add(ball, c, at(trs(0, H, 0, 0, 0, 0, R, R * 0.3, R)), 'smooth');
