@@ -138,5 +138,7 @@ export default {
   "TRANSIT DEPOT": "公車總站",
   "SHUTTLE No. 4": "四號接駁車",
   "ST. MARIGOLD": "聖金盞花",
-  "MAINTENANCE BAY": "維修區"
+  "MAINTENANCE BAY": "維修區",
+  "COUNCIL LANE": "議會巷",
+  "BELL ST": "鐘街",
 } satisfies Record<string, string>;

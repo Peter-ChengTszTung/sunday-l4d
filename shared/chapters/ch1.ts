@@ -238,8 +238,12 @@ export function build() {
   b.arrow(89, 135.5, E); b.arrow(104.5, 143.5, S); b.arrow(118, 151.5, E);
   // Council Lane: optional dead-end side street off the square.
   b.carve(70, 150, 86, 155, F.ASPHALT);
-  car(74, 151, E, 2, 1); b.prop('dumpster', 70, 155); b.pick('medkit', 71, 152); b.pick('ammo', 71, 153);
+  car(74, 151, E, 2, 1); b.prop('dumpster', 70, 155); b.pick('medkit', 80, 152); b.pick('ammo', 71, 153);
   b.lamp(78, 150.5);
+  // The lane opens behind you as you leave the stair tower: light its mouth, name it on the square,
+  // and drop an ammo pile on the way so the eye goes there before the long walk east.
+  b.lamp(87, 149.4); b.label('COUNCIL LANE', 88.5, 152.5, 18, CREAM);
+  b.pick('ammo', 86, 145);
 
   // ------------------------------------------------------------------
   // 7. Mallow Bay Public Library (checkpoint safe room)
@@ -392,6 +396,7 @@ export function build() {
   b.arrow(97, 44.5, WEST); b.arrow(82, 38, WEST);
   // Bell Street: a short dead end north of the corner.
   b.carve(86, 22, 89, 33, F.ASPHALT); car(87, 24); b.pick('ammo', 88, 23); b.pick('firebomb', 89, 23);
+  b.lamp(86.4, 33.6); b.label('BELL ST', 87.5, 35.4, 16, CREAM, N);                   // its mouth, lit and named from the corner
 
   // ------------------------------------------------------------------
   // 11. Kettle Corner Diner (checkpoint: walk-in pantry)
