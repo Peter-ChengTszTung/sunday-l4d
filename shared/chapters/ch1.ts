@@ -396,7 +396,7 @@ export function build() {
   b.arrow(97, 44.5, WEST); b.arrow(82, 38, WEST);
   // Bell Street: a short dead end north of the corner.
   b.carve(86, 22, 89, 33, F.ASPHALT); car(87, 24); b.pick('ammo', 88, 23); b.pick('firebomb', 89, 23);
-  b.lamp(86.4, 33.6); b.label('BELL ST', 87.5, 35.4, 16, CREAM, N);                   // its mouth, lit and named from the corner
+  b.lamp(86.4, 33.6); b.label('BELL ST', 87.5, 35.4, 16, CREAM, 0);                   // its mouth, lit and named from the corner
 
   // ------------------------------------------------------------------
   // 11. Kettle Corner Diner (checkpoint: walk-in pantry)

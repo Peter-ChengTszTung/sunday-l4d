@@ -740,7 +740,7 @@ export function build() {
   b.carve(159, 164, 171, 171, F.ASPHALT);
   for (let x = 162; x <= 170; x += 4) b.label('— —', x, 165, 14, '#f2e6c0', E);
   const boomGate = b.door(160, 164, 160, 171, 'boom', 'ARMY BOOM GATE');
-  b.label('BOOM GATE', 159.5, 167.5, 9, GOLD, N);
+  b.label('BOOM GATE', 159.5, 167.5, 9, GOLD, E);
   b.fill(162, 166, 168, 169); b.walls(162, 166, 168, 169, WALL.BUILDING, 3.1);
   b.carve(163, 167, 167, 168, F.SAFE);
   b.carve(162, 167, 162, 168, F.ASPHALT);

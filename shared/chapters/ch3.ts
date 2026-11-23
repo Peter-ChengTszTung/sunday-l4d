@@ -150,7 +150,7 @@ export function build() {
   b.pick('rifle', 22, 47); b.pick('ammo', 23, 47);
   b.label('SIGNAL BOX', 21, 49.5, 12, SODIUM); b.lamp(21, 50);
   // Seen from the yard: a lamp over the signal box door, its name on the ballast, a trail of ammo to it.
-  b.lamp(25.4, 48.6); b.label('SIGNAL BOX', 27.5, 49.5, 16, SODIUM, 0);
+  b.lamp(25.4, 48.6); b.label('SIGNAL BOX', 27.5, 49.5, 16, SODIUM, WEST);
   b.pick('ammo', 38, 47); b.pick('ammo', 31, 47);
   b.lamp(19, 13); b.lamp(40, 46);
   b.label('SWITCHING YARD', 30, 7, 26, SODIUM);
@@ -162,7 +162,7 @@ export function build() {
   box(29, 59, 2, 6); b.prop('shelf', 41, 58, 1, 5); b.prop('counter', 33, 66, 5, 1, { color: 0x6f7f9a });
   b.pick('shotgun', 39, 64); b.pick('medkit', 32, 58); b.pick('ammo', 40, 66); b.pick('firebomb', 40, 65);   // off-route reward
   b.label('CAR SHOP', 35, 61, 16, SODIUM); b.lamp(35, 62);
-  b.lamp(32.6, 54); b.lamp(37.4, 54); b.label('CAR SHOP', 34.5, 52.6, 16, SODIUM, 0);       // its door, lit from the yard
+  b.lamp(32.6, 54); b.lamp(37.4, 54); b.label('CAR SHOP', 34.5, 52.6, 16, SODIUM, N);       // its door, lit from the yard
   // East half: the water tower in the open middle, cover scattered around it. Its pump-house
   // base (storey 0) carries a deck (storey 1) round the tank: two ladders, a perch over the
   // crescendo-1 arena with a reward. Zombies climb both ladders, slowly.
@@ -443,7 +443,7 @@ export function build() {
   b.note(120, 72, "Hank's open locker", 'Tank 7 crew: Hank took a 20-min power nap inside Tank 7. Came out... bigger. Do not nap in the tanks. Do not nap anywhere.');
   b.pick('medkit', 114, 77); b.pick('ammo', 115, 77);
   b.label('TANK CREW LOCKERS', 117.5, 73.5, 10, CREAM); b.lamp(117.5, 76);
-  b.lamp(123.4, 73); b.label('TANK CREW LOCKERS', 125.5, 74.5, 12, CREAM, E);     // the door, lit and named from the floor
+  b.lamp(123.4, 73); b.label('TANK CREW LOCKERS', 125.5, 74.5, 12, CREAM, WEST);     // the door, lit and named from the floor
   b.pick('ammo', 126, 77);
   b.label('TANK 7', 120, 67.5, 14, RED, 0);
   // Control booth (north-east corner).
@@ -639,14 +639,14 @@ export function build() {
   b.stairs(78, 119, 81, 122, '+z');                                          // north ramp, up from the pier
   b.stairs(78, 137, 81, 139, '-z');                                          // south ramp, up from the dock apron
   b.prop('barrier', 76, 121, 1, 2);
-  b.label('DRAWBRIDGE', 80, 118.2, 14, CREAM, 0);
+  b.label('DRAWBRIDGE', 80, 118.2, 14, CREAM, N);
   b.arrow(80, 118, S);
   rail(80, 141, 80, 150);
   b.level(1);
   b.carve(78, 123, 81, 136, F.CONCRETE);
   rail(80, 123, 80, 136);
   const bridgeBarrier = b.door(78, 129, 81, 130, 'bridge', 'DRAWBRIDGE RAISED');
-  b.label('HILL LINE', 79.9, 133, 14, GOLD, E); b.label('MIND THE GAP', 80, 127.4, 11, RED, 0);
+  b.label('HILL LINE', 79.9, 133, 14, GOLD, E); b.label('MIND THE GAP', 80, 127.4, 11, RED, N);
   b.lamp(78.2, 124); b.lamp(81.8, 124); b.lamp(78.2, 135); b.lamp(81.8, 135);
   b.arrow(80, 125, S); b.arrow(80, 134, S);
   b.level(0);
@@ -690,7 +690,7 @@ export function build() {
   // The shed's best-in-chapter guns sat dark, 45 tiles off the line to Bertha: light both north doors,
   // put its name big on the apron facing the bridge, and lay a supply trail from the bridge foot.
   b.lamp(87.6, 161.4); b.lamp(103.6, 161.4);
-  b.label('DOCK SHED 3', 97, 159.6, 26, SODIUM, 0);
+  b.label('DOCK SHED 3', 97, 159.6, 26, SODIUM, N);
   b.pick('ammo', 83, 146); b.pick('medkit', 86, 153); b.pick('ammo', 88, 159);
   // Bertha: a stubby cream-and-cherry diesel with a flatcar coupled behind.
   b.prop('bus', 16, 150, 5, 2, { color: CHERRY });                          // her hood

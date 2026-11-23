@@ -132,7 +132,7 @@ export function build() {
   b.lamp(35.5, 60);
   // The bay is behind the start, so the way back to it is signposted from the ER: a lit doorway, its
   // name on the ER floor, and ammo just inside to draw the eye down the corridor.
-  b.lamp(35.5, 49.5); b.label('AMBULANCE BAY', 35.5, 46.4, 14, RED, 0);
+  b.lamp(35.5, 49.5); b.label('AMBULANCE BAY', 35.5, 46.4, 14, RED, N);
   b.pick('ammo', 35, 51);
 
   // ------------------------------------------------------------------
