@@ -745,6 +745,50 @@ export class Sfx {
   lose(): void { this.flat(() => [392, 370, 349, 262].forEach((f, i) => this.tone('sawtooth', f, f * 0.97, 0.2, 0.01, 0.4, i * 0.3))); }
   gate(): void { this.emit(null, {}, () => { this.hiss('lowpass', 300, 900, 1, 0.45, 0.2, 1.6); this.tone('square', 660, 660, 0.12, 0.01, 0.2); this.tone('square', 880, 880, 0.12, 0.01, 0.3, 0.25); }); }
 
+  // ------------------------------------------------------------------ set pieces (client/src/setpieces.ts, world doors)
+  /** Drawbridge lowering (about 7 s): warning bells, a deep motor grind, a big clank as the leaf lands. */
+  drawbridge(x: number, z: number): void {
+    this.emit([x, z], { reach: 3, wet: 0.5, occlude: false, prio: true }, () => {
+      for (let i = 0; i < 9; i++) { this.tone('triangle', 1180, 1170, 0.1, 0.002, 0.35, i * 0.7); this.tone('triangle', 2360, 2340, 0.03, 0.002, 0.25, i * 0.7); }
+      this.tone('sawtooth', 48, 52, 0.16, 0.6, 6.4); this.tone('square', 96, 92, 0.05, 0.6, 6.4);
+      this.hiss('lowpass', 220, 160, 1, 0.22, 0.8, 6.2);
+      this.tone('sine', 70, 38, 0.5, 0.004, 0.9, 6.9); this.hiss('lowpass', 900, 200, 1, 0.5, 0.004, 0.6, 6.9);
+      this.tone('triangle', 640, 610, 0.12, 0.002, 1.4, 6.95);
+    });
+  }
+  /** Boom gate arm swinging up: a short motor whir and a stop click. */
+  boomGate(x: number, z: number): void {
+    this.emit([x, z], { reach: 2, occlude: false }, () => {
+      this.tone('sawtooth', 140, 260, 0.08, 0.05, 1.6); this.hiss('bandpass', 900, 1600, 2, 0.08, 0.05, 1.6);
+      this.tone('square', 1400, 1300, 0.08, 0.001, 0.05, 1.75); this.hiss('highpass', 3000, 2500, 1, 0.12, 0.001, 0.06, 1.75);
+    });
+  }
+  /** Elevator floor chime: a soft two-note ding. */
+  liftDing(x: number, z: number): void {
+    this.emit([x, z], { reach: 2.5, wet: 0.4 }, () => { this.tone('sine', 1319, 1319, 0.14, 0.004, 0.9); this.tone('sine', 1047, 1047, 0.14, 0.004, 1.2, 0.32); });
+  }
+  /** The car arrives and faults: a thud, a crackle of sparks and a long ugly buzzer. */
+  liftFault(x: number, z: number): void {
+    this.emit([x, z], { reach: 3, wet: 0.4, prio: true }, () => {
+      this.tone('sine', 90, 40, 0.5, 0.003, 0.5); this.hiss('lowpass', 700, 150, 1, 0.35, 0.003, 0.4);
+      for (let i = 0; i < 7; i++) this.hiss('highpass', 4500, 3000, 1, 0.16, 0.001, 0.05, 0.15 + i * 0.09 + Math.random() * 0.05);
+      this.tone('square', 118, 118, 0.09, 0.01, 1.4, 0.35); this.tone('square', 236, 236, 0.04, 0.01, 1.4, 0.35);
+    });
+  }
+  /** Heritage tram bell: a bright double clang. */
+  tramBell(x: number, z: number): void {
+    this.emit([x, z], { reach: 3.5, wet: 0.5, occlude: false, jit: 0.02 }, () => {
+      for (const w of [0, 0.22]) for (const r of [1, 2.76, 5.4]) this.tone('triangle', 1020 * r, 1010 * r, 0.16 / r, 0.002, 0.9 / Math.sqrt(r), w);
+    });
+  }
+  /** Power coming up on the tram line: a rising electric hum and a crackle at the pantograph. */
+  tramPower(x: number, z: number): void {
+    this.emit([x, z], { reach: 3, occlude: false }, () => {
+      this.tone('sawtooth', 50, 100, 0.1, 1.2, 1.4); this.tone('sine', 100, 200, 0.08, 1.2, 1.4);
+      for (let i = 0; i < 5; i++) this.hiss('highpass', 5000, 3500, 1, 0.12, 0.001, 0.04, 0.4 + i * 0.25);
+    });
+  }
+
   // ------------------------------------------------------------------ common infected
   /** An awake zombie moaning at (x, z); `big` for a Brute. */
   groan(x: number, z: number, big = false): void {

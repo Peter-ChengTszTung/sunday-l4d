@@ -115,7 +115,14 @@ export interface Step {
   /** Completing this step saves a checkpoint (the team restarts here after a wipe). */ checkpoint: boolean;
   /** Spawn a horde / a Brute when the step begins (a `use` step with `hold`: its horde comes when the machine is used). */ horde: boolean; brute: boolean;
   /** Where the HUD waypoint points (metres; `y` = floor height). */ at: Vec2;
+  /**
+   * Client set piece for a `use` step with a hold (client/src/setpieces.ts): `lift` counts the nearest
+   * lift door's floor indicator down through the hold, then faults it; `tram` lights the nearest tram
+   * (a 'bus' prop) and rings its bell through the hold. Purely cosmetic: the server ignores it.
+   */
+  cue?: StepCue;
 }
+export type StepCue = 'lift' | 'tram';
 
 export interface Theme {
   /** Sky gradient horizon → mid → top. */ sky: [number, number, number];
@@ -168,6 +175,7 @@ export const DEFAULT_THEME: Theme = {
 export interface StepOpts {
   objective: string; radio?: RadioLine[]; area?: Rect; target?: number; group?: string; hold?: number; holdScript?: HoldStage[];
   opens?: number[]; closes?: number[]; checkpoint?: boolean; horde?: boolean; brute?: boolean; at?: [number, number] | [number, number, number];
+  cue?: StepCue;
 }
 
 /**
@@ -379,7 +387,7 @@ export class LevelBuilder {
     if (o.area?.lv !== undefined && !(o.area.lv >= 0 && o.area.lv < this.levels)) throw new Error(`step "${o.objective}": area storey ${o.area.lv} does not exist`);
     this.steps.push({
       kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold, holdScript: o.holdScript,
-      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...extra,
+      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...extra,
     });
     return this.steps.length - 1;
   }

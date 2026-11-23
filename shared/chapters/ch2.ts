@@ -761,7 +761,7 @@ export function build() {
     ],
   });
   b.use(elevButton, {
-    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [fireDoor],
+    objective: 'Call the staff elevator', horde: true, hold: 60, opens: [fireDoor], cue: 'lift',
     radio: [
       ['Dot', 'Call it down. If that old car faults, it unlocks the fire stairs. Up is up, sweet peas.'],
       ['Mochi', 'Elevator music. Of course there\'s elevator music.'],

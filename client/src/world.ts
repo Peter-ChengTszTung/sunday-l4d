@@ -364,6 +364,9 @@ export function buildWorld(L: Level): World {
       // No lettering: the one texture shows on both faces, so words read mirrored from one side.
       g.fillStyle = '#e03131'; g.beginPath(); g.arc(64, 98, 16, 0, Math.PI * 2); g.fill();
       g.strokeStyle = '#f4f4ff'; g.lineWidth = 4; g.beginPath(); g.arc(64, 98, 11, 0, Math.PI * 2); g.stroke();
+    } else if (kind === 'boomArm') {
+      // A checkpoint boom arm: red and white bands.
+      for (let x = 0; x < 128; x += 32) { g.fillStyle = '#f4f4ff'; g.fillRect(x, 0, 16, 128); g.fillStyle = '#e03131'; g.fillRect(x + 16, 0, 16, 128); }
     } else if (kind === 'lift') {
       // Brushed-steel elevator doors: two leaves, a centre seam, a dark sill and header.
       const grad = g.createLinearGradient(0, 0, 128, 0);
@@ -390,11 +393,66 @@ export function buildWorld(L: Level): World {
   // One textured toon material for every door of the chapter; each door sets its own `uTex`. (It is made
   // here rather than shared with the ground so doors keep their place in the draw order.)
   const doorMat = mat(makeToon({ tex: whiteTex }));
+  const texFor = (kind: string): pc.Texture => {
+    let tex = doorTex.get(kind);
+    if (!tex) { tex = canvasTexture(() => paintDoor(kind)); doorTex.set(kind, tex); textures.push(tex); }
+    return tex;
+  };
+  /** A box (in the parent's space) with a door texture. */
+  const texBox = (parent: pc.Entity, kind: string, m: pc.Mat4): pc.Entity => {
+    const e = add(meshEntity(mesh(make(box(), undefined, m)), doorMat), parent);
+    e.render!.meshInstances[0].setParameter('uTex', texFor(kind));
+    return e;
+  };
+  /**
+   * Hinged doors swing instead of sliding. Each hinge is a pivot whose local +z is the moving part's
+   * length; `closed` and `open` are its two rotations, blended by the view's progress.
+   */
+  interface Hinge { pivot: pc.Entity; closed: pc.Quat; open: pc.Quat }
+  const yawed = (yaw: number, pitch: number): pc.Quat => new pc.Quat().mul2(new pc.Quat().setFromEulerAngles(0, yaw, 0), new pc.Quat().setFromEulerAngles(pitch, 0, 0));
+  const hingesFor = (d: (typeof def.doors)[number], root: pc.Entity, base: number): Hinge[] => {
+    const alongX = d.x1 - d.x0 >= d.z1 - d.z0;
+    const w = (d.x1 - d.x0 + 1) * T, dd = (d.z1 - d.z0 + 1) * T;
+    if (d.kind === 'bridge') {
+      // A bascule leaf hinged on the gap's near edge: raised it stands upright, lowered it lies on the deck
+      // across the gap (a hair proud of it, so the two never share a plane).
+      const len = alongX ? dd : w, wid = alongX ? w : dd, th = 0.14;
+      const pivot = add(new pc.Entity('leaf'), root);
+      pivot.setPosition(d.x0 * T + (alongX ? w / 2 : 0), base, d.z0 * T + (alongX ? 0 : dd / 2));
+      texBox(pivot, 'bridge', trs(0, th / 2 + 0.03, len / 2, 0, 0, 0, wid, th, len));
+      const yaw = alongX ? 0 : 90;
+      return [{ pivot, closed: yawed(yaw, -90), open: yawed(yaw, 0) }];
+    }
+    // Boom gate: a post at each end of the opening, an arm from each meeting in the middle; they swing up.
+    const L = alongX ? w : dd, out: Hinge[] = [], armY = 1.05;
+    for (const end of [0, 1]) {
+      const sgn = end ? -1 : 1, off = 0.3;
+      const px = alongX ? d.x0 * T + (end ? w - off : off) : d.x0 * T + w / 2;
+      const pz = alongX ? d.z0 * T + dd / 2 : d.z0 * T + (end ? dd - off : off);
+      texBox(root, 'boom', trs(px, base + armY / 2 + 0.1, pz, 0, 0, 0, 0.36, armY + 0.2, 0.36));
+      const pivot = add(new pc.Entity('arm'), root);
+      pivot.setPosition(px, base + armY, pz);
+      const len = L / 2 - off - 0.05;
+      texBox(pivot, 'boomArm', trs(0, 0, len / 2 + 0.18, 0, 0, 0, 0.16, 0.16, len));
+      const yaw = alongX ? (sgn > 0 ? 90 : -90) : (sgn > 0 ? 0 : 180);
+      out.push({ pivot, closed: yawed(yaw, 0), open: yawed(yaw, -82) });
+    }
+    return out;
+  };
   const doorViews = def.doors.map((d) => {
     const w = (d.x1 - d.x0 + 1) * T, dd = (d.z1 - d.z0 + 1) * T;
     const sx = w >= dd ? w : 0.4, sz = w >= dd ? 0.4 : dd;
-    let tex = doorTex.get(d.kind);
-    if (!tex) { tex = canvasTexture(() => paintDoor(d.kind)); doorTex.set(d.kind, tex); textures.push(tex); }
+    if (d.kind === 'bridge' || d.kind === 'boom') {
+      const e = add(new pc.Entity(d.kind));
+      const base = (d.lv ?? 0) * STOREY;
+      const hinges = hingesFor(d, e, base);
+      // Seconds for a full swing: the drawbridge takes its time, the boom flicks up.
+      const secs = d.kind === 'bridge' ? 7 : 1.8;
+      const v = { d, e, x: 0, z: 0, base, fold: 0, y: CEIL_H / 2, open: false, hinges, p: 0, secs };
+      for (const h of hinges) h.pivot.setLocalRotation(h.closed);
+      return v;
+    }
+    const tex = texFor(d.kind);
     // With storeys the door stops 3 cm under the floor above (at the hung ceiling): its top on that floor flickered.
     const dh = S.levels > 1 ? 0.03 : 0;
     const e = add(meshEntity(mesh(make(box(), undefined, new pc.Mat4().setTRS(new pc.Vec3(0, -dh / 2, 0), pc.Quat.IDENTITY, new pc.Vec3(sx, CEIL_H - dh, sz)))), doorMat));
@@ -420,10 +478,16 @@ export function buildWorld(L: Level): World {
       }
       if (!clear && !(k < 0)) fold = up ? 1 : -1;
     }
-    const v = { d, e, x, z, base, fold, y: CEIL_H / 2, open: false };
+    const v = { d, e, x, z, base, fold, y: CEIL_H / 2, open: false, hinges: [] as Hinge[], p: 0, secs: 0 };
     e.setPosition(x, base + v.y, z);
     return v;
   });
+  const _q = new pc.Quat();
+  /** Hinged doors: pose every hinge at progress `p` (0 closed, 1 open), eased in and out. */
+  const swingDoor = (v: DoorView): void => {
+    const k = v.p * v.p * (3 - 2 * v.p);
+    for (const h of v.hinges) h.pivot.setLocalRotation(_q.slerp(h.closed, h.open, k));
+  };
   type DoorView = (typeof doorViews)[number];
   /** `y` is the door's centre above its own floor, as if it slid: closed at CEIL_H / 2. */
   const doorTarget = (v: DoorView) => CEIL_H / 2 + (v.open ? (v.d.kind === 'shutter' ? CEIL_H - 0.3 : -CEIL_H - 0.1) : 0);
@@ -522,7 +586,7 @@ export function buildWorld(L: Level): World {
     setDoors(mask, instant) {
       for (const v of doorViews) {
         v.open = !!(mask & (1 << v.d.id));
-        if (instant) { v.y = doorTarget(v); placeDoor(v); }
+        if (instant) { if (v.hinges.length) { v.p = v.open ? 1 : 0; swingDoor(v); } else { v.y = doorTarget(v); placeDoor(v); } }
       }
     },
     setTaken(id, taken) { const p = pickups[id]; if (p) { if (p.taken !== taken) basesDirty = true; p.taken = taken; p.group.enabled = p.shown && !taken; } },
@@ -543,6 +607,11 @@ export function buildWorld(L: Level): World {
     update(t, dt, camX, camY, camZ) {
       if (basesDirty) rebuildBases();
       for (const v of doorViews) {
+        if (v.hinges.length) {
+          const goal = v.open ? 1 : 0;
+          if (v.p !== goal) { v.p = goal > v.p ? Math.min(goal, v.p + dt / v.secs) : Math.max(goal, v.p - dt / v.secs); swingDoor(v); }
+          continue;
+        }
         const target = doorTarget(v);
         if (Math.abs(target - v.y) > 0.001) { v.y += (target - v.y) * Math.min(1, dt * 1.8); placeDoor(v); }
       }

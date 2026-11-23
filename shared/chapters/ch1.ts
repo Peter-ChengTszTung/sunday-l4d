@@ -543,7 +543,7 @@ export function build() {
     ],
   });
   b.use(tramLever, {
-    objective: 'Power up the heritage tram', horde: true, hold: 90, opens: [underpass],
+    objective: 'Power up the heritage tram', horde: true, hold: 90, opens: [underpass], cue: 'tram',
     radio: [
       ['Dot', 'Fuses in, pull the lever. The line powers the underpass gate too.'],
       ['Dot', 'Tram bell rings till she\'s warmed up. Get up on that footbridge.'],

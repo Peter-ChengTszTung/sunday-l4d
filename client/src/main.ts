@@ -6,6 +6,7 @@ import { isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RoomInfo, RosterEntry, ServerMsg, ZombieSnap } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
+import { buildSetPieces } from './setpieces';
 import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
 import { ViewModel, worldGun, gunMuzzle } from './viewmodel';
 import { app, setTorch } from './gfx';
@@ -59,12 +60,14 @@ function loadChapter(ch: number): void {
   chapter = ch;
 }
 function useLevel(next: Level): void {
-  world.dispose();
-  L = next; world = buildWorld(L);
+  world.dispose(); pieces.dispose();
+  L = next; world = buildWorld(L); pieces = buildSetPieces(L, sfx, fx);
   step = 0; qc = 0; doors = 0;
 }
 const fx = new FX();
 const sfx = new Sfx();
+/** Scripted moments on cue steps (the elevator, the tram). */
+let pieces = buildSetPieces(L, sfx, fx);
 fx.onSplat = (x, y, z) => sfx.at(y).splat(x, z);
 fx.onCrackle = (x, y, z) => sfx.at(y).fireCrackle(x, z);
 fx.onRattle = (x, y, z) => sfx.at(y).rattle(x, z);
@@ -1004,7 +1007,15 @@ function onEvent(ev: GameEvent): void {
       if (s?.hold) { hud.banner(t('HOLD OUT!'), true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
       break;
     }
-    case 'door': doors = ev[2] ? doors | (1 << ev[1]) : doors & ~(1 << ev[1]); world.setDoors(doors); sfx.gate(); break;
+    case 'door': {
+      doors = ev[2] ? doors | (1 << ev[1]) : doors & ~(1 << ev[1]); world.setDoors(doors);
+      // The drawbridge and the boom gate have their own machinery; every other door clanks open.
+      const d = L.def.doors[ev[1]], dx = d ? ((d.x0 + d.x1 + 1) / 2) * TILE : 0, dz = d ? ((d.z0 + d.z1 + 1) / 2) * TILE : 0, dy = (d?.lv ?? 0) * STOREY;
+      if (d?.kind === 'bridge' && ev[2]) sfx.at(dy).drawbridge(dx, dz);
+      else if (d?.kind === 'boom' && ev[2]) sfx.at(dy).boomGate(dx, dz);
+      else sfx.gate();
+      break;
+    }
     case 'step': enterStep(ev[1], true); break;
     case 'item': {
       const who = ev[1] === me.id ? t('You') : roster.get(ev[1])?.name ?? t('Someone');
@@ -1850,6 +1861,7 @@ app.on('update', (dt: number) => {
     vm.update(dt, 0, 0, 0);
   }
   world.update(time, dt, cam.x, cam.y, cam.z);
+  pieces.update(time, dt, step, inGame && holdout >= 0);
   listen(dt);
   fx.update(dt, cam.rot);
 });
