@@ -887,7 +887,9 @@ export class Room {
   }
   private onFire(p: Player, m: Extract<ClientMsg, { t: 'f' }>): void {
     const wi = m.w | 0, wp = WEAPONS[wi];
-    if (!wp || p.st !== PSTATE.ALIVE || p.pinned || this.state !== 'play') return; // pinned by a Charger: can't shoot
+    // Pinned (a Charger, a lasso, a rider): no shooting. Down: the sidearm only.
+    const downShot = p.st === PSTATE.DOWN && wi === p.sidearm;
+    if (!wp || (p.st !== PSTATE.ALIVE && !downShot) || p.pinned || this.state !== 'play') return;
     // Only the pistol and weapons this player actually picked up (dev servers allow debug gives).
     if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && !(p.thr[wi] > 0) && !this.allowDebug) return;
     const e = Array.isArray(m.e) && m.e.length === 3 && m.e.every(Number.isFinite) ? m.e : null;

@@ -82,7 +82,7 @@ shove the victim free), the *Piggyback* (rides a survivor away from the team: sh
 *Weeper* (sits sobbing; linger near her or hurt her and she flattens whoever woke her). Two uncommon
 commons join the hordes later: the *Tinpot* (bullets do a quarter damage to its front until it is shoved) and the
 *Raincoat* (fireproof). The *Brute* (one or two per run) hits like a truck. At 0 HP you go down and bleed out unless a teammate helps you up (solo, you can get
-yourself up once per attempt). While down, every hit does a tenth of its damage, buying the team time to reach you. Going down again before a medkit or a safe room counts: the
+yourself up once per attempt). While down, every hit does a tenth of its damage, buying the team time to reach you, and you can still shoot: your sidearm comes out (and whatever you held goes back in hand once you are up). Going down again before a medkit or a safe room counts: the
 third down (second on Nightmare) knocks you out. Knocked-out players are rescued next to a
 teammate after 15/30/45 s (Easy/Normal/Hard; on Nightmare only at the next safe room), and every
 safe room rescues them. Shoving tires you: spam it and it slows down. If nobody is left standing

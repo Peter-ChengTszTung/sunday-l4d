@@ -259,6 +259,18 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 // ------------------------------------------------------------------- weapons
+/** The weapon in hand when you went down (-1: not down): back in hand when you get up. */
+let downFrom = -1;
+/** Put weapon `i` in hand without the alive-only checks of `switchWeapon` (going down, getting up). */
+function equip(i: number): void {
+  me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0; me.aiming = false; me.aimBlock = mouse.left;
+  vm.setWeapon(i);
+  sfx.cancelReload(); sfx.draw(i);
+}
+/** Down but still fighting: not held by anything, sidearm in hand (the server takes those shots too). */
+function downShooter(): boolean {
+  return me.st === PSTATE.DOWN && !me.pinned && me.weapon === me.sidearm && active();
+}
 function switchWeapon(i: number): void {
   if (i === me.weapon || me.st !== PSTATE.ALIVE) return;
   me.weapon = i; me.reloadT = 0; me.fireCd = Math.max(me.fireCd, 0.3); me.bloom = 0; me.aiming = false; me.aimBlock = mouse.left;
@@ -269,7 +281,7 @@ function switchWeapon(i: number): void {
 
 function startReload(): void {
   const w = WEAPONS[me.weapon];
-  if (me.reloadT > 0 || me.mag[me.weapon] >= w.mag || me.reserve[me.weapon] <= 0 || me.st !== PSTATE.ALIVE) return;
+  if (me.reloadT > 0 || me.mag[me.weapon] >= w.mag || me.reserve[me.weapon] <= 0 || !(me.st === PSTATE.ALIVE || downShooter())) return;
   me.reloadT = w.reload;
   sfx.reload(me.weapon);
 }
@@ -787,8 +799,18 @@ function applyPlayers(list: PlayerSnap[]): void {
     const [id, x, y, z, ry, , hp, st, w, medkits, rev, , respawn] = p;
     if (id === me.id) {
       if (st !== me.st) {
-        if (st === PSTATE.DOWN) { hud.banner(t('You are down!'), true); sfx.down(); sfx.cancelReload(); me.reloadT = 0; }
-        vm.visible = st === PSTATE.ALIVE;
+        if (st === PSTATE.DOWN) {
+          hud.banner(t('You are down!'), true); sfx.down(); sfx.cancelReload(); me.reloadT = 0;
+          // Down, you can still shoot: the sidearm comes out (whatever was in hand goes back on getting up).
+          downFrom = me.weapon;
+          if (me.weapon !== me.sidearm) equip(me.sidearm);
+        } else if (st === PSTATE.ALIVE && me.st === PSTATE.DOWN) {
+          const back = downFrom;
+          downFrom = -1;
+          const tk = THROWABLES.indexOf(back), owned = back === me.primary || back === me.melee || back === me.sidearm || (tk >= 0 && me.thr[tk] > 0);
+          if (back >= 0 && back !== me.weapon && owned) equip(back);
+        } else downFrom = -1;
+        vm.visible = st === PSTATE.ALIVE || st === PSTATE.DOWN;
       }
       me.hp = hp; me.st = st; me.rev = rev; me.respawn = respawn;
       me.meds = unpackMeds(medkits); me.medSel = medSelect(me.meds, me.medSel);
@@ -1215,7 +1237,7 @@ setInterval(() => { void refreshRooms(); }, 3000);
 void refreshRooms();
 
 function enterGame(): void {
-  inGame = true; ended = false; vm.visible = me.st === PSTATE.ALIVE;
+  inGame = true; ended = false; vm.visible = me.st === PSTATE.ALIVE || me.st === PSTATE.DOWN;
   $('lobby').hidden = true;
   hud.show(true);
   hud.pause(!locked && !DEBUG);
@@ -1499,7 +1521,7 @@ function updateMe(dt: number): void {
       vm.setReload(0); sfx.reloadDone(me.weapon);
     }
   }
-  if (!updateThrowAim(on) && on && mouse.left) fire();
+  if (!updateThrowAim(on) && (on || downShooter()) && mouse.left) fire();
   updateNades(dt);
 
   if (range && rangeRegen.left > 0) {
@@ -1773,7 +1795,7 @@ function updateHud(dt: number): void {
   hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
   if (openNote && Math.hypot(openNote.def.x - me.x, (openNote.def.y ?? 0) - me.gy, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
-  hud.crosshair(me.st === PSTATE.ALIVE && me.zoom < 0.5);
+  hud.crosshair((me.st === PSTATE.ALIVE || downShooter()) && me.zoom < 0.5);
   hud.scope(me.st === PSTATE.ALIVE && me.zoom >= 0.5);
   hud.spread(6 + shotSpread() * 260);
   const solo = roster.size <= 1;
@@ -1810,7 +1832,7 @@ app.on('update', (dt: number) => {
     updateEntities(dt);
     updateHud(dt);
     const moving = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed) * (me.onGround ? 1 : 0.2);
-    vm.visible = me.st === PSTATE.ALIVE && me.zoom < 0.5 && rideCam < 0.05; // the scope overlay replaces the gun; none in the ride camera
+    vm.visible = (me.st === PSTATE.ALIVE || downShooter()) && me.zoom < 0.5 && rideCam < 0.05; // the scope overlay replaces the gun; none in the ride camera
     vm.update(dt, moving, lookDX, lookDY);
     flushOwnShots();
     lookDX = lookDY = 0;
