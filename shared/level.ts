@@ -679,6 +679,24 @@ export class Level {
     const n = this.nodeAt(x, y, z);
     return this.def.solid[n] === 1 && this.def.doorCell[n] < 0 ? y : this.heightAt(n, x, z);
   }
+  /**
+   * Floor height under (x, z) for something at height y: the highest floor at or just below y there (over
+   * air, the first storey below that has one; inside a wall or a prop, or under a stair flight, that
+   * storey's floor). Flat maps: 0.
+   */
+  floorBelow(x: number, y: number, z: number): number {
+    if (this.levels === 1) return 0;
+    const tx = Math.min(this.W - 1, Math.max(0, cellOf(x))), tz = Math.min(this.H - 1, Math.max(0, cellOf(z)));
+    for (let k = Math.min(this.levels - 1, Math.floor((y + 0.05) / STOREY)); k >= 0; k--) {
+      const n = this.node(tx, tz, k);
+      if (this.def.air[n]) continue;
+      // Under a stair flight (its surface is above y) or inside a wall: that storey's floor.
+      if (!this.walkable(n) && this.def.doorCell[n] < 0) return k * STOREY;
+      const h = this.heightAt(n, x, z);
+      return h <= y + 0.05 ? h : k * STOREY;
+    }
+    return 0;
+  }
   /** Speed multiplier for walking here (slow on ladders). */
   speedAt(x: number, y: number, z: number, ladderSpeed: number): number { return this.levels > 1 && this.isLadder(this.nodeAt(x, y, z)) ? ladderSpeed : 1; }
   floorAt(x: number, y: number, z: number): number {
@@ -928,7 +946,7 @@ export class Level {
     }
   }
   private buildColumns(): void {
-    const { W, H, WH, levels, def } = this;
+    const { H, WH, levels, def } = this;
     const slab = (n: number) => def.floor[n] !== F.NONE; // an upper-storey floor (holes and air have none)
     for (let c = 0; c < WH; c++) {
       const o = c * MAXI * 2;

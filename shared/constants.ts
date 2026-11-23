@@ -96,7 +96,9 @@ export interface WeaponDef {
   thrown?: 'fire' | 'lure';
 }
 export interface ZombieDef {
-  id: 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm' | 'snatcher' | 'piggyback' | 'weeper' | 'tinpot' | 'raincoat'; hp: number; speed: number; dmg: number; range: number; cd: number;
+  id: 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm' | 'snatcher' | 'piggyback' | 'weeper' | 'tinpot' | 'raincoat';
+  /** Display name (English; the client translates it). */ name: string;
+  hp: number; speed: number; dmg: number; range: number; cd: number;
   scale: number; radius: number; leapDmg: number; boomDmg: number; boomRadius: number;
   /** A common (horde member, counted and paced like a walker) rather than a special. */ common?: boolean;
 }
@@ -164,26 +166,26 @@ export const blastDamage = (B: BlastDef, power: number, d: number): number => {
 
 // Zombie archetypes. `scale` multiplies the base chibi model (≈1.45 m tall).
 export const ZTYPES: ZombieDef[] = [
-  { id: 'walker', hp: 50, speed: 4.7, dmg: 6, range: 1.15, cd: 0.9, scale: 1, radius: 0.38, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
-  { id: 'leaper', hp: 120, speed: 5.6, dmg: 10, range: 1.2, cd: 0.8, scale: 1.05, radius: 0.38, leapDmg: 20, boomDmg: 0, boomRadius: 0 },
-  { id: 'puffer', hp: 90, speed: 3.3, dmg: 0, range: 1.7, cd: 1, scale: 1.3, radius: 0.55, leapDmg: 0, boomDmg: 14, boomRadius: 4.6 },
-  { id: 'brute', hp: 2200, speed: 5.3, dmg: 26, range: 2.0, cd: 1.3, scale: 2.1, radius: 0.8, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'walker', name: 'Walker', hp: 50, speed: 4.7, dmg: 6, range: 1.15, cd: 0.9, scale: 1, radius: 0.38, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'leaper', name: 'Leaper', hp: 120, speed: 5.6, dmg: 10, range: 1.2, cd: 0.8, scale: 1.05, radius: 0.38, leapDmg: 20, boomDmg: 0, boomRadius: 0 },
+  { id: 'puffer', name: 'Puffer', hp: 90, speed: 3.3, dmg: 0, range: 1.7, cd: 1, scale: 1.3, radius: 0.55, leapDmg: 0, boomDmg: 14, boomRadius: 4.6 },
+  { id: 'brute', name: 'Brute', hp: 2200, speed: 5.3, dmg: 26, range: 2.0, cd: 1.3, scale: 2.1, radius: 0.8, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Sleep-Charger: winds up, then bull-rushes in a straight line (see CHARGER). `dmg` is its plain swat.
-  { id: 'charger', hp: 420, speed: 4.3, dmg: 10, range: 1.35, cd: 1.1, scale: 1.3, radius: 0.5, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'charger', name: 'Charger', hp: 420, speed: 4.3, dmg: 10, range: 1.35, cd: 1.1, scale: 1.3, radius: 0.5, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Drooler: hangs back and lobs goo that pools on the floor (see DROOLER). Fragile; a feeble slap up close.
-  { id: 'drooler', hp: 100, speed: 3.9, dmg: 4, range: 1.15, cd: 1.2, scale: 1.05, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'drooler', name: 'Drooler', hp: 100, speed: 3.9, dmg: 4, range: 1.15, cd: 1.2, scale: 1.05, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Alarm Clock: keeps away; rings when it sees you and calls a mini-horde unless killed (see ALARM).
-  { id: 'alarm', hp: 60, speed: 4.8, dmg: 0, range: 1, cd: 1, scale: 0.9, radius: 0.36, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'alarm', name: 'Alarm Clock', hp: 60, speed: 4.8, dmg: 0, range: 1, cd: 1, scale: 0.9, radius: 0.36, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Snatcher: lassoes a survivor from range with its scarf and reels them in (see SNATCHER). `dmg` is its slap.
-  { id: 'snatcher', hp: 170, speed: 4.2, dmg: 5, range: 1.2, cd: 1.1, scale: 1.2, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'snatcher', name: 'Snatcher', hp: 170, speed: 4.2, dmg: 5, range: 1.2, cd: 1.1, scale: 1.2, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Piggyback: small and quick; pounces onto a survivor's back and steers them away from the team (see PIGGY).
-  { id: 'piggyback', hp: 130, speed: 6.1, dmg: 6, range: 1.1, cd: 0.8, scale: 0.8, radius: 0.34, leapDmg: 8, boomDmg: 0, boomRadius: 0 },
+  { id: 'piggyback', name: 'Piggyback', hp: 130, speed: 6.1, dmg: 6, range: 1.1, cd: 0.8, scale: 0.8, radius: 0.34, leapDmg: 8, boomDmg: 0, boomRadius: 0 },
   // Weeper: sits sobbing and wants to be left alone. Wake her and she flattens whoever did it (see WEEPER).
-  { id: 'weeper', hp: 900, speed: 7.6, dmg: 70, range: 1.4, cd: 0.7, scale: 1.1, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
+  { id: 'weeper', name: 'Weeper', hp: 900, speed: 7.6, dmg: 70, range: 1.4, cd: 0.7, scale: 1.1, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0 },
   // Uncommon commons. Tinpot: pots and trays strapped on, bullets barely scratch it from the front (see armoredFront).
-  { id: 'tinpot', hp: 60, speed: 4.4, dmg: 7, range: 1.15, cd: 0.9, scale: 1.05, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0, common: true },
+  { id: 'tinpot', name: 'Tinpot', hp: 60, speed: 4.4, dmg: 7, range: 1.15, cd: 0.9, scale: 1.05, radius: 0.4, leapDmg: 0, boomDmg: 0, boomRadius: 0, common: true },
   // Raincoat: fireproof (FIRE does nothing to it), a little tougher.
-  { id: 'raincoat', hp: 70, speed: 4.7, dmg: 6, range: 1.15, cd: 0.9, scale: 1, radius: 0.38, leapDmg: 0, boomDmg: 0, boomRadius: 0, common: true },
+  { id: 'raincoat', name: 'Raincoat', hp: 70, speed: 4.7, dmg: 6, range: 1.15, cd: 0.9, scale: 1, radius: 0.38, leapDmg: 0, boomDmg: 0, boomRadius: 0, common: true },
 ];
 ZTYPES[0].common = true;
 export const ZT = { WALKER: 0, LEAPER: 1, PUFFER: 2, BRUTE: 3, CHARGER: 4, DROOLER: 5, ALARM: 6, SNATCHER: 7, PIGGYBACK: 8, WEEPER: 9, TINPOT: 10, RAINCOAT: 11 } as const;
@@ -270,6 +272,15 @@ export const PSTATE = { ALIVE: 0, DOWN: 1, DEAD: 2 } as const;
 
 // Hit volumes for a scale-1 zombie (client hitscan + server sanity).
 export const ZHIT = { headY: 1.06, headR: 0.42, bodyY: 0.5, bodyR: 0.36 };
+/** A zombie's hit spheres (heights above its floor, radii), filled into `out`: ZHIT at its type's scale, with each type's head and girth. */
+export function zedHitSpheres(type: number, st: number, out = { headY: 0, headR: 0, bodyY: 0, bodyR: 0 }): typeof out {
+  const s = ZTYPES[type].scale, fat = type === ZT.PUFFER ? 1.35 : type === ZT.BRUTE ? 1.25 : type === ZT.CHARGER ? 1.4 : 1;
+  // Chargers duck their (smaller) head when winding up and rushing.
+  const headY = type === ZT.PUFFER ? 1.16 : type === ZT.CHARGER && (st === ZSTATE.WINDUP || st === ZSTATE.CHARGE) ? ZHIT.headY * 0.84 : ZHIT.headY;
+  out.headY = headY * s; out.headR = ZHIT.headR * s * (type === ZT.BRUTE ? 0.85 : type === ZT.CHARGER ? 0.9 : 1);
+  out.bodyY = ZHIT.bodyY * s; out.bodyR = ZHIT.bodyR * s * fat;
+  return out;
+}
 
 export const SURVIVORS: SurvivorLook[] = [
   { name: 'Mochi', shirt: 0xff5d73, hair: 0x4a2c2a, style: 'cap' },
@@ -331,6 +342,8 @@ export const packMeds = (counts: readonly number[]): number => MEDS.reduce((v, _
 export const unpackMeds = (v: number): number[] => MEDS.map((_, k) => Math.floor((v || 0) / 8 ** k) % 8);
 /** Whether using med `k` would do anything for a survivor at `hp` with `downs` downs on the clock. */
 export const medUseful = (k: number, hp: number, downs = 0): boolean => !!MEDS[k] && (hp < PLAYER.hp || (MEDS[k].steady && k !== 0 && downs > 0));
+/** Health medical item `k` restores at once at `hp`: the medkit a `share` of what is missing (SURVIVOR_RULES.heal, at least HEAL_MIN), the small items a flat amount. */
+export const healAmount = (k: number, hp: number, share: number): number => (k === 0 ? Math.max(HEAL_MIN, (PLAYER.hp - hp) * share) : MEDS[k]?.heal ?? 0);
 /**
  * Which item Q should use after the pockets changed: the current pick if still carried, else the first
  * small item carried, the medkit last (so a stray tap never burns the medkit on a scratch). -1 = none.

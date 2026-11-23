@@ -1,7 +1,7 @@
 // Offline shooting range: stands in for the server while you practise (no room, no WebSocket).
 // It takes the client's own messages ('f' shots, 'g' grenade impacts, 'v' shoves, 'u' rack use) and
 // answers with ordinary 's' snapshots, so main.ts renders the dummies, deaths and pickups through
-// its usual paths. Damage uses the same shared formulas as server/room.ts (shotDamage, blastDamage).
+// its usual paths. Damage uses the same shared formulas as server/combat.ts (shotDamage, blastDamage).
 import { STOREY, WEAPONS, ZTYPES, ZT, ZSTATE, PLAYER, FIRE, LURE, armoredFront, TINPOT_FRONT, shotDamage, falloffAt, blastPower, blastRadius, blastDamage } from '../../shared/constants';
 import { RANGE_DUMMIES, type RangeDummy } from '../../shared/range';
 import type { Level } from '../../shared/level';
@@ -123,7 +123,7 @@ export class ShootingRange {
 
   /** Blast `B` at (x, y, z): damage the dummies in its radius and record it as the last shot. */
   private blastAt(B: BlastDef, x: number, y: number, z: number, power: number): void {
-    // Sight from just above the floor under it (a shell lying there) to the dummy's middle, as server/room.ts applyBlast.
+    // Sight from just above the floor under it (a shell lying there) to the dummy's middle, as server/combat.ts applyBlast.
     const R = blastRadius(B, power), m = { x, y, z }, ly = Math.max(y, this.L.groundY(x, y, z) + 0.3);
     this.stats.shotsFired++;
     const shot = { dmg: 0, body: 0, head: 0, zeds: 0, dist: Math.hypot(m.x - this.player.x, m.z - this.player.z), falloff: 1 };

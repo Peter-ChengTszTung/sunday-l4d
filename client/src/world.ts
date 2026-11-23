@@ -568,8 +568,14 @@ export function buildWorld(L: Level): World {
     for (const n of def.notes) { const ny = n.y ?? 0; rings.push(make(ringGeo, 0xfff6e0, trs(n.x, ny + 0.04, n.z))); peds.push(make(notePedGeo, undefined, trs(n.x, ny, n.z))); }
     for (const [e, list] of [[ringsEnt, rings], [pedsEnt, peds]] as const) {
       e.enabled = list.length > 0;
-      // Unpinned: the mesh instance owns it, and frees the one it replaces.
-      if (list.length) e.render!.meshInstances[0].mesh = toMesh(device, merge(list), false);
+      if (!list.length) continue;
+      // Unpinned: the mesh instance owns it. Swapping the mesh only drops the old one's reference,
+      // so free it here (the first, pinned mesh stays for dispose()), and reset the cached bounds:
+      // a fresh mesh has the same bounds version as the one it replaced, so they wouldn't recompute.
+      const mi = e.render!.meshInstances[0], old = mi.mesh;
+      mi.mesh = toMesh(device, merge(list), false);
+      mi.setCustomAabb(null);
+      if (old && old.refCount < 1) old.destroy();
     }
   }
 

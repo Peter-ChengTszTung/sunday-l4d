@@ -2,430 +2,52 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, shotDamage, blastPower, blastRadius, blastDamage, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, armoredFront, TINPOT_FRONT, ZHIT, meleeDamage, THROW_MAX, packThrowables, SURVIVOR_RULES, HEAL_MIN, MEDS, medIndex, packMeds, medUseful, shoveFatigue, shoveCooldown, type BlastDef, type DifficultyId, type WeaponDef } from '../shared/constants';
-import { F, ALL_OPEN, cellOf, type HoldStage, type HoldStageKind, type Level, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
-import { getLevel, chapterCount } from '../shared/chapters';
-import { wandererRegions, type Regions } from '../shared/regions';
+import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, type DifficultyId, type ZombieDef } from '../shared/constants';
+import { F, cellOf, type HoldStage, type Level, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
+import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-
-const INF = 32767;
-const rand = (a: number, b: number) => a + Math.random() * (b - a);
-const r2 = (v: number) => Math.round(v * 100) / 100;
-// Overridable so the smoke test doesn't have to sit through holdouts.
-const HOLD_SCALE = Number(process.env.HOLDOUT_SCALE) || 1;
-const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-/**
- * Storeys (shared/level.ts). Sight tests run eye to eye, EYE m above each thing's floor height. REACH_DY:
- * the most floor-height difference across which bites, melee, shoves, pickups, revives and floor hazards
- * connect (a flight of stairs is within it, the storey above is not: a zombie in the street can't bite
- * someone on the roof over it).
- */
-const EYE = 1.2, REACH_DY = 1.6;
-/**
- * Dormant wanderers, placed once per region per attempt (regions and density: shared/regions.ts).
- * Every `every` s the director measures each region's distance from the team on `reach` (path tiles
- * from the standing survivors with the current step's doors already open, so the street beyond
- * the next door is stocked before it opens). A region within `act` tiles that hasn't been placed
- * yet gets its rolled budget (weight x `roll`): sleepers in clumps of 1-3 (`clump` weights), on cells
- * `near`..`far` tiles out and hidden from every survivor (20 m). Each sleeper placed
- * counts against the budget for good: killing or waking it never refunds. A region is spent once a
- * survivor comes within `visit` tiles; until then a budget cut short by the `max` live-sleeper cap
- * (perf/bandwidth) or by visible cells tops up on later passes. Sleepers more than `cull` tiles away
- * (or cut off by a door) and out of sight are removed; one from an unspent region is refunded to it.
- * At the cap, sleepers from spent regions more than `evict` tiles away make room for unspent ones.
- */
-const WANDERERS = {
-  every: 1, act: 40, near: 10, far: 56, cull: 64, evict: 28, visit: 4, max: 40,
-  roll: [0.75, 1.25] as const, clump: [0.55, 0.3, 0.15] as const, triesPer: 6, triesMax: 160,
-};
-/** Director spawns never appear closer than this (metres) to any survivor. */
-const MIN_SPAWN_DIST = 16;
-/** Horde waves: members spawn within CLUSTER tiles of their source; FLANK_CHANCE that a big team-sourced
- * wave (FLANK_MIN+) also comes from a second side; NOISE_REACH: how far (path tiles) a noise source may sit
- * from the noise; GOO_HUNT: seconds a gooed survivor stays marked (wave members chase them first). */
-const CLUSTER = 3, FLANK_CHANCE = 0.22, FLANK_MIN = 10, NOISE_REACH = 12, GOO_HUNT = 12;
-
-/**
- * Adaptive pacing (L4D-style). Each survivor has an intensity 0..100 that rises when they are hurt,
- * downed, pinned/leaped/charged, gooed or kill zombies close by, and decays only while nothing
- * active is near them. The director cycles BUILD_UP -> SUSTAIN -> FADE -> RELAX on the team's
- * (max) intensity. Times in seconds, distances in metres unless noted.
- */
-const DIRECTOR = {
-  // Intensity gains.
-  dmg: 0.8, // per hp of damage taken
-  down: 35, pin: 25, leap: 15, charge: 12, goo: 15,
-  // Per zombie that dies within killR of the survivor; killFar for one further out, within killFarR
-  // (fighting at range still builds toward a breather, just slower).
-  kill: 2, killR: 6, killFar: 1, killFarR: 15,
-  // Intensity decay: per second, only while no active zombie is within engageR (and not pinned).
-  decay: 4, engageR: 9,
-  peak: 70, // team intensity that ends BUILD_UP
-  // BUILD_UP also ends (-> SUSTAIN) after this long (rolled, x difficulty `build`), so a team that
-  // never gets hurt enough to peak still gets its FADE/RELAX breathers.
-  buildMax: [60, 90] as const,
-  sustain: [3, 5] as const,
-  // FADE ends when the wave queue is empty and at most fadeQuiet active walkers are within
-  // fadeNear path tiles of the team, or after fadeMax.
-  fadeQuiet: 3, fadeNear: 15, fadeMax: 25,
-  // RELAX: at least relaxMin, then until relaxMax (rolled) or the team advances relaxAdvance tiles.
-  relaxMin: 15, relaxMax: [30, 45] as const, relaxAdvance: 20,
-  // Mob timer: counts down only in BUILD_UP; x mobMove while the team advanced in the last
-  // advanceWindow, x mobStill otherwise.
-  mobFirst: [80, 110] as const, mobEvery: [75, 120] as const, mobMove: 1.4, mobStill: 0.6, advanceWindow: 8,
-  mobAfterHoldout: [70, 100] as const,
-  // Anti-camping: this long in BUILD_UP without progress (outside holdouts/safe rooms) -> a horde from behind.
-  camp: 80,
-  /**
-   * Specials (L4D2-style). `slots[n - 1]` specials may be alive at once for n players (the Brute is
-   * extra; per-type caps are in pickSpecial). A type whose last one dies is off for its rolled `cd`
-   * (the Alarm Clock uses its own `alarmAt`). Free slots fill one at a time every `fill` s, after
-   * `first` s, in BUILD_UP/SUSTAIN only. New specials spawn *holding*: they lurk unseen `holdNear`..
-   * `holdFar` path tiles from their target and attack together once the slots are full or `maxWait`
-   * s after the first holder spawned. A holder that is spotted (in sight within `spotClose` m, or
-   * in a survivor's view cone `spotCone` within `spotR` m), hurt, or walked up on (`closeTiles`)
-   * attacks at once and cuts the rest's wait to `blownWait`. Holdouts skip all this: their specials
-   * come in pushes on their own clock (DIRECTOR.holdout).
-   * `place[type]`: chance of [ahead, level/flank, behind] the team; the rest anywhere.
-   */
-  specials: {
-    slots: [2, 2, 3, 4], first: [20, 30] as const, fill: [4, 8] as const,
-    cd: { [ZT.LEAPER]: [16, 26], [ZT.PUFFER]: [18, 28], [ZT.CHARGER]: [24, 36], [ZT.DROOLER]: [18, 28], [ZT.SNATCHER]: [22, 32], [ZT.PIGGYBACK]: [20, 30] } as Record<number, readonly [number, number]>,
-    maxWait: 22, blownWait: 3, holdNear: 6, holdFar: 10, closeTiles: 4, spotR: 26, spotClose: 9, spotCone: 0.6,
-    place: {
-      [ZT.CHARGER]: [0.75, 0.2, 0], // needs a straight run at the team: meet them head on
-      [ZT.LEAPER]: [0.1, 0.5, 0.3], [ZT.PUFFER]: [0.15, 0.45, 0.3], [ZT.DROOLER]: [0.1, 0.5, 0.3],
-      [ZT.ALARM]: [0.6, 0.25, 0], // has to be found to matter
-      [ZT.SNATCHER]: [0.2, 0.55, 0.2], // pulls from a side street
-      [ZT.PIGGYBACK]: [0.1, 0.4, 0.45], // jumps the back marker
-    } as Record<number, readonly [number, number, number]>,
-    // Lone wolf (2+ players): a survivor further than `lonerDist` m (walking, if they can't see each
-    // other) from every standing teammate for `lonerTime` s is singled out until back within
-    // `lonerExit` m. `lonerBias` of special spawns then come `lonerSpawn` path tiles from them, and
-    // specials within `lonerReach` path tiles of them go for them (unless someone is within 4 m).
-    lonerDist: 14, lonerExit: 11, lonerTime: 2, lonerBias: 0.7, lonerSpawn: [6, 14] as const, lonerReach: 30,
-  },
-  /**
-   * Roaming Brute (L4D Tank-flow style). Each attempt (fresh start or checkpoint restart) rolls, with
-   * `chance` (`scriptedChance` in a chapter that already has a `brute: true` step), a point in the
-   * `band` fraction of the chapter's route (ChapterData.route, path tiles), at least `minAhead` past
-   * where the attempt starts. A point within `clearance` tiles of a safe room or a holdout's machine,
-   * or from `clearance` before to `scriptGap` after where a scripted Brute's step begins, is rejected
-   * (up to `tries` draws, then no Brute this attempt). When the team's route progress passes it the
-   * Brute spawns `spawn` path tiles ahead, hidden; deferred during holdouts, while the whole team is
-   * in a safe room, or while another Brute is alive. While a Brute is up the mob timer and
-   * anti-camping pause (it is the peak; specials still fill their slots).
-   */
-  boss: {
-    chance: 0.8, scriptedChance: 0.4, band: [0.3, 0.7] as const, minAhead: 20,
-    clearance: 25, scriptGap: 70, tries: 12, spawn: [12, 24] as const,
-  },
-  /**
-   * The Weeper (L4D Witch style): each attempt rolls, with `chance` (x difficulty `brute`), a point in
-   * the `band` fraction of the route at least `minAhead` tiles on and `clearance` from any safe room or
-   * holdout, where the campaign has introduced her (INTRO). When the team's route progress passes it
-   * she is put down `spawn` path tiles ahead, out of sight, sitting. Never during a holdout.
-   */
-  weeper: { chance: 0.55, band: [0.12, 0.9] as const, minAhead: 25, clearance: 14, tries: 10, spawn: [14, 26] as const },
-  /** Chance a common spawns as an uncommon variant, once INTRO has introduced it. */
-  uncommon: { [ZT.TINPOT]: 0.07, [ZT.RAINCOAT]: 0.06 } as Record<number, number>,
-  /**
-   * Ambient trickle (BUILD_UP/SUSTAIN only, outside holdouts): one running walker every `every` s
-   * (minus `perPlayer` s per survivor) while fewer than `target[0] + target[1] * n` commons are up.
-   * Both the rate and the target are scaled by a factor: in BUILD_UP it ramps from `rampFrom` to 1
-   * over `rampTime` s (pressure grows the longer the build-up lasts), times (1 - `ease` * team
-   * intensity / peak) so the trickle backs off as the team nears its peak and lets the fight finish
-   * the job; SUSTAIN runs at `sustain`. FADE/RELAX: none. A spawn is a clump of `clump` walkers
-   * from one hidden spot with chance `clumpChance` (if the target has room).
-   */
-  ambient: {
-    every: [1.6, 3.2] as const, perPlayer: 0.25, minEvery: 0.5, target: [3, 3] as const,
-    rampFrom: 0.45, rampTime: 60, ease: 0.4, sustain: 1, clumpChance: 0.25, clump: [2, 3] as const,
-  },
-  /**
-   * Straggler cull (every `every` ticks): an active common or special (never the Brute or a sleeper)
-   * more than `tiles` path tiles from the nearest standing survivor is removed, unless a standing or
-   * downed survivor could see it (line of sight within the chapter's fog distance, at most `seeR` m),
-   * so nobody watches one vanish, or it is within `downGuard` m of a downed survivor (whoever is
-   * chewing on a teammate left behind keeps at it). A culled horde member goes back in the queue (see cullStragglers).
-   * Specials just free their slot (no cooldown). Holders lurk holdNear..holdFar tiles from their
-   * target, well inside `tiles`, so only one that has truly been left behind is culled.
-   */
-  cull: { every: 60, tiles: 34, seeR: 110, downGuard: 20 },
-  /**
-   * Staged holdouts (L4D2 finale/crescendo style): a holdout plays a script of stages (shared/level.ts
-   * HoldStage) over its timer. A step's `holdScript` is used as written; otherwise defaultHoldScript
-   * builds one from `hold` and the team size:
-   *   wave -> breather -> wave + specials -> breather -> final                       (hold < longHold)
-   *   wave -> breather -> wave + specials -> breather -> brute|specials -> breather -> final
-   * `final` is `finalFrac` of the hold clamped to `finalSecs`; breathers are `breath`, then
-   * `shortBreath` ([fraction of the hold, min, max] s); the fight stages share the rest by `split`
-   * (`split[2]` = the middle brute/specials stage). The Brute stage is rolled with `bruteChance`, never
-   * on a step that already brings one; if a Brute is up when it begins it plays as a specials push.
-   * Holds under `shortHold` s are just wave -> final.
-   * Per stage kind: `horde` (fraction of a full horde, HORDE.base + HORDE.per x n; the first stage's horde is the step's
-   * `horde` flag), `trickle` (s between walkers at one survivor, minus `triPer` per extra one, at
-   * least `triMin`; 0 = none) and `push[kind][n - 1]` specials spawned lurking that strike together
-   * after at most `pushWait` s (spotting or hurting one blows it sooner). The default script's second
-   * wave adds `wave2Push[n - 1]` specials and is `wave2Horde` of a full horde; its middle specials stage
-   * brings `midHorde`. Alive specials never exceed `maxSpecials[n - 1]`; in `final` they are topped up
-   * toward the push size every `drip` s (attacking at once). `final` also floods from two sides.
-   * With the whole team up on a perch (an upper floor under `perchMax` nodes: perchLevel), spawns come
-   * from a storey below, up to `perchReach` path tiles further out than usual (trySpawnCell).
-   */
-  holdout: {
-    finalFrac: 0.2, finalSecs: [15, 20] as const, breath: [0.1, 6, 8] as const, shortBreath: [0.07, 4, 6] as const,
-    split: [0.35, 0.35, 0.3] as const, longHold: 90, shortHold: 40, bruteChance: 0.4,
-    horde: { wave: 1, breather: 0, specials: 0, brute: 0, final: 1.25 } as Record<HoldStageKind, number>,
-    trickle: { wave: 1.0, breather: 0, specials: 1.4, brute: 1.8, final: 0.5 } as Record<HoldStageKind, number>,
-    triPer: 0.12, triMin: 0.3,
-    push: {
-      wave: [0, 0, 0, 0], breather: [0, 0, 0, 0], specials: [2, 2, 3, 3], brute: [0, 0, 0, 0], final: [2, 2, 3, 3],
-    } as Record<HoldStageKind, readonly number[]>,
-    wave2Push: [1, 2, 2, 3] as const, wave2Horde: 0.75, midHorde: 0.5,
-    pushWait: 6, maxSpecials: [2, 2, 3, 4] as const, drip: 7, perchReach: 16, perchMax: 300,
-    finalMsg: 'Here they come! Hold the line!',
-  },
-};
-/**
- * Room difficulty (ids and labels: shared/constants.ts DIFFICULTIES). Multipliers on DIRECTOR /
- * WANDERERS / zombie tuning, read through `this.diff`; 'normal' is all 1 / 0 = the base tuning.
- *  - `peak`: x DIRECTOR.peak, the team intensity that ends BUILD_UP (also the ambient ease scale).
- *    Higher = the team has to take more before the director backs off. Capped at 95 (intensity tops out at 100).
- *  - `relax`: x DIRECTOR.relaxMin and relaxMax (the RELAX breather).
- *  - `build`: x DIRECTOR.buildMax, the longest a BUILD_UP lasts without reaching the peak.
- *  - `mob`: x horde sizes: timed/camping/lever/step hordes (HORDE), holdout stage hordes, and the
- *    Alarm Clock and puffer-goo waves.
- *  - `mobEvery`: x the mob timer (mobFirst, mobEvery, mobAfterHoldout) and the anti-camping wait.
- *  - `slots[n - 1]`: + special slots for n survivors (DIRECTOR.specials.slots and holdout.maxSpecials), at least 1.
- *  - `spCd`: x special timers: per-type cooldowns, the first fill and the gap between fills.
- *  - `ambient`: x ambient trickle rate and target (and the holdout trickle rate).
- *  - `wander`: x each wanderer region's rolled budget (WANDERERS; the live cap `max` is unchanged).
- *  - `brute`: x roaming Brute chance (boss.chance and scriptedChance, at most 1) and the default
- *    holdout script's Brute stage chance; `bruteHp`: x Brute health.
- *  - `spHp`: x health of the other specials (leaper, puffer, charger, drooler, alarm clock).
- *  - `dmg`: x all damage zombies (and goo puddles) deal to survivors.
- *  - `intro`: + campaign position for INTRO (new infected types show up that much sooner; negative = later).
- *  - `ladder`: most zombies on one ladder at once (the rest wait at its foot or top); 1 = single file.
- * Survivor-side rules (respawn, downs, medkit heal, solo self-revives) are shared/constants.ts SURVIVOR_RULES.
- */
-const DIFFICULTY: Record<DifficultyId, {
-  peak: number; relax: number; build: number; mob: number; mobEvery: number; slots: readonly number[]; spCd: number;
-  ambient: number; wander: number; brute: number; bruteHp: number; spHp: number; dmg: number; intro: number; ladder: number;
-}> = {
-  easy: { peak: 0.75, relax: 1.3, build: 0.75, mob: 0.7, mobEvery: 1.3, slots: [-1, -1, -1, -1], spCd: 1.35, ambient: 0.6, wander: 0.8, brute: 0.6, bruteHp: 0.8, spHp: 0.85, dmg: 0.5, intro: -0.08, ladder: 1 },
-  normal: { peak: 1, relax: 1, build: 1, mob: 1, mobEvery: 1, slots: [0, 0, 0, 0], spCd: 1, ambient: 1, wander: 1, brute: 1, bruteHp: 1, spHp: 1, dmg: 1, intro: 0, ladder: 5 },
-  hard: { peak: 1.2, relax: 0.75, build: 1.3, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5, intro: 0.05, ladder: 5 },
-  nightmare: { peak: 1.35, relax: 0.55, build: 1.6, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2, intro: 0.1, ladder: Infinity },
-};
-/** Brute health: base + this per survivor beyond the first (before difficulty). */
-const BRUTE_HP_PER = 1100;
-/** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */
-const BRUTE_CATCHUP = { mult: 1.3, far: 9 };
-/** A full horde: base + per survivor walkers (before difficulty). Solo gets a smaller one, a full squad the same as before. */
-const HORDE = { base: 8, per: 5 };
-/**
- * Loot thinning, rolled each attempt: medkits kept on the map are at most base + per x survivors, small
- * medical items (plasters, vitamins, cocoa) at most smallBase + smallPer x survivors, wherever they lie;
- * `ammo` of the ammo piles are kept (each pile serves every survivor once, see onUse).
- */
-const LOOT = { medBase: 3, medPer: 2, ammo: 0.5, smallBase: 5, smallPer: 3 };
-/** Most a launcher blast does to a survivor at its centre (falls to 0 at half its radius). */
-const BLAST_FF = 20;
-const DIRECTOR_DEBUG = !!process.env.DIRECTOR_DEBUG;
-const roll = (r: readonly [number, number]) => rand(r[0], r[1]);
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-const tenth = (v: number) => Math.round(v * 10) / 10;
-
-/** The staged script for a holdout of `hold` s with no authored `holdScript` (DIRECTOR.holdout). `brute`: include a Brute stage. */
-export function defaultHoldScript(hold: number, n: number, brute: boolean): HoldStage[] {
-  const H = DIRECTOR.holdout, k = Math.min(Math.max(n, 1), 4) - 1;
-  const fin = clamp(hold * H.finalFrac, H.finalSecs[0], H.finalSecs[1]);
-  if (hold < H.shortHold) {
-    const f = tenth(Math.min(fin, hold * 0.4));
-    return [{ kind: 'wave', secs: tenth(hold - f) }, { kind: 'final', secs: f }];
-  }
-  const b1 = tenth(clamp(hold * H.breath[0], H.breath[1], H.breath[2]));
-  const b2 = tenth(clamp(hold * H.shortBreath[0], H.shortBreath[1], H.shortBreath[2]));
-  const wave2 = (secs: number): HoldStage => ({ kind: 'wave', secs, horde: H.wave2Horde, specials: H.wave2Push[k] });
-  if (hold < H.longHold) {
-    const rest = hold - fin - b1 - b2, a = tenth(rest / 2);
-    return [{ kind: 'wave', secs: a }, { kind: 'breather', secs: b1 }, wave2(tenth(rest - a)), { kind: 'breather', secs: b2 }, { kind: 'final', secs: tenth(fin) }];
-  }
-  const rest = hold - fin - b1 - 2 * b2, a = tenth(rest * H.split[0]), b = tenth(rest * H.split[1]), c = tenth(rest - a - b);
-  const mid: HoldStage = brute ? { kind: 'brute', secs: c } : { kind: 'specials', secs: c, horde: H.midHorde };
-  return [
-    { kind: 'wave', secs: a }, { kind: 'breather', secs: b1 }, wave2(b), { kind: 'breather', secs: b2 },
-    mid, { kind: 'breather', secs: b2 }, { kind: 'final', secs: tenth(fin) },
-  ];
-}
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, type Side } from './tuning';
+import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
+import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
+import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
 
 const enum Phase { BUILD_UP, SUSTAIN, FADE, RELAX }
 const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
-/** Which side of the team a spawn must be on: 1 ahead (toward the objective), -1 behind, 2 level with it (a flank), 0 any. */
-type Side = -1 | 0 | 1 | 2;
-/** Specials that hold for a coordinated attack and go for a lone survivor (not the Alarm Clock: it keeps away and rings). */
-const AMBUSHER = (type: number) => type === ZT.LEAPER || type === ZT.PUFFER || type === ZT.CHARGER || type === ZT.DROOLER || type === ZT.SNATCHER || type === ZT.PIGGYBACK;
-/** Specials that take a director slot: not commons, the Brute or the Weeper. */
-/** Highest a survivor's feet may be above the floor under them: a jump (~1.08 m) or a knockback hop, with slack. */
-const MAX_LIFT = 1.3;
-/** After the server teleports a survivor, their own position messages are ignored this long (ones already in flight would undo it). */
-const TP_GRACE = 0.3;
-const SLOTTED = (type: number) => !isCommon(type) && type !== ZT.BRUTE && type !== ZT.WEEPER;
-/** Zombies that hold a survivor without a wall (freed by shoving the victim, too). */
-const GRABBER = (type: number) => type === ZT.SNATCHER || type === ZT.PIGGYBACK;
 
-export interface Player {
-  id: number; ws: WebSocket; name: string; look: number;
-  /** `y`: feet height from the client (floor + any jump). */
-  x: number; y: number; z: number; ry: number; rx: number;
-  /** Floor height under them and their walk-graph node (shared/level.ts), refreshed by `place`. */
-  gy: number; node: number;
-  hp: number; st: number; w: number; anim: number;
-  /** Medical items carried, per kind in MEDS order, and health still to trickle back from Gummy Vitamins (`regen`, at `regenRate` a second). */
-  meds: number[]; regen: number; regenRate: number;
-  revT: number; reviving: number; respawnT: number; lastFire: number; lastShove: number; kills: number;
-  /** Shot clock: scheduled time of the last accepted shot, and the weapon it came from. */ fireW: number;
-  /** Launcher grenades fired and not yet claimed ('g'): where and when they left the tube. */
-  nades: { x: number; y: number; z: number; t: number; w: number; seq: number; ex: number; ez: number }[];
-  /** Weapons the server has seen this player pick up (-1 = none). Fire claims must use one of these or the pistol. */
-  primary: number; sidearm: number;
-  /** Close-in weapon carried (weapon index, -1 = none), throwables carried (weapon index -> how many; THROW_MAX in all), and armour points left (ARMOR). */
-  melee: number; thr: Record<number, number>; armor: number;
-  /** Room time until which position updates are still ignored after a hold ends (the client is catching up to where it was dragged). */
-  freeAt: number;
-  /** Shot clock per weapon index, so alternating weapons can't beat each weapon's own rate. */
-  shotAt: Record<number, number>;
-  /** Id of the zombie holding this survivor: Charger pin, Snatcher lasso, Piggyback ride (0 = free). While held the server owns their position. */
-  pinned: number;
-  /** Director pacing: how hard-pressed this survivor is (0..100, server-only). */
-  intensity: number;
-  /** Times downed since the last medkit, rescue or safe room (SURVIVOR_RULES.downs). */ downs: number;
-  /** Solo self-revives left this attempt, and the revive time the current one needs (s). */ selfRev: number; revNeed: number;
-  /** Shove fatigue (PLAYER.shoveMax). */ shoveFat: number;
-  /** Ammo piles and safe-room weapon stacks this survivor has used (each serves every survivor once). */ ammoUsed: Set<number>;
-}
-
-interface Zombie {
-  /** `y`: floor height it stands on (follows stairs and ladders through Level.moveSlide). */
-  id: number; type: number; x: number; y: number; z: number; ry: number; st: number; hp: number; speed: number;
-  offX: number; offZ: number; t: number; hitDone: boolean; target: number; dormant: boolean;
-  /** Spawned by a dev 'dbgz' message: survives the dev `calm` switch. */ dbg?: boolean;
-  stun: number; vx: number; vz: number; leapCd: number; lx: number; lz: number;
-  /** Special-ability cooldown (charge, spit, ring), separate from the leaper's `leapCd`. */
-  sp: number;
-  /** Seconds left fleeing (alarm clock after ringing). */
-  flee: number;
-  /** Charger pin: time pinned, damage accumulator. */
-  pinT: number; acc: number;
-  /** Damage taken from survivors while pinning (knocks it off at CHARGER.pinBreakDmg). */ pinHit: number;
-  /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
-  /** Special holding for a coordinated attack: 0 = attacking, 1 = lurking unseen, 2 = lurking but in a survivor's sight (backs off). */
-  hold: number;
-  /** Id of the queued horde (Wave.id) this walker was spawned for; 0 = not a horde member (ambient, wanderer, holdout). */
-  wave: number;
-  /** Wanderer region it was placed in (-1 = not a placed wanderer). */
-  region: number;
-  /** Weeper: still sitting (not yet woken), and her anger 0..1 (WEEPER). */
-  sit: boolean; anger: number;
-}
-
-/**
- * A queued horde. Members drip in from hidden cells clustered around `srcs` (spawn cells; a second
- * one flanks from another side). `anchor`: cell of the noise that called it (-1 = the team); a lost
- * source is re-picked by the same rule. `hunt`: room time until which members chase marked survivors.
- * `side`: for team-sourced waves, 1 = ahead-biased (default), -1 = from behind (anti-camping), 0 = any.
- */
-interface Wave { id: number; left: number; srcs: number[]; anchor: number; hunt: number; repicks: number; side: Side; requeue?: boolean }
 /** `pickSpawnCell`'s `ahead` for a team-sourced wave's side. */
 const waveAhead = (w: Wave) => (w.side < 0 ? -1 : w.side > 0 ? 0.75 : 0);
 
-/** Drooler goo in flight (simulated on the server along the same arc the clients draw). */
-interface Glob { x1: number; y1: number; z1: number; t: number }
-/** A damaging goo puddle on the floor. */
-interface Puddle { id: number; x: number; y: number; z: number; r: number; life: number; age: number; tick: number }
-/** A firebomb's burning patch; `by`: id of the survivor who threw it (kill credit). */
-interface Fire { id: number; x: number; y: number; z: number; r: number; life: number; age: number; tick: number; by: number }
-/** A rattling Rattle Bomb: seconds until it goes off, who threw it and with which weapon, and the path field toward it. */
-interface Lure { x: number; y: number; z: number; t: number; by: number; w: number; field: Int16Array }
+export type { Player } from './types';
 
-/** Per-chapter static data the director needs. */
-interface ChapterData {
-  L: Level;
-  progress: Int16Array; // BFS distance from the start with every door open
-  /** Spawnable cells (not safe rooms/doors). */
-  open: number[];
-  /** 1 where `open` has the cell. */ spawnable: Uint8Array;
-  /** Wanderer regions over `open` (populated once per attempt, see WANDERERS). */ regions: Regions;
-  /**
-   * The quest route as one distance (path tiles), monotone along the steps, unlike `progress` (some
-   * chapters loop back toward the start). Leg `i` runs from step i-1's objective to step i's, walked
-   * with step i's doors: it starts at `start[i]` and is `len[i]` long; `total` is the whole route.
-   */
-  route: { start: number[]; len: number[]; total: number };
-}
-const chapterData = new Map<number, ChapterData>();
-function dataFor(ch: number): ChapterData {
-  let d = chapterData.get(ch);
-  if (d) return d;
-  const L = getLevel(ch), regions = wandererRegions(L);
-  const { progress, open, spawnable } = regions;
-  d = { L, progress, open, spawnable, regions, route: routeOf(L) };
-  chapterData.set(ch, d);
-  return d;
-}
+/** `pickTarget`'s result: who a zombie goes for, how far (floor to floor), and the field it paths on. */
+interface Pick { tgt: Player | null; d: number; field: Int16Array }
 
 /**
- * Nodes of step `s`'s objective, walkable with door mask `doors`: its untaken items, its area (on the
- * area's storey), or around its waypoint (a `use` step: on the machine's storey).
+ * Per-zombie context for the state handlers in updateZombies. One instance is reused for every
+ * zombie (no per-zombie allocation): handlers must not hold on to it. `hd`: flat distance to the
+ * target; `level`: on the same floor (or flight of stairs); `seen`: memoised sight (-1 = not yet
+ * tested this tick, see `sees`). `go`: the door mask for this tick's movement.
  */
-function objectiveCells(L: Level, s: Step, doors: number, taken?: Set<number>): number[] {
-  const src: number[] = [];
-  const add = (tx: number, tz: number, lv: number) => { if (!L.solidAt(tx, tz, doors, lv)) src.push(L.node(tx, tz, lv)); };
-  if (s.kind === 'collect') {
-    for (const p of L.def.pickups) if (p.kind === 'item' && p.group === s.group && !taken?.has(p.id)) add(cellOf(p.x), cellOf(p.z), L.storeyOf(p.y));
-  } else if (s.area) {
-    const lv = s.area.lv ?? 0;
-    for (let z = s.area.z0; z <= s.area.z1; z++) for (let x = s.area.x0; x <= s.area.x1; x++) add(x, z, lv);
-  } else {
-    const m = s.kind === 'use' && s.target !== undefined ? L.def.pickups[s.target] : undefined;
-    const tx = cellOf(s.at.x), tz = cellOf(s.at.z), lv = L.storeyOf(m ? m.y : s.at.y ?? 0);
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) add(tx + dx, tz + dz, lv);
-  }
-  return src;
+interface ZCtx {
+  dt: number; go: number; players: Player[]; zs: Zombie[];
+  z: Zombie; T: ZombieDef; zn: number; tgt: Player; d: number; hd: number; level: boolean; field: Int16Array; seen: number;
 }
 
-function routeOf(L: Level): ChapterData['route'] {
-  const def = L.def, start: number[] = [], len: number[] = [], field = new Int16Array(L.N);
-  let from = [L.node(def.startCell.x, def.startCell.z, def.startCell.lv ?? 0)], total = 0;
-  def.steps.forEach((s, i) => {
-    const doors = L.doorsAfter(i), dst = objectiveCells(L, s, doors);
-    L.distanceField(dst, doors, field);
-    let d = INF;
-    for (const c of from) d = Math.min(d, field[c]);
-    start.push(total); len.push(d < INF ? d : 0); total += len[i];
-    if (dst.length) from = dst;
-  });
-  return { start, len, total };
-}
-
-interface Checkpoint { step: number; doors: number; taken: number[] }
-
-export class Room {
+export class Room implements CombatHost {
   players = new Map<number, Player>();
   zombies = new Map<number, Zombie>();
   private nextPid = 1;
   private nextZid = 1;
   private ch = 0;
   private cd!: ChapterData;
-  private L!: Level;
+  L!: Level;
   private flow = new Int16Array(1);
   private tickN = 0;
   /** Dev-server test switches (the 'dbgf' message): no damage to survivors / no director zombies. */
   private dbgGod = false; private dbgCalm = false;
   private interval: ReturnType<typeof setInterval>;
-  private doors = 0;
-  private state: 'play' | 'won' | 'lost' = 'play';
+  doors = 0;
+  state: 'play' | 'won' | 'lost' = 'play';
   private endTimer = 0;
   private started = false;
   private step = 0;
@@ -445,8 +67,8 @@ export class Room {
   /** Each safe room's (start + checkpoints) medkits in reveal order: one per survivor is stocked. */
   private safeMeds: number[][] = [];
   private thinned = new Set<number>();
-  private events: GameEvent[] = [];
-  private time = 0;
+  events: GameEvent[] = [];
+  time = 0;
   private kills = 0;
   private best = 0; // furthest progress (tiles) reached this attempt
   private pendingBrute = false;
@@ -490,11 +112,34 @@ export class Room {
   private lonerField = new Int16Array(1);
   private isoScratch = new Int16Array(1);
 
+  /** Path field toward an awake Weeper's victim (she goes for them, not whoever is nearest); refreshed with the flow field. */
+  private weeperField = new Int16Array(1);
+  /** Scratch for Level.neighbors8. */
+  private nb: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
+  /** Node the last flowStep headed for (its own node when it returned null). */
+  private stepNode = 0;
+  /** Ladder node -> zombies on (or stepping onto) it this tick (at most `diff.ladder`, see updateZombies). */
+  private onLadder = new Map<number, number>();
+  /** Scratch reused by every zombie in updateZombies (pickTarget's result, the handlers' context). */
+  private pick: Pick = { tgt: null, d: Infinity, field: this.flow };
+  private zc: ZCtx = { dt: 0, go: 0, players: [], zs: [], z: null!, T: ZTYPES[0], zn: 0, tgt: null!, d: 0, hd: 0, level: false, field: this.flow, seen: -1 };
+  /** BFS distance to the current objective (recomputed when the step, doors or items change). */
+  private objField = new Int16Array(1);
+  private objKey = '';
+  private perchMemo = { doors: -1, size: new Map<number, number>() };
+  private nearCache: { t: number; cells: number[] } = { t: -1, cells: [] };
+  private waves: Wave[] = [];
+  private nextWave = 1;
+  /** Goo-marked survivors (pid → room time the mark wears off) and the BFS field toward them. */
+  private marks = new Map<number, number>();
+  private markFlow = new Int16Array(1);
+  private noiseField = new Int16Array(1);
+
   /**
    * `startAt`: step index of a checkpoint (gather) step to begin the chapter in that safe room,
    * or -1 for the chapter start. `listed`: shown in the lobby's room list. `difficulty`: DIFFICULTY row, fixed for the room's life.
    */
-  constructor(public code: string, chapter = 0, private allowDebug = false, startAt = -1, readonly listed = true, readonly difficulty: DifficultyId = 'normal') {
+  constructor(public code: string, chapter = 0, readonly allowDebug = false, startAt = -1, readonly listed = true, readonly difficulty: DifficultyId = 'normal') {
     this.loadChapter(chapter);
     const cp = this.checkpointFor(startAt);
     if (cp) { this.checkpoint = cp; this.reset(true, true); } else this.reset(false);
@@ -669,7 +314,7 @@ export class Room {
   /** Walk-graph node a zombie (or any point with a floor height) is on. */
   private nodeOf(o: Pos3): number { return this.L.nodeAt(o.x, o.y, o.z); }
   /** Eye-to-eye sight between things standing at floor heights ay and by. */
-  private sight(ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
+  sight(ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
     return this.L.hasLOS(ax, ay + EYE, az, bx, by + EYE, bz, this.doors);
   }
 
@@ -860,16 +505,16 @@ export class Room {
         p.ry = m.ry; p.rx = m.rx; p.w = m.w | 0; p.anim = m.a | 0;
         break;
       }
-      case 'f': this.onFire(p, m); break;
-      case 'g': this.onBlast(p, m); break;
-      case 'v': this.onShove(p); break;
+      case 'f': onFire(this, p, m); break;
+      case 'g': onBlast(this, p, m); break;
+      case 'v': onShove(this, p); break;
       case 'u': if (!p.pinned) this.onUse(p, m.id | 0); break;
       case 'h': {
         const k = m.k === undefined ? 0 : m.k | 0, med = MEDS[k];
         if (!med || p.st !== PSTATE.ALIVE || p.pinned || !(p.meds[k] > 0) || !medUseful(k, p.hp, p.downs)) return;
         p.meds[k]--;
         // The medkit heals a share of what is missing; the small items a flat amount, vitamins mostly as a trickle.
-        const now = k === 0 ? Math.max(HEAL_MIN, (PLAYER.hp - p.hp) * this.rules.heal) : med.heal;
+        const now = healAmount(k, p.hp, this.rules.heal);
         p.hp = Math.min(PLAYER.hp, p.hp + now);
         if (med.regen > 0) { p.regen = Math.max(p.regen, med.regen); p.regenRate = med.regen / med.over; }
         if (med.steady) p.downs = 0;
@@ -894,202 +539,8 @@ export class Room {
       }
     }
   }
-  private onFire(p: Player, m: Extract<ClientMsg, { t: 'f' }>): void {
-    const wi = m.w | 0, wp = WEAPONS[wi];
-    // Pinned (a Charger, a lasso, a rider): no shooting. Down: the sidearm only.
-    const downShot = p.st === PSTATE.DOWN && wi === p.sidearm;
-    if (!wp || (p.st !== PSTATE.ALIVE && !downShot) || p.pinned || this.state !== 'play') return;
-    // Only the pistol and weapons this player actually picked up (dev servers allow debug gives).
-    if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && !(p.thr[wi] > 0) && !this.allowDebug) return;
-    const e = Array.isArray(m.e) && m.e.length === 3 && m.e.every(Number.isFinite) ? m.e : null;
-    if (wp.slot === 'throw') {
-      // A throw is its own action (no shot clock): one of that kind is spent; what it does waits for the landing claim ('g').
-      if (p.thr[wi] > 0) p.thr[wi]--;
-      if (e) this.events.push(['shot', p.id, wi, r2(e[0]), r2(e[1]), r2(e[2])]);
-      p.nades.push({ x: p.x, y: p.gy, z: p.z, t: this.time, w: wi, seq: (m.n ?? 0) | 0, ex: e ? e[0] : p.x, ez: e ? e[2] : p.z });
-      if (p.nades.length > 6) p.nades.shift();
-      return;
-    }
-    // Shot clock: scheduled from the previous accepted shot rather than reset to "now", so ordinary
-    // jitter (bursts within about 0.35 s) doesn't drop real shots; a longer lag spike can still lose
-    // some. Sustained rate is capped at 1.25x the weapon's own; an idle gap banks at most 0.25 s;
-    // a weapon swap needs 0.25 s (the client spends 0.3 s) and each weapon keeps its own clock, so
-    // alternating weapons can't beat either weapon's rate.
-    const gap = wi === p.fireW ? wp.rate * 0.8 : 0.25;
-    const clock = Math.max(p.lastFire + gap, (p.shotAt[wi] ?? -1e9) + wp.rate * 0.8, this.time - 0.25);
-    if (clock > this.time + 0.1) return;
-    p.lastFire = clock; p.fireW = wi; p.shotAt[wi] = clock;
-    if (e) this.events.push(['shot', p.id, wi, r2(e[0]), r2(e[1]), r2(e[2])]);
-    // A swing is quiet: it wakes nobody.
-    if (wp.melee) { if (Array.isArray(m.h)) this.meleeHits(p, wp, m.h); return; }
-    this.alertNear(p.x, p.gy, p.z, 22);
-    if (wp.blast) {
-      // Damage waits for the impact claim ('g'); remember where it was fired from.
-      p.nades.push({ x: p.x, y: p.gy, z: p.z, t: this.time, w: wi, seq: (m.n ?? 0) | 0, ex: e ? e[0] : p.x, ez: e ? e[2] : p.z });
-      if (p.nades.length > 6) p.nades.shift();
-      return;
-    }
-    if (!Array.isArray(m.h)) return;
-    if (wp.pierce > 1) { this.pierceHits(p, wi, m.h, e); return; }
-    let budget = wp.pellets;
-    for (const h of m.h.slice(0, wp.pellets)) {
-      if (!Array.isArray(h)) continue;
-      const z = this.zombies.get(h[0] | 0);
-      if (!z) continue;
-      const nb = Math.max(0, Math.min(budget, h[1] | 0)); budget -= nb;
-      const nh = Math.max(0, Math.min(budget, h[2] | 0)); budget -= nh;
-      if (nb + nh === 0) continue;
-      const d = Math.hypot(z.x - p.x, z.z - p.z, z.y - p.gy);
-      if (d > wp.range + 4) continue;
-      // Across storeys, the floor between must not be in the way (on one floor, claims stay trusted as before, so lag never eats hits).
-      if (Math.abs(z.y - p.gy) > REACH_DY && !this.sight(p.x, p.gy, p.z, z.x, z.y - EYE + 0.6, z.z) && !this.sight(p.x, p.gy, p.z, z.x, z.y - EYE + ZHIT.headY, z.z)) continue;
-      // A Tinpot's front takes only a share of the bullet.
-      const front = armoredFront(z.type, z.st, z.ry, z.x, z.z, p.x, p.z);
-      if (front) this.events.push(['clang', z.id]);
-      // Falloff from the server's view of the distance; the slack above stays at the range floor.
-      this.damageZombie(z, shotDamage(wp, z.type, nb, nh, Math.min(d, wp.range)) * (front ? TINPOT_FRONT : 1), p, nh > 0 && !front);
-    }
-  }
-
-  /**
-   * A piercing bullet: up to `pierce` distinct zombies, one hit each. Checked nearest first:
-   * every one in range; the ones after the first in line of sight and inside a lane around the
-   * shooter -> end-point line. The bullet stops at a Brute.
-   */
-  private pierceHits(p: Player, wi: number, claims: unknown[], e: [number, number, number] | null): void {
-    const wp = WEAPONS[wi];
-    const seen = new Set<number>();
-    const hits: { z: Zombie; head: boolean; d: number }[] = [];
-    for (const h of claims.slice(0, wp.pierce)) {
-      if (!Array.isArray(h)) continue;
-      const z = this.zombies.get(h[0] | 0);
-      const nb = Math.max(0, h[1] | 0), nh = Math.max(0, h[2] | 0);
-      if (!z || seen.has(z.id) || nb + nh === 0) continue;
-      seen.add(z.id);
-      hits.push({ z, head: nh > 0, d: Math.hypot(z.x - p.x, z.z - p.z, z.y - p.gy) });
-    }
-    hits.sort((a, b) => a.d - b.d);
-    if (!hits.length) return;
-    // The lane: from the shooter through where the bullet stopped (or the nearest hit).
-    let lx = (e ? e[0] : hits[0].z.x) - p.x, lz = (e ? e[2] : hits[0].z.z) - p.z;
-    let ll = Math.hypot(lx, lz);
-    if (ll < 0.5) { lx = hits[0].z.x - p.x; lz = hits[0].z.z - p.z; ll = Math.hypot(lx, lz) || 1; }
-    lx /= ll; lz /= ll;
-    for (let i = 0; i < hits.length; i++) {
-      const { z, head, d } = hits[i];
-      if (d > wp.range + 4) break;
-      if (i > 0) {
-        const ox = z.x - p.x, oz = z.z - p.z, side = Math.abs(ox * lz - oz * lx);
-        if (side > 1.4 + ZTYPES[z.type].radius || ox * lx + oz * lz < -1) continue;
-        if (!this.sight(p.x, p.gy, p.z, z.x, z.y, z.z)) break;
-      }
-      // A Tinpot's front takes a share of even a piercing round and stops it dead.
-      if (armoredFront(z.type, z.st, z.ry, z.x, z.z, p.x, p.z)) {
-        this.events.push(['clang', z.id]);
-        this.damageZombie(z, shotDamage(wp, z.type, head ? 0 : 1, head ? 1 : 0, Math.min(d, wp.range)) * TINPOT_FRONT, p, false);
-        break;
-      }
-      this.damageZombie(z, shotDamage(wp, z.type, head ? 0 : 1, head ? 1 : 0, Math.min(d, wp.range)), p, head);
-      if (z.type === ZT.BRUTE) break;
-    }
-  }
-
-  /**
-   * A close-in swing: up to `cleave` distinct zombies, each within reach (plus slack for lag) and
-   * inside the swing's cone from where the server has the survivor facing, in line of sight. Survivors
-   * of the hit are staggered and shoved back (not the Brute, a Charger or a woken Weeper).
-   */
-  private meleeHits(p: Player, wp: WeaponDef, claims: unknown[]): void {
-    const M = wp.melee!, fx = -Math.sin(p.ry), fz = -Math.cos(p.ry), seen = new Set<number>();
-    for (const h of claims.slice(0, M.cleave)) {
-      if (!Array.isArray(h)) continue;
-      const z = this.zombies.get(h[0] | 0);
-      if (!z || seen.has(z.id)) continue;
-      seen.add(z.id);
-      const T = ZTYPES[z.type], dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz);
-      if (d > M.reach + T.radius + 1 || Math.abs(z.y - p.gy) > REACH_DY || (d > 0.6 && (dx * fx + dz * fz) / d < M.arc - 0.35)) continue;
-      if (!this.sight(p.x, p.gy, p.z, z.x, z.y, z.z)) continue;
-      this.damageZombie(z, meleeDamage(wp, z.type), p, false);
-      if (z.hp <= 0 || z.type === ZT.BRUTE || z.type === ZT.CHARGER || z.type === ZT.WEEPER) continue;
-      const k = d || 1;
-      z.stun = isCommon(z.type) ? M.stun : M.stun * 0.5; z.st = ZSTATE.STAGGER;
-      z.vx = (dx / k) * M.knock; z.vz = (dz / k) * M.knock;
-    }
-  }
-
-  /**
-   * Launcher impact claim. Pairs with the oldest unclaimed grenade, checks the impact is in
-   * range of where it was fired and in sight of it (2D, through the grid), then blasts:
-   * linear falloff, walls block. Survivors near the centre take a little (BLAST_FF, not scaled by
-   * difficulty) and a hop of knockback.
-   */
-  private onBlast(p: Player, m: Extract<ClientMsg, { t: 'g' }>): void {
-    if (this.state !== 'play' || p.st === PSTATE.DEAD) return;
-    while (p.nades.length && p.nades[0].t < this.time - 6) p.nades.shift();
-    // Match the claim to its shell by sequence number, so a dropped 'f' can't shift claims by one.
-    const at = m.n ? p.nades.findIndex((q) => q.seq === ((m.n ?? 0) | 0)) : 0;
-    if (at < 0) return;
-    const n = p.nades.splice(at, 1)[0];
-    const wp = n && WEAPONS[n.w], B = wp?.blast;
-    if (!n || !wp || !B || ![m.x, m.y, m.z].every(Number.isFinite)) return;
-    const dx = m.x - n.x, dz = m.z - n.z, d = Math.hypot(dx, dz);
-    if (d > wp.range + 4 || m.y < -1 || m.y > 60) return;
-    // Time of flight: the shell can't land sooner than its launch speed allows.
-    if (this.time - n.t < d / (B.speed * 1.3) - 0.15) return;
-    // It lands near the line it was aimed along (it may stop short on a zombie or wall).
-    const ax = n.ex - n.x, az = n.ez - n.z, al = Math.hypot(ax, az);
-    if (al > 1 && (Math.abs(dx * az - dz * ax) / al > 3 || (dx * ax + dz * az) / al > al + 4)) return;
-    // Pull the point back off the wall face it struck before the sight checks (lifted off the floor it landed on).
-    const k = d > 0.01 ? Math.max(0, d - 0.6) / d : 0;
-    const bx = n.x + dx * k, bz = n.z + dz * k, gb = this.L.groundY(bx, m.y, bz);
-    const ay = n.y + EYE, by = Math.max(gb + 0.3, ay + (m.y - ay) * k);
-    if (!this.L.hasLOS(n.x, ay, n.z, bx, by, bz, this.doors) && !this.lobClear(n.x, ay, n.z, bx, by, bz)) return;
-    // Throwables: the landing starts a fire or a rattle instead of a blast.
-    if (wp.thrown === 'fire') { this.addFire(bx, gb, bz, p); return; }
-    if (wp.thrown === 'lure') { this.addLure(bx, gb, bz, p, n.w); return; }
-    const power = blastPower(B, d);
-    this.events.push(['blast', p.id, r2(m.x), r2(m.y), r2(m.z), power]);
-    this.applyBlast(p, B, bx, m.y, bz, power);
-  }
-
-  /**
-   * Multi-storey maps: a lobbed shell or throw may arc over what the straight line clips (a roof edge,
-   * up onto a roof): clear along two legs through an apex above the midpoint. Flat maps keep the
-   * straight-line rule (their walls are sky-high anyway).
-   */
-  private lobClear(ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
-    if (this.L.levels === 1) return false;
-    const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = Math.max(ay, by) + Math.min(6, 0.3 * Math.hypot(bx - ax, bz - az));
-    return this.L.hasLOS(ax, ay, az, mx, my, mz, this.doors) && this.L.hasLOS(mx, my, mz, bx, by, bz, this.doors);
-  }
-
-  /** Blast `B` at (bx, by, bz): zombies in its radius and sight, a nick and a hop for survivors near the centre. */
-  private applyBlast(by: Player | null, B: BlastDef, bx: number, y: number, bz: number, power: number): void {
-    const R = blastRadius(B, power), gb = this.L.groundY(bx, y, bz), ly = Math.max(y, gb + 0.3);
-    for (const z of [...this.zombies.values()]) {
-      const T = ZTYPES[z.type], zc = z.y + T.scale * 0.7;
-      const zd = Math.max(0, Math.hypot(z.x - bx, zc - y, z.z - bz) - T.radius);
-      if (zd > R || !this.L.hasLOS(bx, ly, bz, z.x, Math.max(zc, z.y + 0.3), z.z, this.doors)) continue;
-      if (isCommon(z.type) && zd < R * 0.8) {
-        const a = Math.hypot(z.x - bx, z.z - bz) || 1;
-        z.stun = 0.9; z.vx = ((z.x - bx) / a) * 8; z.vz = ((z.z - bz) / a) * 8; z.st = ZSTATE.STAGGER;
-      }
-      this.damageZombie(z, blastDamage(B, power, zd), by, false);
-    }
-    for (const q of this.players.values()) {
-      if (q.st !== PSTATE.ALIVE || q.pinned || Math.abs(q.gy - gb) > REACH_DY) continue;
-      const qd = Math.hypot(q.x - bx, q.z - bz);
-      if (qd > R * 0.5) continue;
-      const ff = Math.round(BLAST_FF * power * (1 - qd / (R * 0.5)));
-      if (ff >= 1) this.damagePlayer(q, ff, bx, bz, false, false);
-      if (qd < 0.01) continue;
-      this.events.push(['kb', q.id, r2(((q.x - bx) / qd) * 6 * power), r2(((q.z - bz) / qd) * 6 * power)]);
-    }
-    this.alertNear(bx, gb, bz, 30);
-  }
-
   /** A firebomb burst at (x, z) on the floor at height y: a patch that burns for FIRE.life (the oldest goes out past FIRE.max). */
-  private addFire(x: number, y: number, z: number, by: Player): void {
+  addFire(x: number, y: number, z: number, by: Player): void {
     if (this.fires.length >= FIRE.max) this.fires.shift();
     const f: Fire = { id: this.nextPuddle++, x, y, z, r: FIRE.r, life: FIRE.life, age: 0, tick: 0, by: by.id };
     this.fires.push(f);
@@ -1098,7 +549,7 @@ export class Room {
   }
 
   /** A Rattle Bomb landed at (x, z) on the floor at height y: commons flock to it until it goes off (LURE). */
-  private addLure(x: number, y: number, z: number, by: Player, w: number): void {
+  addLure(x: number, y: number, z: number, by: Player, w: number): void {
     const c = this.nearestOpen({ x, y, z }), field = new Int16Array(this.L.N);
     this.L.distanceField([this.nodeOf(c)], this.doors, field);
     // A third rattle sets the oldest off early rather than cancelling it.
@@ -1106,46 +557,6 @@ export class Room {
     this.lures.push({ x, y, z, t: LURE.time, by: by.id, w, field });
     this.events.push(['lure', r2(x), r2(z), LURE.time, r2(y)]);
     this.alertNear(x, y, z, LURE.wake);
-  }
-
-  private onShove(p: Player): void {
-    if (p.st !== PSTATE.ALIVE || p.pinned) return;
-    // Fatigue gets the same 0.8 slack as the cooldown, so arrival jitter can't tip it past shoveMax before the client.
-    const rest = this.time - p.lastShove, fat = shoveFatigue(p.shoveFat, rest / 0.8);
-    if (rest < shoveCooldown(fat) * 0.8) return;
-    p.lastShove = this.time; p.shoveFat = fat + 1;
-    const fx = -Math.sin(p.ry), fz = -Math.cos(p.ry);
-    for (const z of [...this.zombies.values()]) {
-      const dx = z.x - p.x, dz = z.z - p.z, d = Math.hypot(dx, dz);
-      const T = ZTYPES[z.type];
-      if (d > PLAYER.shoveRange + T.radius || d < 0.001 || Math.abs(z.y - p.gy) > REACH_DY) continue;
-      if ((dx * fx + dz * fz) / d < 0.3) continue;
-      if (z.type === ZT.BRUTE) continue;
-      // Shoving the Weeper just makes her angry.
-      if (z.type === ZT.WEEPER) { this.damageZombie(z, 8, p, false); continue; }
-      // A pinning Charger isn't freed by one shove: it counts toward CHARGER.pinBreakDmg.
-      if (z.type === ZT.CHARGER && z.st === ZSTATE.PIN) {
-        z.pinHit += CHARGER.shovePin - 8;
-        this.damageZombie(z, 8, p, false);
-        continue;
-      }
-      // A shove interrupts any windup, charge or ring. Chargers are heavy and barely budge.
-      const kick = z.type === ZT.CHARGER ? 3 : 9;
-      // A Tinpot reels for longer: the window to shoot it while its guard is down.
-      z.stun = z.type === ZT.TINPOT ? 1.7 : isCommon(z.type) ? 1.1 : 0.7;
-      z.vx = (dx / d) * kick; z.vz = (dz / d) * kick;
-      z.st = ZSTATE.STAGGER; z.dormant = false;
-      this.damageZombie(z, 8, p, false);
-    }
-    // Shoving a lassoed or ridden teammate knocks their captor loose.
-    for (const q of this.players.values()) {
-      if (q === p || !q.pinned) continue;
-      const z = this.zombies.get(q.pinned), dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
-      if (!z || !GRABBER(z.type) || d > PLAYER.shoveRange + PLAYER.radius || Math.abs(q.gy - p.gy) > REACH_DY || (d > 0.3 && (dx * fx + dz * fz) / d < 0.3)) continue;
-      z.stun = 1.2; z.st = ZSTATE.STAGGER; z.vx = z.vz = 0;
-      this.unpin(q);
-    }
-    this.events.push(['shove', p.id]);
   }
 
   private onUse(p: Player, id: number): void {
@@ -1315,11 +726,11 @@ export class Room {
   }
 
   /** Wake sleepers within `radius` m of a noise at (x, z) on the floor at height y (it carries between storeys). */
-  private alertNear(x: number, y: number, z: number, radius: number): void {
+  alertNear(x: number, y: number, z: number, radius: number): void {
     for (const zb of this.zombies.values()) if (zb.dormant && Math.hypot(zb.x - x, zb.z - z, zb.y - y) < radius) zb.dormant = false;
   }
 
-  private damageZombie(z: Zombie, dmg: number, by: Player | null, head: boolean): void {
+  damageZombie(z: Zombie, dmg: number, by: Player | null, head: boolean): void {
     if (z.hp <= 0) return;
     z.hp -= dmg;
     z.dormant = false;
@@ -1422,11 +833,9 @@ export class Room {
     const B = WEAPONS[l.w]?.blast;
     if (!B) return;
     this.events.push(['blast', 0, r2(l.x), r2(l.y + 0.4), r2(l.z), 1]);
-    this.applyBlast(this.players.get(l.by) ?? null, B, l.x, l.y + 0.4, l.z, 1);
+    applyBlast(this, this.players.get(l.by) ?? null, B, l.x, l.y + 0.4, l.z, 1);
   }
 
-  /** Path field toward an awake Weeper's victim (she goes for them, not whoever is nearest); refreshed with the flow field. */
-  private weeperField = new Int16Array(1);
   private recomputeWeeper(): void {
     for (const z of this.zombies.values()) {
       if (z.type !== ZT.WEEPER || z.sit || z.flee > 0) continue;
@@ -1503,7 +912,7 @@ export class Room {
     return false;
   }
 
-  private unpin(p: Player): void {
+  unpin(p: Player): void {
     if (!p.pinned) return;
     // A grabber moved them: hold their position until their client has snapped to it.
     const by = this.zombies.get(p.pinned);
@@ -1570,8 +979,6 @@ export class Room {
     z.st = ZSTATE.RUN;
   }
 
-  /** Scratch for Level.neighbors8. */
-  private nb: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   /**
    * Next flow-field node centre (plus the zombie's own offset) toward (dir = -1) or away from (dir = 1)
    * the survivors, or null if stuck. Steps along the walk graph (Level.neighbors8: no cutting wall
@@ -1594,10 +1001,6 @@ export class Room {
     c.x += z.offX; c.z += z.offZ;
     return c;
   }
-  /** Node the last flowStep headed for (its own node when it returned null). */
-  private stepNode = 0;
-  /** Ladder node -> zombies on (or stepping onto) it this tick (at most `diff.ladder`, see updateZombies). */
-  private onLadder = new Map<number, number>();
 
   private explode(z: Zombie): void {
     const T = ZTYPES[ZT.PUFFER];
@@ -1624,7 +1027,7 @@ export class Room {
    * `quiet`: damage over time (goo) that shouldn't stagger/slow the victim on their client.
    * `scaled`: zombie damage: the difficulty multiplier applies and it raises intensity (off for friendly fire).
    */
-  private damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false, scaled = true): void {
+  damagePlayer(p: Player, dmg: number, sx: number, sz: number, quiet = false, scaled = true): void {
     if (p.st === PSTATE.DEAD || this.state !== 'play' || this.dbgGod) return;
     // Intensity reads the damage before difficulty: a softer bite on Easy must not make breathers rarer.
     if (scaled) this.bumpIntensity(p, dmg * DIRECTOR.dmg); // friendly fire doesn't make the director back off
@@ -1666,9 +1069,6 @@ export class Room {
   }
 
   // ---------------------------------------------------- "ahead of the team"
-  /** BFS distance to the current objective (recomputed when the step, doors or items change). */
-  private objField = new Int16Array(1);
-  private objKey = '';
   private objectiveField(): Int16Array | null {
     const s = this.cur;
     if (!s) return null;
@@ -1742,7 +1142,6 @@ export class Room {
     }
     return size < max ? lv : 0;
   }
-  private perchMemo = { doors: -1, size: new Map<number, number>() };
 
   /** trySpawnCell's sampler; `below`: only cells on a lower storey than this. */
   private sampleSpawnCell(minD: number, maxD: number, side: Side, field: Int16Array, below: number): number | null {
@@ -1803,7 +1202,6 @@ export class Room {
     return true;
   }
 
-  private nearCache: { t: number; cells: number[] } = { t: -1, cells: [] };
   /** Spawnable cells within 40 path tiles of the team (refreshed once per tick). */
   private nearCells(): number[] {
     if (this.nearCache.t === this.tickN) return this.nearCache.cells;
@@ -1968,14 +1366,8 @@ export class Room {
     this.L.distanceField([pick.node], this.doors, this.lonerField);
   }
 
-  // ------------------------------------------------------------------ waves
-  private waves: Wave[] = [];
-  private nextWave = 1;
-  /** Goo-marked survivors (pid → room time the mark wears off) and the BFS field toward them. */
-  private marks = new Map<number, number>();
-  private markFlow = new Int16Array(1);
-  private noiseField = new Int16Array(1);
 
+  // ------------------------------------------------------------------ waves
   /** Centre of node `c` (y: its floor height). */
   private cellPos(c: number): Pos3 { return this.L.centre(c); }
 
@@ -2541,311 +1933,369 @@ export class Room {
     ladders.clear();
     if (L.levels > 1) for (const z of zs) { if (z.hp > 0 && !z.dormant) { const n = this.nodeOf(z); if (L.isLadder(n)) ladders.set(n, (ladders.get(n) ?? 0) + 1); } }
 
-    for (const z of zs) {
-      if (z.hp <= 0) continue;
-      const T = ZTYPES[z.type], zn = this.nodeOf(z);
-      // Nearest standing player; fall back to a downed one. Distances run floor to floor: someone on
-      // the roof above is a storey away, not on top of it.
-      let tgt: Player | null = null, d = Infinity, tgtDown: Player | null = null, dDown = Infinity;
-      for (const p of players) {
-        const pd = Math.hypot(p.x - z.x, p.z - z.z, p.gy - z.y);
-        if (p.st === PSTATE.ALIVE) { if (pd < d) { d = pd; tgt = p; } } else if (pd < dDown) { dDown = pd; tgtDown = p; }
-      }
-      if (tgtDown && (!tgt || (dDown < T.range && d > T.range + 1))) { tgt = tgtDown; d = dDown; }
-      // Goo wave members go for the nearest marked survivor while the mark lasts (they path on markFlow).
-      let field = this.flow;
-      if (z.hunt > this.time && this.marks.size && this.markFlow[zn] < INF) {
-        let mt: Player | null = null, md = Infinity;
-        for (const p of players) {
-          if (p.st !== PSTATE.ALIVE || !this.marks.has(p.id)) continue;
-          const pd = Math.hypot(p.x - z.x, p.z - z.z, p.gy - z.y);
-          if (pd < md) { md = pd; mt = p; }
-        }
-        if (mt) { tgt = mt; d = md; field = this.markFlow; }
-      }
-      // Specials single out a lone wolf within reach, unless someone else is right on top of them.
-      if (loner && AMBUSHER(z.type) && tgt !== loner && d > 4 && this.lonerField[zn] <= DIRECTOR.specials.lonerReach) {
-        tgt = loner; d = Math.hypot(loner.x - z.x, loner.z - z.z, loner.gy - z.y); field = this.lonerField;
-      } else if (tgt === loner && loner && AMBUSHER(z.type)) field = this.lonerField;
+    const c = this.zc;
+    c.dt = dt; c.go = go; c.players = players; c.zs = zs;
+    for (const z of zs) if (z.hp > 0) this.updateZombie(z, c, loner);
+    this.separate(zs, go);
 
-      if (z.type === ZT.WEEPER) {
-        if (z.stun > 0) z.stun = 0; // nothing staggers her
-        if (this.weeperTick(z, dt)) continue;
-        // Awake: only her victim matters.
-        const v = this.players.get(z.target);
-        if (v) { tgt = v; d = Math.hypot(v.x - z.x, v.z - z.z, v.gy - z.y); if (this.weeperField.length === this.flow.length) field = this.weeperField; }
-      }
-      if (z.dormant) {
-        if (tgt && (d < 5 || (d < 15 && this.sight(z.x, z.y, z.z, tgt.x, tgt.gy, tgt.z)))) { z.dormant = false; this.alertNear(z.x, z.y, z.z, 7); }
-        else { z.st = ZSTATE.IDLE; continue; }
-      }
-      if (z.stun > 0) {
-        z.stun -= dt;
-        L.moveSlide(z, z.vx * dt, z.vz * dt, T.radius, go);
-        z.vx *= 0.86; z.vz *= 0.86;
-        z.st = ZSTATE.STAGGER;
-        if (z.type === ZT.ALARM) z.sp = Math.max(z.sp, 6); // a shove cuts a ring short
-        continue;
-      }
-      if (z.st === ZSTATE.STAGGER) z.st = ZSTATE.RUN;
-      // A rattling Rattle Bomb is all a common can think about.
-      if (this.lures.length && isCommon(z.type)) {
-        const lure = this.lureFor(zn);
-        if (lure) {
-          const ld = Math.hypot(lure.x - z.x, lure.z - z.z, lure.y - z.y);
-          z.hitDone = true; z.t = 0;
-          if (ld < 1.4) { z.st = ZSTATE.ATTACK; z.ry = Math.atan2(-(lure.x - z.x), -(lure.z - z.z)); continue; }
-          const to = ld < 5 && Math.abs(lure.y - z.y) < REACH_DY && this.sight(z.x, z.y, z.z, lure.x, lure.y, lure.z) ? lure : this.flowStep(z, -1, lure.field);
-          if (to) this.walkTo(z, to, 1.15, dt); else z.st = ZSTATE.IDLE;
-          continue;
-        }
-      }
-      if (!tgt) { z.st = ZSTATE.IDLE; continue; }
-      const target: Player = tgt;
-      const face = () => { z.ry = Math.atan2(-(target.x - z.x), -(target.z - z.z)); };
-      // `level`: on the same floor (or the same flight of stairs) as the target, so melee, leaps,
-      // charges and grabs can connect; `sees`: eye-to-eye sight (checked lazily, at most once a tick).
-      const hd = Math.hypot(target.x - z.x, target.z - z.z), level = Math.abs(target.gy - z.y) < REACH_DY;
-      let seen = -1;
-      const sees = () => (seen < 0 ? (seen = this.sight(z.x, z.y, z.z, target.x, target.gy, target.z) ? 1 : 0) : seen) === 1;
-      z.leapCd -= dt;
+    // Cull stragglers that are hopelessly far behind so the director can reuse them.
+    if (this.tickN % DIRECTOR.cull.every === 0) this.cullStragglers(zs);
+  }
 
-      if (z.st === ZSTATE.ATTACK) {
-        z.t -= dt; face();
-        if (!z.hitDone && z.t <= T.cd - 0.3) {
-          z.hitDone = true;
-          const victim = this.players.get(z.target);
-          if (victim && victim.st !== PSTATE.DEAD && Math.hypot(victim.x - z.x, victim.z - z.z) < T.range + 0.6 && Math.abs(victim.gy - z.y) < REACH_DY) {
-            const wasUp = victim.st === PSTATE.ALIVE;
-            this.damagePlayer(victim, wasUp ? T.dmg : T.dmg * 1.5, z.x, z.z);
-            if (z.type === ZT.BRUTE && wasUp) {
-              const k = Math.hypot(victim.x - z.x, victim.z - z.z) || 1;
-              this.events.push(['kb', victim.id, r2(((victim.x - z.x) / k) * 13), r2(((victim.z - z.z) / k) * 13)]);
-            }
-          }
-        }
-        if (z.t <= 0) z.st = ZSTATE.RUN;
-        continue;
-      }
-      if (z.st === ZSTATE.WINDUP) {
-        z.t -= dt; face();
-        if (z.t <= 0) {
-          const k = hd || 1; z.lx = (target.x - z.x) / k; z.lz = (target.z - z.z) / k;
-          if (z.type === ZT.CHARGER) { z.st = ZSTATE.CHARGE; z.t = CHARGER.maxTime; }
-          else if (z.type === ZT.DROOLER) {
-            z.st = ZSTATE.RUN; z.sp = DROOLER.cooldown * rand(0.85, 1.2);
-            // Lob at where the survivor stands now (no lead), so stepping aside always works.
-            if (sees()) {
-              const flight = Math.max(0.6, Math.min(1.6, d / DROOLER.globSpeed));
-              this.globs.push({ x1: target.x, y1: target.gy, z1: target.z, t: flight });
-              this.events.push(['spit', z.id, r2(z.x), r2(z.z), r2(target.x), r2(target.z), r2(flight), r2(z.y), r2(target.gy)]);
-            }
-          } else if (z.type === ZT.SNATCHER) {
-            // The lasso lands only if they are still in reach and in sight when it is thrown.
-            if (target.st === PSTATE.ALIVE && !target.pinned && d < SNATCHER.maxRange * 1.15 && level && sees()) { this.grab(z, target); z.sp = SNATCHER.cooldown; }
-            else { z.st = ZSTATE.RUN; z.sp = 3; }
-          } else { z.st = ZSTATE.LEAP; z.t = 0.75; }
-        }
-        continue;
-      }
-      if (z.st === ZSTATE.CHARGE) {
-        z.t -= dt;
-        const bx = z.x, bz = z.z, step = CHARGER.speed * dt;
-        L.moveSlide(z, z.lx * step, z.lz * step, T.radius, go);
-        z.ry = Math.atan2(-z.lx, -z.lz);
-        // Walkers in the way get bowled aside.
-        for (const o of zs) {
-          if (o === z || o.hp <= 0 || o.type === ZT.BRUTE || o.type === ZT.CHARGER || Math.abs(o.y - z.y) > REACH_DY) continue;
-          const ox = o.x - z.x, oz = o.z - z.z, od = Math.hypot(ox, oz);
-          if (od > T.radius + ZTYPES[o.type].radius + 0.3) continue;
-          const side = ox * z.lz - oz * z.lx >= 0 ? 1 : -1; // which side of the charge line
-          o.dormant = false; o.stun = 0.9; o.st = ZSTATE.STAGGER;
-          o.vx = z.lz * side * 8 + z.lx * 4; o.vz = -z.lx * side * 8 + z.lz * 4;
-        }
-        let hit = false;
-        for (const p of players) {
-          if (p.st !== PSTATE.ALIVE || p.pinned || Math.hypot(p.x - z.x, p.z - z.z) > T.radius + PLAYER.radius + 0.35 || Math.abs(p.gy - z.y) > REACH_DY) continue;
-          hit = true;
-          if (!this.chargeHit(z, p)) { z.st = ZSTATE.RUN; z.stun = CHARGER.skidStun; z.vx = z.lx * 3; z.vz = z.lz * 3; }
-          break;
-        }
-        if (hit) { z.sp = CHARGER.cooldown; continue; }
-        const moved = (z.x - bx) * z.lx + (z.z - bz) * z.lz;
-        if (moved < step * 0.5) {
-          // Ran into a wall: dazed for a good while (the big punish window).
-          z.st = ZSTATE.STAGGER; z.stun = CHARGER.wallStun; z.vx = -z.lx * 2; z.vz = -z.lz * 2; z.sp = CHARGER.cooldown;
-          this.events.push(['slam', z.id, r2(z.x), r2(z.z), r2(z.y)]);
-        } else if (z.t <= 0) {
-          z.st = ZSTATE.RUN; z.stun = CHARGER.skidStun; z.vx = z.lx * 5; z.vz = z.lz * 5; z.sp = CHARGER.cooldown;
-        }
-        continue;
-      }
-      if (z.st === ZSTATE.PIN) {
-        const victim = this.players.get(z.target);
-        if (!victim || victim.pinned !== z.id || victim.st !== PSTATE.ALIVE) { z.st = ZSTATE.RUN; continue; }
-        z.pinT += dt; z.acc += dt;
-        if (GRABBER(z.type)) {
-          let helpers = 0, mate: Player | null = null, md = Infinity;
-          for (const p of players) {
-            if (p === victim || p.st !== PSTATE.ALIVE || p.pinned) continue;
-            helpers++;
-            const pd = Math.hypot(p.x - victim.x, p.z - victim.z);
-            if (pd < md) { md = pd; mate = p; }
-          }
-          const G = z.type === ZT.SNATCHER ? SNATCHER : PIGGY;
-          let dmg: number = PIGGY.dmg;
-          if (z.type === ZT.SNATCHER) {
-            // Reel them in, then squeeze.
-            const dx = z.x - victim.x, dz = z.z - victim.z, vd = Math.hypot(dx, dz) || 1;
-            z.ry = Math.atan2(dx, dz);
-            const far = vd > SNATCHER.chokeDist;
-            if (far) { L.moveSlide(victim, (dx / vd) * SNATCHER.pull * dt, (dz / vd) * SNATCHER.pull * dt, PLAYER.radius, go); this.place(victim); }
-            dmg = far ? SNATCHER.dragDmg : SNATCHER.chokeDmg;
-          } else {
-            // Steer them away from the nearest teammate (alone: wherever it fancies, changing its mind now and then).
-            z.leapCd = PIGGY.leapCd;
-            if (mate && md > 0.2) { z.lx = (victim.x - mate.x) / md; z.lz = (victim.z - mate.z) / md; }
-            else if ((z.t -= dt) <= 0) { const a = rand(0, Math.PI * 2); z.lx = Math.cos(a); z.lz = Math.sin(a); z.t = 1.5; }
-            const bx = victim.x, bz = victim.z;
-            L.moveSlide(victim, z.lx * PIGGY.steer * dt, z.lz * PIGGY.steer * dt, PLAYER.radius, go);
-            this.place(victim);
-            // Walked them into a wall: try another way next time.
-            if (Math.hypot(victim.x - bx, victim.z - bz) < PIGGY.steer * dt * 0.3) z.t = 0;
-            z.x = victim.x; z.y = victim.y; z.z = victim.z; z.ry = Math.atan2(-z.lx, -z.lz);
-          }
-          if (z.acc >= G.tick) { z.acc -= G.tick; this.damagePlayer(victim, dmg, z.x, z.z); }
-          if (victim.pinned === z.id && (z.pinT >= G.holdMax || (!helpers && z.pinT >= G.soloBreak))) {
-            this.unpin(victim);
-            z.st = ZSTATE.STAGGER; z.stun = 1.2; z.vx = z.vz = 0;
-          }
-          continue;
-        }
-        z.ry = Math.atan2(-(victim.x - z.x), -(victim.z - z.z));
-        if (z.acc >= 0.5) { z.acc -= 0.5; this.damagePlayer(victim, CHARGER.pinDps * 0.5, z.x, z.z); }
-        // Teammates break pins by shoving, killing it, or dealing CHARGER.pinBreakDmg (see damageZombie). With nobody able to help, it lets go on its own.
-        let helpers = 0;
-        for (const p of players) if (p !== victim && p.st === PSTATE.ALIVE && !p.pinned) helpers++;
-        if (victim.pinned === z.id && (z.pinT >= CHARGER.pinMax || (!helpers && z.pinT >= CHARGER.soloPinBreak))) {
-          this.unpin(victim);
-          z.st = ZSTATE.STAGGER; z.stun = 1.2; z.vx = -z.lx * 2; z.vz = -z.lz * 2;
-        }
-        continue;
-      }
-      if (z.st === ZSTATE.RING) {
-        z.t -= dt; face();
-        if (z.t <= 0) {
-          // Rang out: sleepers for streets around wake, and a mini-horde comes from round the clock.
-          this.alertNear(z.x, z.y, z.z, 25);
-          this.spawnWave(this.mobSize(5 + 3 * this.players.size), { noise: zn });
-          this.events.push(['alarm', z.id, r2(z.x), r2(z.z), r2(z.y)]);
-          z.st = ZSTATE.RUN; z.flee = ALARM.flee; z.sp = ALARM.cooldown;
-        }
-        continue;
-      }
-      if (z.st === ZSTATE.LEAP) {
-        z.t -= dt;
-        const bx = z.x, bz = z.z, step = 17 * dt;
-        L.moveSlide(z, z.lx * step, z.lz * step, T.radius, go);
-        let done = z.t <= 0 || Math.hypot(z.x - bx, z.z - bz) < step * 0.5, rode = false;
-        for (const p of players) {
-          if (p.st !== PSTATE.ALIVE || Math.hypot(p.x - z.x, p.z - z.z) > 1.15 || Math.abs(p.gy - z.y) > REACH_DY) continue;
-          this.damagePlayer(p, T.leapDmg, z.x, z.z);
-          this.bumpIntensity(p, DIRECTOR.leap);
-          done = true;
-          // A Piggyback that lands on someone free stays on.
-          if (z.type === ZT.PIGGYBACK) { if (p.st === PSTATE.ALIVE && !p.pinned) { this.grab(z, p); rode = true; } }
-          else this.events.push(['kb', p.id, r2(z.lx * 9), r2(z.lz * 9)]);
-          break;
-        }
-        if (rode) continue;
-        if (done) { z.st = ZSTATE.RUN; z.leapCd = z.type === ZT.PIGGYBACK ? PIGGY.leapCd : 4.5; }
-        continue;
-      }
+  /** One live zombie's tick: pick a target, run the pre-emptive states, then its state handler or decide + move. */
+  private updateZombie(z: Zombie, c: ZCtx, loner: Player | null): void {
+    const { dt, go } = c, L = this.L;
+    const T = ZTYPES[z.type], zn = this.nodeOf(z);
+    const pk = this.pickTarget(z, zn, T, c.players, loner);
+    let tgt = pk.tgt, d = pk.d, field = pk.field;
 
-      // Holding for a coordinated attack: stalk out of sight, no attack triggers until released.
-      if (z.hold && this.lurk(z, target, field, dt)) continue;
-      if (z.type === ZT.PUFFER && target.st === PSTATE.ALIVE && d < T.range) { this.damageZombie(z, 9999, null, false); continue; }
-      z.sp -= dt;
-      if (z.type === ZT.CHARGER && target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > CHARGER.minRange && d < CHARGER.maxRange
-        && level && sees()) {
-        z.st = ZSTATE.WINDUP; z.t = CHARGER.windup; face();
-        continue;
-      }
-      if (z.type === ZT.SNATCHER && level) {
-        if (target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > SNATCHER.minRange && d < SNATCHER.maxRange && sees()) {
-          z.st = ZSTATE.WINDUP; z.t = SNATCHER.windup; face();
-          continue;
-        }
-        // Keeps its distance: well back while the lasso recovers, just out of arm's reach otherwise.
-        if (d > T.range && d < (z.sp > 0 ? SNATCHER.keepAway : SNATCHER.minRange + 1) && sees()) { this.backOff(z, 0.95, dt, field); continue; }
-      }
-      if (z.type === ZT.PIGGYBACK && target.st === PSTATE.ALIVE && !target.pinned && z.leapCd <= 0 && d > PIGGY.leapMin && d < PIGGY.leapMax && level && sees()) {
-        z.st = ZSTATE.WINDUP; z.t = PIGGY.windup; face();
-        continue;
-      }
-      // Never spit at someone who can't step out of it (downed or pinned).
-      // A lob carries up to a roof or down from one: no `level` needed.
-      if (z.type === ZT.DROOLER && z.sp <= 0 && target.st === PSTATE.ALIVE && !target.pinned && d > DROOLER.minRange && d < DROOLER.maxRange && sees()) {
-        z.st = ZSTATE.WINDUP; z.t = DROOLER.windup; face();
-        continue;
-      }
-      if (z.type === ZT.ALARM) {
-        const near = d < ALARM.ringRange && sees();
-        if (z.flee <= 0 && z.sp <= 0 && target.st === PSTATE.ALIVE && near) {
-          z.st = ZSTATE.RING; z.t = ALARM.ringTime; face();
-          this.events.push(['ring', z.id]);
-          continue;
-        }
-        z.flee -= dt;
-        // Keep its distance: back off when close or after ringing, creep closer when it can't see anyone.
-        const away = z.flee > 0 || (d < ALARM.keepAway && near);
-        if (!away && near && d < ALARM.keepAway + 7) { z.st = ZSTATE.IDLE; face(); continue; }
-        if (away) { this.backOff(z, 1.15, dt); continue; }
-      }
-      if (z.type === ZT.DROOLER && d < DROOLER.keepAway && d > T.range && sees()) {
-        this.backOff(z, 0.9, dt, field); continue;
-      }
-      if (z.type === ZT.DROOLER && d < DROOLER.maxRange - 6 && d >= DROOLER.keepAway && sees()) {
-        z.st = ZSTATE.IDLE; face(); continue; // in its comfort band: wait for the next spit
-      }
-      if (z.type === ZT.LEAPER && target.st === PSTATE.ALIVE && z.leapCd <= 0 && d > 4.5 && d < 12 && level && sees()) {
-        z.st = ZSTATE.WINDUP; z.t = 0.6; face();
-        continue;
-      }
-      if (T.dmg > 0 && d < T.range && level) {
-        z.st = ZSTATE.ATTACK; z.t = T.cd; z.hitDone = false; z.target = target.id; face();
-        continue;
-      }
-
-      // Movement: beeline when close and visible on the same floor, otherwise follow the flow field
-      // (along the walk graph: round corners, up stairs and ladders).
-      let dx = 0, dz = 0;
-      if (d < 6 && level && sees()) { dx = target.x - z.x; dz = target.z - z.z; }
-      else {
-        if (field[zn] >= INF) { z.st = ZSTATE.IDLE; continue; }
-        // No better neighbour (it is in the target's node): settle on its own spot in this one.
-        let to = this.flowStep(z, -1, field);
-        // A ladder takes `diff.ladder` climbers at a time: the rest wait at its foot (or its top).
-        const rung = this.stepNode;
-        if (to && rung !== zn && L.isLadder(rung)) {
-          const on = ladders.get(rung) ?? 0;
-          if (on >= this.diff.ladder) { z.st = ZSTATE.IDLE; face(); continue; }
-          ladders.set(rung, on + 1);
-        }
-        if (!to) { to = L.centre(zn); to.x += z.offX; to.z += z.offZ; }
-        dx = to.x - z.x; dz = to.z - z.z;
-      }
-      const len = Math.hypot(dx, dz);
-      if (len > 0.01) {
-        const sp = z.speed * (this.holdout >= 0 || d > 16 ? 1.12 : 1) * (z.type === ZT.BRUTE && d > BRUTE_CATCHUP.far ? BRUTE_CATCHUP.mult : 1)
-          * L.speedAt(z.x, z.y, z.z, LADDER_SPEED * ZOMBIE_LADDER) * dt;
-        L.moveSlide(z, (dx / len) * sp, (dz / len) * sp, T.radius, go);
-        z.ry = Math.atan2(-dx, -dz);
-      }
-      z.st = ZSTATE.RUN;
+    if (z.type === ZT.WEEPER) {
+      if (z.stun > 0) z.stun = 0; // nothing staggers her
+      if (this.weeperTick(z, dt)) return;
+      // Awake: only her victim matters.
+      const v = this.players.get(z.target);
+      if (v) { tgt = v; d = Math.hypot(v.x - z.x, v.z - z.z, v.gy - z.y); if (this.weeperField.length === this.flow.length) field = this.weeperField; }
     }
+    if (z.dormant) {
+      if (tgt && (d < 5 || (d < 15 && this.sight(z.x, z.y, z.z, tgt.x, tgt.gy, tgt.z)))) { z.dormant = false; this.alertNear(z.x, z.y, z.z, 7); }
+      else { z.st = ZSTATE.IDLE; return; }
+    }
+    if (z.stun > 0) {
+      z.stun -= dt;
+      L.moveSlide(z, z.vx * dt, z.vz * dt, T.radius, go);
+      z.vx *= 0.86; z.vz *= 0.86;
+      z.st = ZSTATE.STAGGER;
+      if (z.type === ZT.ALARM) z.sp = Math.max(z.sp, 6); // a shove cuts a ring short
+      return;
+    }
+    if (z.st === ZSTATE.STAGGER) z.st = ZSTATE.RUN;
+    if (this.followLure(z, zn, dt)) return;
+    if (!tgt) { z.st = ZSTATE.IDLE; return; }
 
-    // Soft separation so the horde doesn't collapse into one blob.
+    // `level`: on the same floor (or the same flight of stairs) as the target, so melee, leaps,
+    // charges and grabs can connect; `sees`: eye-to-eye sight (checked lazily, at most once a tick).
+    c.z = z; c.T = T; c.zn = zn; c.tgt = tgt; c.d = d; c.field = field;
+    c.hd = Math.hypot(tgt.x - z.x, tgt.z - z.z); c.level = Math.abs(tgt.gy - z.y) < REACH_DY; c.seen = -1;
+    z.leapCd -= dt;
+
+    switch (z.st) {
+      case ZSTATE.ATTACK: this.tickAttack(c); return;
+      case ZSTATE.WINDUP: this.tickWindup(c); return;
+      case ZSTATE.CHARGE: this.tickCharge(c); return;
+      case ZSTATE.PIN: this.tickPin(c); return;
+      case ZSTATE.RING: this.tickRing(c); return;
+      case ZSTATE.LEAP: this.tickLeap(c); return;
+    }
+    if (this.decide(c)) return;
+    this.moveZombie(c);
+  }
+
+  /**
+   * Who `z` goes for, and the field it paths on. Nearest standing player; fall back to a downed one.
+   * Distances run floor to floor: someone on the roof above is a storey away, not on top of it.
+   * Returns a shared scratch object (`this.pick`): read it before the next call.
+   */
+  private pickTarget(z: Zombie, zn: number, T: ZombieDef, players: Player[], loner: Player | null): Pick {
+    let tgt: Player | null = null, d = Infinity, tgtDown: Player | null = null, dDown = Infinity;
+    for (const p of players) {
+      const pd = Math.hypot(p.x - z.x, p.z - z.z, p.gy - z.y);
+      if (p.st === PSTATE.ALIVE) { if (pd < d) { d = pd; tgt = p; } } else if (pd < dDown) { dDown = pd; tgtDown = p; }
+    }
+    if (tgtDown && (!tgt || (dDown < T.range && d > T.range + 1))) { tgt = tgtDown; d = dDown; }
+    // Goo wave members go for the nearest marked survivor while the mark lasts (they path on markFlow).
+    let field = this.flow;
+    if (z.hunt > this.time && this.marks.size && this.markFlow[zn] < INF) {
+      let mt: Player | null = null, md = Infinity;
+      for (const p of players) {
+        if (p.st !== PSTATE.ALIVE || !this.marks.has(p.id)) continue;
+        const pd = Math.hypot(p.x - z.x, p.z - z.z, p.gy - z.y);
+        if (pd < md) { md = pd; mt = p; }
+      }
+      if (mt) { tgt = mt; d = md; field = this.markFlow; }
+    }
+    // Specials single out a lone wolf within reach, unless someone else is right on top of them.
+    if (loner && AMBUSHER(z.type) && tgt !== loner && d > 4 && this.lonerField[zn] <= DIRECTOR.specials.lonerReach) {
+      tgt = loner; d = Math.hypot(loner.x - z.x, loner.z - z.z, loner.gy - z.y); field = this.lonerField;
+    } else if (tgt === loner && loner && AMBUSHER(z.type)) field = this.lonerField;
+    const pk = this.pick;
+    pk.tgt = tgt; pk.d = d; pk.field = field;
+    return pk;
+  }
+
+  /** A rattling Rattle Bomb is all a common can think about. True if it took the tick. */
+  private followLure(z: Zombie, zn: number, dt: number): boolean {
+    if (!this.lures.length || !isCommon(z.type)) return false;
+    const lure = this.lureFor(zn);
+    if (!lure) return false;
+    const ld = Math.hypot(lure.x - z.x, lure.z - z.z, lure.y - z.y);
+    z.hitDone = true; z.t = 0;
+    if (ld < 1.4) { z.st = ZSTATE.ATTACK; z.ry = Math.atan2(-(lure.x - z.x), -(lure.z - z.z)); return true; }
+    const to = ld < 5 && Math.abs(lure.y - z.y) < REACH_DY && this.sight(z.x, z.y, z.z, lure.x, lure.y, lure.z) ? lure : this.flowStep(z, -1, lure.field);
+    if (to) this.walkTo(z, to, 1.15, dt); else z.st = ZSTATE.IDLE;
+    return true;
+  }
+
+  /** Turn `c.z` to face its target. */
+  private face(c: ZCtx): void { const z = c.z, t = c.tgt; z.ry = Math.atan2(-(t.x - z.x), -(t.z - z.z)); }
+  /** Eye-to-eye sight from `c.z` to its target, memoised in `c.seen` (one test per zombie per tick at most). */
+  private sees(c: ZCtx): boolean {
+    if (c.seen < 0) { const z = c.z, t = c.tgt; c.seen = this.sight(z.x, z.y, z.z, t.x, t.gy, t.z) ? 1 : 0; }
+    return c.seen === 1;
+  }
+
+  private tickAttack(c: ZCtx): void {
+    const { z, T } = c;
+    z.t -= c.dt; this.face(c);
+    if (!z.hitDone && z.t <= T.cd - 0.3) {
+      z.hitDone = true;
+      const victim = this.players.get(z.target);
+      if (victim && victim.st !== PSTATE.DEAD && Math.hypot(victim.x - z.x, victim.z - z.z) < T.range + 0.6 && Math.abs(victim.gy - z.y) < REACH_DY) {
+        const wasUp = victim.st === PSTATE.ALIVE;
+        this.damagePlayer(victim, wasUp ? T.dmg : T.dmg * 1.5, z.x, z.z);
+        if (z.type === ZT.BRUTE && wasUp) {
+          const k = Math.hypot(victim.x - z.x, victim.z - z.z) || 1;
+          this.events.push(['kb', victim.id, r2(((victim.x - z.x) / k) * 13), r2(((victim.z - z.z) / k) * 13)]);
+        }
+      }
+    }
+    if (z.t <= 0) z.st = ZSTATE.RUN;
+  }
+
+  private tickWindup(c: ZCtx): void {
+    const { z, tgt: target, d } = c;
+    z.t -= c.dt; this.face(c);
+    if (z.t > 0) return;
+    const k = c.hd || 1; z.lx = (target.x - z.x) / k; z.lz = (target.z - z.z) / k;
+    if (z.type === ZT.CHARGER) { z.st = ZSTATE.CHARGE; z.t = CHARGER.maxTime; }
+    else if (z.type === ZT.DROOLER) {
+      z.st = ZSTATE.RUN; z.sp = DROOLER.cooldown * rand(0.85, 1.2);
+      // Lob at where the survivor stands now (no lead), so stepping aside always works.
+      if (this.sees(c)) {
+        const flight = Math.max(0.6, Math.min(1.6, d / DROOLER.globSpeed));
+        this.globs.push({ x1: target.x, y1: target.gy, z1: target.z, t: flight });
+        this.events.push(['spit', z.id, r2(z.x), r2(z.z), r2(target.x), r2(target.z), r2(flight), r2(z.y), r2(target.gy)]);
+      }
+    } else if (z.type === ZT.SNATCHER) {
+      // The lasso lands only if they are still in reach and in sight when it is thrown.
+      if (target.st === PSTATE.ALIVE && !target.pinned && d < SNATCHER.maxRange * 1.15 && c.level && this.sees(c)) { this.grab(z, target); z.sp = SNATCHER.cooldown; }
+      else { z.st = ZSTATE.RUN; z.sp = 3; }
+    } else { z.st = ZSTATE.LEAP; z.t = 0.75; }
+  }
+
+  private tickCharge(c: ZCtx): void {
+    const { z, T, dt, go } = c;
+    z.t -= dt;
+    const bx = z.x, bz = z.z, step = CHARGER.speed * dt;
+    this.L.moveSlide(z, z.lx * step, z.lz * step, T.radius, go);
+    z.ry = Math.atan2(-z.lx, -z.lz);
+    // Walkers in the way get bowled aside.
+    for (const o of c.zs) {
+      if (o === z || o.hp <= 0 || o.type === ZT.BRUTE || o.type === ZT.CHARGER || Math.abs(o.y - z.y) > REACH_DY) continue;
+      const ox = o.x - z.x, oz = o.z - z.z, od = Math.hypot(ox, oz);
+      if (od > T.radius + ZTYPES[o.type].radius + 0.3) continue;
+      const side = ox * z.lz - oz * z.lx >= 0 ? 1 : -1; // which side of the charge line
+      o.dormant = false; o.stun = 0.9; o.st = ZSTATE.STAGGER;
+      o.vx = z.lz * side * 8 + z.lx * 4; o.vz = -z.lx * side * 8 + z.lz * 4;
+    }
+    let hit = false;
+    for (const p of c.players) {
+      if (p.st !== PSTATE.ALIVE || p.pinned || Math.hypot(p.x - z.x, p.z - z.z) > T.radius + PLAYER.radius + 0.35 || Math.abs(p.gy - z.y) > REACH_DY) continue;
+      hit = true;
+      if (!this.chargeHit(z, p)) { z.st = ZSTATE.RUN; z.stun = CHARGER.skidStun; z.vx = z.lx * 3; z.vz = z.lz * 3; }
+      break;
+    }
+    if (hit) { z.sp = CHARGER.cooldown; return; }
+    const moved = (z.x - bx) * z.lx + (z.z - bz) * z.lz;
+    if (moved < step * 0.5) {
+      // Ran into a wall: dazed for a good while (the big punish window).
+      z.st = ZSTATE.STAGGER; z.stun = CHARGER.wallStun; z.vx = -z.lx * 2; z.vz = -z.lz * 2; z.sp = CHARGER.cooldown;
+      this.events.push(['slam', z.id, r2(z.x), r2(z.z), r2(z.y)]);
+    } else if (z.t <= 0) {
+      z.st = ZSTATE.RUN; z.stun = CHARGER.skidStun; z.vx = z.lx * 5; z.vz = z.lz * 5; z.sp = CHARGER.cooldown;
+    }
+  }
+
+  private tickPin(c: ZCtx): void {
+    const { z, dt, go, players } = c, L = this.L;
+    const victim = this.players.get(z.target);
+    if (!victim || victim.pinned !== z.id || victim.st !== PSTATE.ALIVE) { z.st = ZSTATE.RUN; return; }
+    z.pinT += dt; z.acc += dt;
+    if (GRABBER(z.type)) {
+      let helpers = 0, mate: Player | null = null, md = Infinity;
+      for (const p of players) {
+        if (p === victim || p.st !== PSTATE.ALIVE || p.pinned) continue;
+        helpers++;
+        const pd = Math.hypot(p.x - victim.x, p.z - victim.z);
+        if (pd < md) { md = pd; mate = p; }
+      }
+      const G = z.type === ZT.SNATCHER ? SNATCHER : PIGGY;
+      let dmg: number = PIGGY.dmg;
+      if (z.type === ZT.SNATCHER) {
+        // Reel them in, then squeeze.
+        const dx = z.x - victim.x, dz = z.z - victim.z, vd = Math.hypot(dx, dz) || 1;
+        z.ry = Math.atan2(dx, dz);
+        const far = vd > SNATCHER.chokeDist;
+        if (far) { L.moveSlide(victim, (dx / vd) * SNATCHER.pull * dt, (dz / vd) * SNATCHER.pull * dt, PLAYER.radius, go); this.place(victim); }
+        dmg = far ? SNATCHER.dragDmg : SNATCHER.chokeDmg;
+      } else {
+        // Steer them away from the nearest teammate (alone: wherever it fancies, changing its mind now and then).
+        z.leapCd = PIGGY.leapCd;
+        if (mate && md > 0.2) { z.lx = (victim.x - mate.x) / md; z.lz = (victim.z - mate.z) / md; }
+        else if ((z.t -= dt) <= 0) { const a = rand(0, Math.PI * 2); z.lx = Math.cos(a); z.lz = Math.sin(a); z.t = 1.5; }
+        const bx = victim.x, bz = victim.z;
+        L.moveSlide(victim, z.lx * PIGGY.steer * dt, z.lz * PIGGY.steer * dt, PLAYER.radius, go);
+        this.place(victim);
+        // Walked them into a wall: try another way next time.
+        if (Math.hypot(victim.x - bx, victim.z - bz) < PIGGY.steer * dt * 0.3) z.t = 0;
+        z.x = victim.x; z.y = victim.y; z.z = victim.z; z.ry = Math.atan2(-z.lx, -z.lz);
+      }
+      if (z.acc >= G.tick) { z.acc -= G.tick; this.damagePlayer(victim, dmg, z.x, z.z); }
+      if (victim.pinned === z.id && (z.pinT >= G.holdMax || (!helpers && z.pinT >= G.soloBreak))) {
+        this.unpin(victim);
+        z.st = ZSTATE.STAGGER; z.stun = 1.2; z.vx = z.vz = 0;
+      }
+      return;
+    }
+    z.ry = Math.atan2(-(victim.x - z.x), -(victim.z - z.z));
+    if (z.acc >= 0.5) { z.acc -= 0.5; this.damagePlayer(victim, CHARGER.pinDps * 0.5, z.x, z.z); }
+    // Teammates break pins by shoving, killing it, or dealing CHARGER.pinBreakDmg (see damageZombie). With nobody able to help, it lets go on its own.
+    let helpers = 0;
+    for (const p of players) if (p !== victim && p.st === PSTATE.ALIVE && !p.pinned) helpers++;
+    if (victim.pinned === z.id && (z.pinT >= CHARGER.pinMax || (!helpers && z.pinT >= CHARGER.soloPinBreak))) {
+      this.unpin(victim);
+      z.st = ZSTATE.STAGGER; z.stun = 1.2; z.vx = -z.lx * 2; z.vz = -z.lz * 2;
+    }
+  }
+
+  private tickRing(c: ZCtx): void {
+    const z = c.z;
+    z.t -= c.dt; this.face(c);
+    if (z.t > 0) return;
+    // Rang out: sleepers for streets around wake, and a mini-horde comes from round the clock.
+    this.alertNear(z.x, z.y, z.z, 25);
+    this.spawnWave(this.mobSize(5 + 3 * this.players.size), { noise: c.zn });
+    this.events.push(['alarm', z.id, r2(z.x), r2(z.z), r2(z.y)]);
+    z.st = ZSTATE.RUN; z.flee = ALARM.flee; z.sp = ALARM.cooldown;
+  }
+
+  private tickLeap(c: ZCtx): void {
+    const { z, T, dt } = c;
+    z.t -= dt;
+    const bx = z.x, bz = z.z, step = 17 * dt;
+    this.L.moveSlide(z, z.lx * step, z.lz * step, T.radius, c.go);
+    let done = z.t <= 0 || Math.hypot(z.x - bx, z.z - bz) < step * 0.5, rode = false;
+    for (const p of c.players) {
+      if (p.st !== PSTATE.ALIVE || Math.hypot(p.x - z.x, p.z - z.z) > 1.15 || Math.abs(p.gy - z.y) > REACH_DY) continue;
+      this.damagePlayer(p, T.leapDmg, z.x, z.z);
+      this.bumpIntensity(p, DIRECTOR.leap);
+      done = true;
+      // A Piggyback that lands on someone free stays on.
+      if (z.type === ZT.PIGGYBACK) { if (p.st === PSTATE.ALIVE && !p.pinned) { this.grab(z, p); rode = true; } }
+      else this.events.push(['kb', p.id, r2(z.lx * 9), r2(z.lz * 9)]);
+      break;
+    }
+    if (rode) return;
+    if (done) { z.st = ZSTATE.RUN; z.leapCd = z.type === ZT.PIGGYBACK ? PIGGY.leapCd : 4.5; }
+  }
+
+  /**
+   * Free-state decisions: lurk, burst, start a windup or ring, keep away, hold position or start a
+   * melee swing. True if one took the tick (no movement this tick).
+   */
+  private decide(c: ZCtx): boolean {
+    const { z, T, tgt: target, d, field, dt, level } = c;
+    // Holding for a coordinated attack: stalk out of sight, no attack triggers until released.
+    if (z.hold && this.lurk(z, target, field, dt)) return true;
+    if (z.type === ZT.PUFFER && target.st === PSTATE.ALIVE && d < T.range) { this.damageZombie(z, 9999, null, false); return true; }
+    z.sp -= dt;
+    if (z.type === ZT.CHARGER && target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > CHARGER.minRange && d < CHARGER.maxRange
+      && level && this.sees(c)) {
+      z.st = ZSTATE.WINDUP; z.t = CHARGER.windup; this.face(c);
+      return true;
+    }
+    if (z.type === ZT.SNATCHER && level) {
+      if (target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > SNATCHER.minRange && d < SNATCHER.maxRange && this.sees(c)) {
+        z.st = ZSTATE.WINDUP; z.t = SNATCHER.windup; this.face(c);
+        return true;
+      }
+      // Keeps its distance: well back while the lasso recovers, just out of arm's reach otherwise.
+      if (d > T.range && d < (z.sp > 0 ? SNATCHER.keepAway : SNATCHER.minRange + 1) && this.sees(c)) { this.backOff(z, 0.95, dt, field); return true; }
+    }
+    if (z.type === ZT.PIGGYBACK && target.st === PSTATE.ALIVE && !target.pinned && z.leapCd <= 0 && d > PIGGY.leapMin && d < PIGGY.leapMax && level && this.sees(c)) {
+      z.st = ZSTATE.WINDUP; z.t = PIGGY.windup; this.face(c);
+      return true;
+    }
+    // Never spit at someone who can't step out of it (downed or pinned).
+    // A lob carries up to a roof or down from one: no `level` needed.
+    if (z.type === ZT.DROOLER && z.sp <= 0 && target.st === PSTATE.ALIVE && !target.pinned && d > DROOLER.minRange && d < DROOLER.maxRange && this.sees(c)) {
+      z.st = ZSTATE.WINDUP; z.t = DROOLER.windup; this.face(c);
+      return true;
+    }
+    if (z.type === ZT.ALARM) {
+      const near = d < ALARM.ringRange && this.sees(c);
+      if (z.flee <= 0 && z.sp <= 0 && target.st === PSTATE.ALIVE && near) {
+        z.st = ZSTATE.RING; z.t = ALARM.ringTime; this.face(c);
+        this.events.push(['ring', z.id]);
+        return true;
+      }
+      z.flee -= dt;
+      // Keep its distance: back off when close or after ringing, creep closer when it can't see anyone.
+      const away = z.flee > 0 || (d < ALARM.keepAway && near);
+      if (!away && near && d < ALARM.keepAway + 7) { z.st = ZSTATE.IDLE; this.face(c); return true; }
+      if (away) { this.backOff(z, 1.15, dt); return true; }
+    }
+    if (z.type === ZT.DROOLER && d < DROOLER.keepAway && d > T.range && this.sees(c)) {
+      this.backOff(z, 0.9, dt, field); return true;
+    }
+    if (z.type === ZT.DROOLER && d < DROOLER.maxRange - 6 && d >= DROOLER.keepAway && this.sees(c)) {
+      z.st = ZSTATE.IDLE; this.face(c); return true; // in its comfort band: wait for the next spit
+    }
+    if (z.type === ZT.LEAPER && target.st === PSTATE.ALIVE && z.leapCd <= 0 && d > 4.5 && d < 12 && level && this.sees(c)) {
+      z.st = ZSTATE.WINDUP; z.t = 0.6; this.face(c);
+      return true;
+    }
+    if (T.dmg > 0 && d < T.range && level) {
+      z.st = ZSTATE.ATTACK; z.t = T.cd; z.hitDone = false; z.target = target.id; this.face(c);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Movement: beeline when close and visible on the same floor, otherwise follow the flow field
+   * (along the walk graph: round corners, up stairs and ladders).
+   */
+  private moveZombie(c: ZCtx): void {
+    const { z, T, tgt: target, d, field, zn, dt } = c, L = this.L;
+    let dx = 0, dz = 0;
+    if (d < 6 && c.level && this.sees(c)) { dx = target.x - z.x; dz = target.z - z.z; }
+    else {
+      if (field[zn] >= INF) { z.st = ZSTATE.IDLE; return; }
+      // No better neighbour (it is in the target's node): settle on its own spot in this one.
+      let to = this.flowStep(z, -1, field);
+      // A ladder takes `diff.ladder` climbers at a time: the rest wait at its foot (or its top).
+      const rung = this.stepNode, ladders = this.onLadder;
+      if (to && rung !== zn && L.isLadder(rung)) {
+        const on = ladders.get(rung) ?? 0;
+        if (on >= this.diff.ladder) { z.st = ZSTATE.IDLE; this.face(c); return; }
+        ladders.set(rung, on + 1);
+      }
+      if (!to) { to = L.centre(zn); to.x += z.offX; to.z += z.offZ; }
+      dx = to.x - z.x; dz = to.z - z.z;
+    }
+    const len = Math.hypot(dx, dz);
+    if (len > 0.01) {
+      const sp = z.speed * (this.holdout >= 0 || d > 16 ? 1.12 : 1) * (z.type === ZT.BRUTE && d > BRUTE_CATCHUP.far ? BRUTE_CATCHUP.mult : 1)
+        * L.speedAt(z.x, z.y, z.z, LADDER_SPEED * ZOMBIE_LADDER) * dt;
+      L.moveSlide(z, (dx / len) * sp, (dz / len) * sp, T.radius, c.go);
+      z.ry = Math.atan2(-dx, -dz);
+    }
+    z.st = ZSTATE.RUN;
+  }
+
+  /** Soft separation so the horde doesn't collapse into one blob. */
+  private separate(zs: Zombie[], go: number): void {
+    const L = this.L;
     for (let i = 0; i < zs.length; i++) {
       const a = zs[i];
       if (a.dormant || a.hp <= 0) continue;
@@ -2863,9 +2313,6 @@ export class Room {
         if (!this.anchored(b) && !b.dormant) L.moveSlide(b, nx * push, nz * push, rb, go);
       }
     }
-
-    // Cull stragglers that are hopelessly far behind so the director can reuse them.
-    if (this.tickN % DIRECTOR.cull.every === 0) this.cullStragglers(zs);
   }
 
   /** True if one of `stand` (standing or downed survivors) has line of sight to (x, z) at floor height y within fog range. */
