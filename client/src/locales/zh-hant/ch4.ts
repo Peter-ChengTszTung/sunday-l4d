@@ -183,5 +183,6 @@ export default {
   "OLD BRIDGE": "舊橋",
   "MALLOW RIVER": "棉花糖河",
   "MALLOW BAY TRANSIT": "棉花糖灣客運",
-  "RIVER ROAD": "濱河路"
+  "RIVER ROAD": "濱河路",
+  "WASHED OUT": "已被沖毀",
 } satisfies Record<string, string>;

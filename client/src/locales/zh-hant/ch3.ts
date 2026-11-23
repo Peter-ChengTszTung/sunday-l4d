@@ -185,4 +185,5 @@ export default {
   "No. 9 DIESEL, 1958": "9 號柴油機車，1958",
   "FLATCAR": "平板車",
   "LAB B": "B 實驗室",
+  "MIND THE GAP": "小心間隙",
 } satisfies Record<string, string>;

@@ -196,4 +196,5 @@ export default {
   "BAYSIDE GALLERIA DELIVERIES": "灣畔購物廊進貨處",
   "TO SERVICE TUNNEL": "往維修隧道",
   "RETURNS": "退貨處",
+  "Call it down. If that old car faults, it unlocks the fire stairs. Up is up, sweet peas.": "叫它下來吧。那台老電梯要是故障，逃生梯就會解鎖。往上就對了，小甜豆。",
 } satisfies Record<string, string>;
