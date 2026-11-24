@@ -34,13 +34,15 @@ export function onFire(room: CombatHost, p: Player, m: Extract<ClientMsg, { t: '
   // Pinned (a Charger, a lasso, a rider): no shooting. Down: the sidearm only.
   const downShot = p.st === PSTATE.DOWN && wi === p.sidearm;
   if (!wp || (p.st !== PSTATE.ALIVE && !downShot) || p.pinned || room.state !== 'play') return;
-  // Only the pistol and weapons this player actually picked up (dev servers allow debug gives).
-  if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && !(p.thr[wi] > 0) && !room.allowDebug) return;
+  // A mounted gun only from its seat; otherwise the pistol and weapons this player actually picked up (dev servers allow debug gives).
+  if (wp.slot === 'mount') { if (room.L.def.mounts[p.mount]?.kind !== wp.id) return; }
+  else if (wi !== 0 && wi !== p.primary && wi !== p.sidearm && wi !== p.melee && !(p.thr[wi] > 0) && !room.allowDebug) return;
   const e = Array.isArray(m.e) && m.e.length === 3 && m.e.every(Number.isFinite) ? m.e : null;
   /** Remember a thrown or launched grenade until its landing claim ('g'): where, when and with what it left. */
   const pushNade = () => {
     p.nades.push({ x: p.x, y: p.gy, z: p.z, t: room.time, w: wi, seq: (m.n ?? 0) | 0, ex: e ? e[0] : p.x, ez: e ? e[2] : p.z });
-    if (p.nades.length > 6) p.nades.shift();
+    // A rocket pod's salvo can have a dozen in the air at once.
+    if (p.nades.length > 24) p.nades.shift();
   };
   if (wp.slot === 'throw') {
     // A throw is its own action (no shot clock): one of that kind is spent; what it does waits for the landing claim ('g').

@@ -509,11 +509,23 @@ export class Sfx {
           crack(0.3); this.hiss('lowpass', 2900, 220, 0.5, 0.75 * v, 0.002, 0.2); this.tone('sine', 135, 45, 0.6 * v, 0.002, 0.16);
           this.tone('square', 950, 620, 0.1 * v, 0.002, 0.03, 0.06);
           break;
-        // Whip crack, a long rolling tail, a cute little "ping", then the bolt cycling.
-        case 'sniper':
-          crack(0.4); this.hiss('bandpass', 4200, 500, 0.6, 0.7 * v, 0.001, 0.1); this.tone('sawtooth', 230, 38, 0.42 * v, 0.001, 0.4);
-          this.hiss('lowpass', 900, 120, 0.5, 0.35 * v, 0.02, 0.6); this.tone('triangle', 1900, 1800, 0.09 * v, 0.002, 0.25, 0.03);
-          this.tone('square', 700, 560, 0.06 * v, 0.002, 0.03, 0.3); this.tone('square', 980, 900, 0.07 * v, 0.002, 0.03, 0.42);
+        // Desert Eagle: a hand cannon. A hard slap of a crack, a deep boom under it and a long rolling tail.
+        case 'deagle':
+          crack(0.45); this.hiss('bandpass', 1800, 300, 0.6, 0.75 * v, 0.001, 0.2); this.tone('sawtooth', 260, 45, 0.34 * v, 0.001, 0.2);
+          this.tone('sine', 80, 32, 0.7 * v, 0.002, 0.3); this.hiss('lowpass', 700, 110, 0.5, 0.3 * v, 0.02, 0.45);
+          break;
+        // Popcorn Gatling: a short dry pop per round over a low motor buzz (fired ~22 times a second, so each one is tiny).
+        case 'minigun':
+          crack(0.16); this.hiss('bandpass', 2400, 900, 1.1, 0.24 * v, 0.001, 0.035); this.tone('sawtooth', 120, 90, 0.14 * v, 0.001, 0.05);
+          break;
+        // Thump Cannon: a huge chesty boom and the barrel ringing after it.
+        case 'cannon':
+          crack(0.5); this.hiss('lowpass', 1600, 90, 0.4, 1.0 * v, 0.003, 0.7); this.tone('sine', 70, 26, 0.95 * v, 0.003, 0.6);
+          this.tone('triangle', 420, 380, 0.05 * v, 0.01, 0.5, 0.05);
+          break;
+        // Fizzbang Pod: a fizzing whoosh as each rocket leaves its tube.
+        case 'rockets':
+          this.hiss('bandpass', 1400, 3600, 1.4, 0.45 * v, 0.004, 0.32); this.tone('sawtooth', 180, 420, 0.12 * v, 0.004, 0.22); this.tone('sine', 110, 60, 0.25 * v, 0.002, 0.12);
           break;
         // A hollow "bloop" and a breathy puff.
         case 'launcher': this.tone('sine', 280, 85, 0.65 * v, 0.004, 0.2); this.hiss('lowpass', 1100, 200, 0.6, 0.35 * v, 0.003, 0.14); this.tone('triangle', 620, 300, 0.12 * v, 0.002, 0.1); break;
@@ -525,7 +537,7 @@ export class Sfx {
         default: crack(0.3); this.hiss('bandpass', 1900, 500, 0.7, 0.5 * v, 0.001, 0.11); this.tone('sawtooth', 300, 70, 0.28 * v, 0.001, 0.09);
       }
       // Your own brass tinkling on the floor (not every shot, so rapid fire doesn't turn into a wind chime).
-      if (!remote && (id === 'pistol' || id === 'magnum' || id === 'rifle' || (id === 'smg' && Math.random() < 0.4))) {
+      if (!remote && (id === 'pistol' || id === 'magnum' || id === 'deagle' || id === 'rifle' || (id === 'smg' && Math.random() < 0.4) || (id === 'minigun' && Math.random() < 0.15))) {
         const w = rnd(0.28, 0.45);
         this.tone('triangle', 4300, 4150, 0.022, 0.001, 0.04, w); this.tone('triangle', 5300, 5200, 0.012, 0.001, 0.03, w + rnd(0.07, 0.12));
       }
@@ -540,11 +552,6 @@ export class Sfx {
         case 'bat': this.hiss('bandpass', 320, 900, 1.1, 0.32 * v, 0.07, 0.11); this.tone('sine', 110, 80, 0.08 * v, 0.05, 0.08); break;
         // Quick, bright and thin: "tsip".
         case 'machete': this.hiss('bandpass', 1800, 5200, 2.2, 0.24 * v, 0.03, 0.06); this.hiss('highpass', 6000, 8000, 0.7, 0.05 * v, 0.02, 0.05); break;
-        // Slow and heavy: a deep push of air and a little effort "hng".
-        case 'axe':
-          this.hiss('bandpass', 220, 650, 0.9, 0.42 * v, 0.14, 0.18); this.tone('sine', 85, 55, 0.14 * v, 0.12, 0.16);
-          this.vocal(rnd(280, 330), 230, 560 * 1.2, 1450 * 1.2, 0.12 * v, 0.01, 0.12);
-          break;
         // Throwables: a cute "hup!" and an arcing whoosh; the bottle sloshes, the rattle chatters as it leaves the hand.
         default:
           this.vocal(rnd(340, 420), rnd(420, 480), 650 * 1.25, 1080 * 1.25, 0.16 * v, 0.01, 0.09);
@@ -651,6 +658,13 @@ export class Sfx {
           }
           break;
         }
+        // A mounted gun overheats: a sizzle and a falling whine while it cools (minigun), or the breech clanks open for the next shell.
+        case 'minigun':
+          keep(this.tone('sawtooth', 900, 160, 0.08, 0.01, Math.min(1.2, T * 0.4))); keep(this.hiss('highpass', 4200, 2600, 0.5, 0.1, 0.05, T * 0.8));
+          break;
+        case 'cannon': case 'rockets':
+          keep(this.tone('square', 260, 200, 0.12, 0.003, 0.06)); keep(this.hiss('bandpass', 700, 400, 1, 0.1, 0.02, 0.14, T * 0.45)); keep(this.tone('sine', 150, 90, 0.25, 0.003, 0.1, T * 0.7));
+          break;
         case 'launcher':
           keep(this.tone('sine', 210, 120, 0.2, 0.003, 0.08)); keep(this.tone('square', 1100, 900, 0.06, 0.002, 0.03, 0.05));
           keep(this.hiss('bandpass', 900, 500, 1, 0.1, 0.02, 0.15, T * 0.5)); keep(this.tone('sine', 170, 100, 0.22, 0.003, 0.08, T * 0.62));
@@ -672,7 +686,8 @@ export class Sfx {
     if (w?.melee || w?.thrown) return;
     this.emit(null, { jit: 0.04 }, () => {
       if (id === 'shotgun') { this.hiss('bandpass', 1900, 900, 1, 0.14, 0.004, 0.05); this.hiss('bandpass', 2300, 1300, 1, 0.16, 0.004, 0.05, 0.12); this.tone('square', 420, 330, 0.08, 0.002, 0.04, 0.12); }
-      else if (id === 'sniper') { this.tone('square', 700, 560, 0.08, 0.002, 0.03); this.tone('square', 980, 900, 0.1, 0.002, 0.04, 0.13); }
+      // A mounted gun cooled down: a hiss of steam and a heavy clack as it is ready again.
+      else if (w?.slot === 'mount') { this.hiss('highpass', 3000, 5000, 0.6, 0.12, 0.01, 0.25); this.tone('square', 300, 240, 0.12, 0.002, 0.06, 0.22); }
       else { this.hiss('bandpass', 2600, 1300, 1, 0.1, 0.004, 0.05); this.tone('square', 640, 1100, 0.15, 0.002, 0.06, 0.03); }
     });
   }
@@ -685,9 +700,9 @@ export class Sfx {
     this.emit(null, { jit: 0.06 }, () => {
       if (w?.melee) {
         this.hiss('bandpass', 1400, 700, 1.4, 0.07, 0.015, 0.08);
-        this.tone('sine', w.id === 'axe' ? 140 : 190, 110, 0.12, 0.003, 0.05, 0.09);
+        this.tone('sine', 190, 110, 0.12, 0.003, 0.05, 0.09);
         if (w.id === 'bat') this.tone('triangle', 420, 330, 0.05, 0.002, 0.04, 0.1);
-        else { this.hiss('highpass', 4500, 7500, 0.7, 0.045, 0.06, 0.12, 0.02); this.ping(w.id === 'axe' ? 1500 : 2600, 0.03, 0.3, 0.1); }
+        else { this.hiss('highpass', 4500, 7500, 0.7, 0.045, 0.06, 0.12, 0.02); this.ping(2600, 0.03, 0.3, 0.1); }
         return;
       }
       if (w?.thrown === 'fire') for (let i = 0; i < 3; i++) this.tone('sine', rnd(240, 340), rnd(480, 640), 0.05, 0.004, 0.04, 0.06 + i * 0.06);

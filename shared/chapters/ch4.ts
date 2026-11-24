@@ -377,7 +377,7 @@ export function build() {
   for (const x of [109, 110, 111, 112]) b.pick('medkit', x, 99);
   b.pick('ammo', 113, 91); b.pick('ammo', 114, 91); b.pick('ammo', 112, 88);
   b.pick('shotgun', 106, 99); b.pick('rifle', 107, 99); b.pick('smg', 108, 99); b.pick('autoshotgun', 106, 98); b.pick('launcher', 108, 98); // the schoolyard Brute is next
-  b.pick('axe', 107, 98); b.pick('armor', 113, 99); b.pick('rattle', 115, 91);
+  b.pick('machete', 107, 98); b.pick('armor', 113, 99); b.pick('rattle', 115, 91);
   const hatchLever = b.obj('lever', 104, 91, 'Open the basement hatch');
   b.label('SAFE ROOM', 110.5, 90, 22, RED); b.label('HENDERSON BASEMENT', 110.5, 92.4, 11, PEACH);
   b.label('PEACHES: 212 CANS', 107, 86.6, 8, CREAM); b.label('HATCH', 104.5, 94.8, 10, GOLD, E);
@@ -428,7 +428,7 @@ export function build() {
   for (const [x0, z0] of [[35, 65], [47, 65]]) for (let i = 0; i < 3; i++) b.prop('desk', x0 + i * 3, z0 + 2, 2, 1);
   b.prop('counter', 34, 64, 1, 2, { color: 0xc9a8ff }); b.prop('shelf', 55, 64, 1, 3, { color: 0x8fe3c0 });
   b.prop('bench', 36, 79, 6, 1); b.prop('bench', 48, 79, 6, 1); b.prop('pillar', 40, 76, 1, 1, { color: 0xffd43b });
-  b.pick('ammo', 42, 64); b.pick('medkit', 54, 68); b.pick('ammo', 35, 77); b.pick('smg', 53, 76); b.pick('autoshotgun', 52, 76); b.pick('sniper', 54, 76);
+  b.pick('ammo', 42, 64); b.pick('medkit', 54, 68); b.pick('ammo', 35, 77); b.pick('smg', 53, 76); b.pick('autoshotgun', 52, 76); b.pick('rifle', 54, 76);
   b.label('CLASS 2B', 38.5, 66.6, 10, CREAM); b.label('CLASS 3A', 50.5, 66.6, 10, CREAM);
   b.label('GYM', 45, 77, 16, PEACH); b.label('SNOOZLE ASSEMBLY', 45, 78.4, 8, PINK);
   for (const [x, z] of [[40, 72], [50, 72], [45, 77]]) b.lamp(x, z);
@@ -536,8 +536,8 @@ export function build() {
   b.label('VALLEY MAP', 16.5, 165.6, 10, MINT);
   for (const x of [18, 19, 20, 21]) b.pick('medkit', x, 173);
   b.pick('ammo', 10, 169); b.pick('ammo', 11, 169); b.pick('ammo', 12, 169); b.pick('ammo', 12, 165);
-  b.pick('smg', 12, 171); b.pick('shotgun', 13, 171); b.pick('rifle', 14, 171); b.pick('sniper', 15, 171); b.pick('autoshotgun', 13, 170); b.pick('launcher', 14, 170); b.pick('magnum', 12, 170);
-  b.pick('armor', 17, 173); b.pick('armor', 22, 173); b.pick('axe', 15, 170); b.pick('machete', 16, 171); b.pick('firebomb', 13, 169); b.pick('rattle', 13, 165);   // last stop before the finale
+  b.pick('smg', 12, 171); b.pick('shotgun', 13, 171); b.pick('rifle', 14, 171); b.pick('deagle', 15, 171); b.pick('autoshotgun', 13, 170); b.pick('launcher', 14, 170); b.pick('magnum', 12, 170);
+  b.pick('armor', 17, 173); b.pick('armor', 22, 173); b.pick('bat', 15, 170); b.pick('machete', 16, 171); b.pick('firebomb', 13, 169); b.pick('rattle', 13, 165);   // last stop before the finale
   const cabinLatch = b.obj('lever', 22, 172, 'Unlatch the cabin back door');
   b.label('SAFE ROOM', 16.5, 169.4, 20, RED); b.label('RANGER CABIN', 16.5, 171.6, 10, MINT);
   b.lamp(16.5, 168);
@@ -573,7 +573,7 @@ export function build() {
   dress(66, 133, 96, 136, 25, ['rock', 'pine', 'bush']); dress(66, 118, 77, 121, 26, ['pine', 'tree', 'bush']); dress(84, 118, 96, 121, 27, ['pine', 'tree', 'bush']);
   b.label('STEEP', 70, 153.6, 10, PEACH, WEST);
   b.label('FIRE ROAD', 63.5, 126, 10, CREAM, N); b.label('LOOKOUT LOOP', 70, 119.6, 10, CREAM, E);
-  b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('sniper', 60, 146); b.pick('ammo', 82, 135); b.pick('medkit', 64, 119);
+  b.pick('medkit', 83, 153); b.pick('ammo', 59, 146); b.pick('rifle', 60, 146); b.pick('ammo', 82, 135); b.pick('medkit', 64, 119);
   for (const [x, z] of [[82.5, 154], [59.5, 154], [59.5, 136], [80, 134.6]]) b.lamp(x, z);
   b.arrow(78, 153.5, WEST); b.arrow(59.5, 148, N); b.arrow(66, 134.5, E); b.arrow(90, 134.5, E);
   zz(64, 153.5, WEST); zz(59.5, 140, N); zz(76, 134.5, E);
@@ -586,7 +586,7 @@ export function build() {
   b.level(2);
   b.carve(80, 123, 83, 126, F.WOOD);
   b.prop('desk', 83, 126); b.prop('bench', 80, 126, 1, 1);
-  b.pick('sniper', 82, 125); b.pick('ammo', 80, 124); b.pick('ammo', 81, 126); b.pick('medkit', 83, 124);
+  b.pick('rifle', 82, 125); b.pick('ammo', 80, 124); b.pick('ammo', 81, 126); b.pick('medkit', 83, 124);
   b.label('FIRE LOOKOUT', 81.5, 124.4, 9, GOLD, 0); b.label('FIRE DANGER: LOW', 81.5, 125.4, 7, CREAM, 0);
   b.lamp(81.5, 124);
   b.level(0);
@@ -725,7 +725,7 @@ export function build() {
   b.level(1);
   b.carve(133, 164, 136, 167, F.CONCRETE);
   b.prop('barrier', 133, 164, 1, 1); b.prop('crate', 136, 164);
-  b.pick('sniper', 134, 165); b.pick('ammo', 135, 166); b.pick('ammo', 133, 166);
+  b.pick('rifle', 134, 165); b.pick('ammo', 135, 166); b.pick('ammo', 133, 166);
   b.label('WATCHTOWER', 134.5, 165.4, 8, OLIVE, 0);
   b.lamp(133.4, 165.5);
   b.level(0);

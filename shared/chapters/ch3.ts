@@ -173,7 +173,7 @@ export function build() {
   b.carve(68, 23, 75, 30, F.CONCRETE);
   b.prop('tank', 70, 25, 4, 4, { color: 0x8a5a3a });
   for (const [x, z] of [[68, 23], [75, 23], [68, 30], [75, 30]]) b.prop('beacon', x, z);
-  b.pick('sniper', 69, 24); b.pick('ammo', 74, 24); b.pick('ammo', 74, 29); b.pick('medkit', 69, 29); b.pick('firebomb', 72, 30);
+  b.pick('rifle', 69, 24); b.pick('ammo', 74, 24); b.pick('ammo', 74, 29); b.pick('medkit', 69, 29); b.pick('firebomb', 72, 30);
   b.label('TOWER DECK', 72, 24, 11, CREAM, 0);
   b.lamp(71, 23.6); b.lamp(73, 30.4);
   b.level(0);
@@ -196,7 +196,7 @@ export function build() {
   b.prop('bus', 85, 5, 2, 8, { color: 0x3f6f4a }); b.prop('bus', 97, 5, 2, 8, { color: 0x8a3a32 });
   b.prop('shelf', 101, 4, 1, 6); b.prop('counter', 88, 4, 1, 5, { color: 0x6f7f9a }); b.prop('crate', 94, 4);
   b.label('PIT', 92, 8, 14, STEEL, E);
-  b.pick('sniper', 91, 5); b.pick('rifle', 92, 5); b.pick('shotgun', 93, 5); b.pick('smg', 92, 6); b.pick('ammo', 93, 12); b.pick('medkit', 100, 13); b.pick('medkit', 89, 13); // engine house overlooks the yard
+  b.pick('deagle', 91, 5); b.pick('rifle', 92, 5); b.pick('shotgun', 93, 5); b.pick('smg', 92, 6); b.pick('ammo', 93, 12); b.pick('medkit', 100, 13); b.pick('medkit', 89, 13); // engine house overlooks the yard
   b.label('ENGINE HOUSE', 92, 13.5, 16, SODIUM); b.lamp(89, 10); b.lamp(95, 10);
   // Lit bay doors and the name on the yard floor, so the stash reads from the water tower; ammo leads there.
   for (const x of [85.5, 91.5, 97.5]) b.lamp(x, 17.4);
@@ -237,7 +237,7 @@ export function build() {
   for (const x of [84, 85, 86, 87]) b.pick('medkit', x, 71);
   b.pick('ammo', 97, 65); b.pick('ammo', 97, 66); b.pick('ammo', 97, 67);
   b.pick('shotgun', 92, 71); b.pick('rifle', 93, 71); b.pick('smg', 94, 71); b.pick('autoshotgun', 95, 71); b.pick('rifle', 93, 70); // the container maze is next
-  b.pick('armor', 88, 71); b.pick('axe', 96, 71); b.pick('rattle', 97, 70);
+  b.pick('armor', 88, 71); b.pick('machete', 96, 71); b.pick('rattle', 97, 70);
   const officeLever = b.obj('lever', 98, 71, 'Unlatch the back door');
   b.label('SAFE ROOM', 89.5, 67, 22, RED); b.label("YARDMASTER'S OFFICE", 89.5, 69.4, 12, SODIUM);
   b.lamp(89.5, 68);
@@ -404,7 +404,7 @@ export function build() {
   b.level(1);
   b.carve(124, 18, 175, 19, F.CONCRETE);
   b.label('VALVE CATWALK', 136, 18.9, 12, LAV, E);
-  b.pick('sniper', 150, 18); b.pick('ammo', 151, 19); b.pick('ammo', 149, 19); b.pick('medkit', 162, 18);
+  b.pick('rifle', 150, 18); b.pick('ammo', 151, 19); b.pick('ammo', 149, 19); b.pick('medkit', 162, 18);
   for (const x of [130, 142, 154, 166]) b.lamp(x, 18.5);
   b.level(0);
   b.pick('ammo', 124, 36); b.pick('ammo', 176, 20);
@@ -527,8 +527,8 @@ export function build() {
   b.label('SNOOZLE CALENDAR: MARCH', 161.5, 76.4, 10, PINK);
   for (const x of [159, 160, 161, 162]) b.pick('medkit', x, 80);
   b.pick('ammo', 164, 80); b.pick('ammo', 165, 80); b.pick('ammo', 166, 80);
-  b.pick('smg', 170, 76); b.pick('shotgun', 171, 76); b.pick('rifle', 172, 76); b.pick('sniper', 173, 76); b.pick('autoshotgun', 174, 76); b.pick('launcher', 175, 76);
-  b.pick('armor', 167, 80); b.pick('armor', 168, 80); b.pick('axe', 169, 80); b.pick('machete', 172, 80); b.pick('firebomb', 176, 77); b.pick('rattle', 177, 80);   // last stop before Bertha
+  b.pick('smg', 170, 76); b.pick('shotgun', 171, 76); b.pick('rifle', 172, 76); b.pick('deagle', 173, 76); b.pick('autoshotgun', 174, 76); b.pick('launcher', 175, 76);
+  b.pick('armor', 167, 80); b.pick('armor', 168, 80); b.pick('bat', 169, 80); b.pick('machete', 172, 80); b.pick('firebomb', 176, 77); b.pick('rattle', 177, 80);   // last stop before Bertha
   const breakLever = b.obj('lever', 177, 78, 'Unbolt the fire escape');
   b.label('SAFE ROOM', 165, 78.4, 20, RED); b.label('STAFF BREAK ROOM', 165, 79.8, 11, LAV);
   b.label('FIRE ESCAPE', 170.5, 79.4, 10, GOLD, 0);
@@ -581,7 +581,7 @@ export function build() {
   // Net shed and harbour office (side pockets).
   b.fill(118, 110, 128, 116); b.carve(119, 111, 127, 115, F.INTERIOR); b.carve(122, 116, 124, 116, F.INTERIOR);
   b.prop('shelf', 119, 111, 6, 1); b.prop('pallet', 126, 112, 1, 2);
-  b.pick('ammo', 120, 114); b.pick('rifle', 127, 115); b.pick('sniper', 126, 115); // long river sightlines
+  b.pick('ammo', 120, 114); b.pick('rifle', 127, 115); b.pick('deagle', 126, 115); // long river sightlines
   b.label('NET SHED', 123, 113, 12, CREAM);
   b.fill(133, 109, 144, 116); b.carve(134, 110, 143, 115, F.INTERIOR); b.carve(138, 116, 139, 116, F.INTERIOR);
   b.prop('desk', 135, 111, 2, 1); b.prop('shelf', 143, 110, 1, 4); b.prop('radio', 140, 110);
@@ -685,7 +685,7 @@ export function build() {
   b.carve(88, 162, 90, 162, F.INTERIOR); b.carve(104, 162, 106, 162, F.INTERIOR); b.carve(84, 169, 84, 170, F.INTERIOR);
   b.prop('shelf', 86, 164, 1, 10); b.prop('shelf', 110, 164, 1, 10); for (const x of [92, 98]) b.prop('pallet', x, 168, 3, 2);
   b.prop('truck', 94, 172, 6, 2, { color: 0xe8e3f0 });
-  b.pick('rifle', 100, 164); b.pick('sniper', 101, 164); b.pick('autoshotgun', 99, 164); b.pick('launcher', 100, 165); b.pick('ammo', 90, 175); b.pick('ammo', 90, 174); b.pick('medkit', 106, 175);
+  b.pick('rifle', 100, 164); b.pick('deagle', 101, 164); b.pick('autoshotgun', 99, 164); b.pick('launcher', 100, 165); b.pick('ammo', 90, 175); b.pick('ammo', 90, 174); b.pick('medkit', 106, 175);
   b.label('DOCK SHED 3', 98, 166.5, 16, SODIUM); b.lamp(92, 165); b.lamp(104, 170);
   // The shed's best-in-chapter guns sat dark, 45 tiles off the line to Bertha: light both north doors,
   // put its name big on the apron facing the bridge, and lay a supply trail from the bridge foot.

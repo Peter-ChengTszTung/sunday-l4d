@@ -11,9 +11,9 @@ const fmt = (v: number) => (v >= 100 ? Math.round(v).toString() : (Math.round(v 
 
 /**
  * The panel for weapon `w` and range stats `s`. `spread`: the weapon's current base spread and the
- * spread the next shot would have (radians); `baseFov`: the unzoomed vertical FOV (for the scope's zoom).
+ * spread the next shot would have (radians).
  */
-export function rangePanelHtml(w: WeaponDef, s: RangeStats, spread: { base: number; now: number }, baseFov: number): string {
+export function rangePanelHtml(w: WeaponDef, s: RangeStats, spread: { base: number; now: number }): string {
   const spec = w.melee ? t('{dmg} dmg · hits {n} · reach {r} m · silent', { dmg: w.dmg, n: w.melee.cleave, r: w.melee.reach })
     : w.thrown === 'fire' ? t('throwable: burning patch')
     : w.blast
@@ -23,7 +23,6 @@ export function rangePanelHtml(w: WeaponDef, s: RangeStats, spread: { base: numb
   const reach = floor >= 1 ? t('full damage to {max} m', { max: w.range })
     : t('full to {near} m, {pct}% from {far} m, max {max} m', { near, far, pct: Math.round(floor * 100), max: w.range });
   const handling = [t('move {pct}%', { pct: Math.round(w.move * 100) })];
-  if (w.scope) handling.push(t('RMB scope: {x}x zoom, move {pct}%', { x: fmt(baseFov / w.scope.fov), pct: Math.round(w.move * w.scope.move * 100) }));
   const shot = s.shot;
   const lines = [
     w.melee || w.thrown ? `<b>${t(w.name)}</b> ${spec}` : `<b>${t(w.name)}</b> ${spec} · ${t('{rpm} RPM', { rpm: Math.round(60 / w.rate) })} · ${t('mag {n}', { n: w.mag })} · ${t('reload {s} s', { s: w.reload })}`,

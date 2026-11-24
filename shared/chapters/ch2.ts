@@ -300,7 +300,7 @@ export function build() {
   b.prop('shelf', 150, 9, 1, 5); b.prop('desk', 146, 14, 2, 1);
   b.pick('medkit', 134, 18); b.pick('medkit', 135, 18); b.pick('ammo', 148, 18); b.pick('ammo', 147, 18); b.pick('ammo', 146, 18);
   b.pick('magnum', 137, 18); b.pick('launcher', 138, 18); b.pick('rifle', 139, 18); // before the freight lift finale
-  b.pick('axe', 140, 18);
+  b.pick('machete', 140, 18);
   b.label('MALL SECURITY', 142, 15.5, 16, CREAM); b.label('BREAKERS', 142, 9.6, 12, GOLD);
   b.lamp(142, 13);
   // Star Arcade, under the toy store.
@@ -495,7 +495,7 @@ export function build() {
   b.prop('gen', 9, 41, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 24, 46, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 14, 52, 2, 2, { color: 0xb8c4c8 });
   b.prop('crate', 31, 40); b.prop('crate', 32, 40); b.prop('pallet', 18, 58, 2, 1); b.prop('bench', 21, 61, 2, 1);
   // Larry's smoke-break ledge: a sniper perch over the ambulance bay.
-  b.pick('sniper', 16, 61); b.pick('ammo', 17, 61); b.pick('medkit', 25, 61); b.pick('armor', 34, 39);
+  b.pick('rifle', 16, 61); b.pick('ammo', 17, 61); b.pick('medkit', 25, 61); b.pick('armor', 34, 39);
   b.note(20, 60, 'Thermos on the roof ledge', 'Best seat in the house. You can see the helipad AND the Galleria skylight. Back in 10, just resting my eyes. L.');
   b.label('LARRY WAS HERE', 20, 57.5, 12, GOLD);
   b.lamp(20, 59);
@@ -532,7 +532,7 @@ export function build() {
   for (const x of [125, 126, 127, 128]) b.pick('medkit', x, 20);
   b.pick('ammo', 129, 20); b.pick('ammo', 130, 20); b.pick('ammo', 131, 20);
   b.pick('launcher', 125, 33); b.pick('shotgun', 126, 33); b.pick('rifle', 127, 33); b.pick('smg', 132, 33); b.pick('autoshotgun', 133, 33);
-  b.pick('axe', 132, 31); b.pick('armor', 133, 21); b.pick('firebomb', 134, 33);
+  b.pick('machete', 132, 31); b.pick('armor', 133, 21); b.pick('firebomb', 134, 33);
   const stockLever = b.obj('lever', 124, 34, 'Unbolt the back door');
   b.label('SAFE ROOM', 129.5, 24.5, 22, RED); b.label('STOCKROOM: PLUSHIES', 129.5, 30.5, 12, LEMON);
   b.lamp(129.5, 27);
@@ -551,7 +551,7 @@ export function build() {
   // Dock catwalk: a perch over the finale, ladder at the west end and stairs at the east end.
   b.carve(106, 77, 150, 79, F.CONCRETE); b.carve(146, 80, 150, 81, F.CONCRETE);
   b.prop('crate', 115, 77); b.prop('crate', 132, 77); b.prop('pallet', 140, 77, 2, 1);
-  b.pick('sniper', 124, 78); b.pick('ammo', 125, 78); b.pick('medkit', 136, 78); b.pick('ammo', 148, 81);
+  b.pick('rifle', 124, 78); b.pick('ammo', 125, 78); b.pick('medkit', 136, 78); b.pick('ammo', 148, 81);
   b.label('CATWALK', 128, 78, 12, CREAM, E);
   b.lamp(110, 78); b.lamp(128, 78); b.lamp(147, 80);
 
@@ -616,7 +616,7 @@ export function build() {
   b.note(58, 15, 'Taped to the stairwell door', 'LARRY. Do NOT nap in the chopper. We have talked about this. Mgmt');
   for (const [x, z] of [[52, 15], [53, 15], [54, 15], [52, 14]]) b.pick('medkit', x, z);
   b.pick('ammo', 58, 8); b.pick('ammo', 59, 8); b.pick('ammo', 60, 8);
-  b.pick('sniper', 52, 12); b.pick('shotgun', 53, 12); b.pick('rifle', 54, 12); b.pick('smg', 59, 12); b.pick('autoshotgun', 60, 12);
+  b.pick('deagle', 52, 12); b.pick('shotgun', 53, 12); b.pick('rifle', 54, 12); b.pick('smg', 59, 12); b.pick('autoshotgun', 60, 12);
   b.pick('armor', 59, 14); b.pick('bat', 60, 14); b.pick('firebomb', 60, 15);
   const obsLever = b.obj('lever', 60, 10, 'Unlock the stairwell door');
   b.label('SAFE ROOM', 56, 8.5, 20, RED); b.label('OBSERVATION', 56, 13.6, 12, LAV);
@@ -655,7 +655,7 @@ export function build() {
   b.prop('container', 76, 26, 2, 4, { color: 0x8fb4c6 }); b.prop('crate', 92, 12); b.prop('crate', 93, 12);
   b.prop('pallet', 70, 32, 2, 1); b.prop('barrier', 90, 30, 3, 1); b.prop('barrier', 95, 8, 1, 3);
   b.pick('ammo', 95, 24); b.pick('ammo', 96, 24); b.pick('ammo', 97, 24); b.pick('medkit', 98, 24);
-  b.pick('launcher', 95, 25); b.pick('sniper', 96, 25); // before the skybridge holdout; long roof sightlines
+  b.pick('launcher', 95, 25); b.pick('rifle', 96, 25); // before the skybridge holdout; long roof sightlines
   b.pick('rattle', 97, 25);
   b.label('SKYBRIDGE TERRACE', 80, 18, 20, CREAM);
   b.label('SKYBRIDGE', 96.5, 20, 16, GOLD, E);

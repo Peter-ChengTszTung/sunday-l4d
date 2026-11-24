@@ -170,14 +170,11 @@ export default {
   "FIRING LINE": "射擊線",
   "WEAPON RACK": "武器架",
   "FIRST AID": "急救站",
-  // Weapon reach and handling (range panel), scope and shove keys
+  // Weapon reach and handling (range panel), shove keys
   "full damage to {max} m": "{max} 公尺內全傷害",
   "full to {near} m, {pct}% from {far} m, max {max} m": "{near} 公尺內全傷害，{far} 公尺起剩 {pct}%，最遠 {max} 公尺",
   "move {pct}%": "移動 {pct}%",
-  "RMB scope: {x}x zoom, move {pct}%": "右鍵開鏡：{x} 倍，移動 {pct}%",
   "{m} m, {pct}% damage": "{m} 公尺，{pct}% 傷害",
-  "Sniper (7): hold right mouse to scope · V: shove": "狙擊槍（7）：按住右鍵開鏡 · V：推開",
-  "shove / sniper scope": "推開／狙擊開鏡",
   "Spread {base}° · firing +{bloom}° max · moving +{move}° · now {now}°": "散佈 {base}° · 連射最多 +{bloom}° · 移動 +{move}° · 目前 {now}°",
   "Snatcher": "套索者",
   "Piggyback": "背背怪",
@@ -226,4 +223,11 @@ export default {
   "1 2 3: gun / sidearm / close-in · 4 5: throwables · X: clear stats · Esc: leave": "1 2 3：主武器／副武器／近戰 · 4 5：投擲物 · X：清除數據 · Esc：離開",
   "Pockets full ({n} throwables)": "口袋滿了（{n} 個投擲物）",
   "throw": "投擲",
+  // Mounted guns and the Big Hold On
+  "THE BIG HOLD ON! Man the guns!": "大死守！快上砲台！",
+  "Man the {w}": "操作{w}",
+  "{who} is on the {w}": "{who} 正在操作{w}",
+  "Manning the {w} — E or Space to let go": "正在操作{w}——按 E 或空白鍵離開",
+  "Let go": "離開砲台",
+  "cooling…": "散熱中…",
 } satisfies Record<string, string>;

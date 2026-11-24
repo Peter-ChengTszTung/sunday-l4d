@@ -36,9 +36,9 @@ export const RANGE_DUMMIES: RangeDummy[] = [
 ];
 
 /** The rack at the back of the booth: every pickup gun (the pistol is the default sidearm). */
-const RACK: LootKind[] = ['smg', 'shotgun', 'rifle', 'autoshotgun', 'sniper', 'launcher', 'magnum'];
+const RACK: LootKind[] = ['smg', 'shotgun', 'rifle', 'autoshotgun', 'launcher', 'magnum', 'deagle'];
 /** Left of the guns: close-in weapons. Right: throwables and a Pillow Vest. */
-const RACK_LEFT: LootKind[] = ['bat', 'machete', 'axe'], RACK_RIGHT: LootKind[] = ['firebomb', 'rattle', 'armor'];
+const RACK_LEFT: LootKind[] = ['bat', 'machete'], RACK_RIGHT: LootKind[] = ['firebomb', 'rattle', 'armor'];
 /** A first-aid shelf in front of the right-hand rack: the medkit and every small medical item. Taking one leaves you hurt enough to try it. */
 const RACK_MEDS: LootKind[] = ['medkit', 'plaster', 'vitamins', 'cocoa'];
 
@@ -68,6 +68,8 @@ function build() {
   RACK_RIGHT.forEach((k, i) => b.pick(k, 28 + i * 2, 2));
   RACK_MEDS.forEach((k, i) => b.pick(k, 28 + i * 2, 4));
   b.label('FIRST AID', 31.5, 5.3, 14, '#63e6be');
+  // The mounted guns of the Big Hold Ons, on the firing line.
+  (['minigun', 'cannon', 'rockets'] as const).forEach((k, i) => b.mount(k, [8, 14, 24][i], RANGE_LINE - 1, '+z'));
   b.label('WEAPON RACK', W / 2, 3.6, 18, '#5ff2e0');
   for (let z = 4; z < H - 3; z += 8) { b.lamp(2.5, z); b.lamp(W - 2.5, z); }
   b.start([[W / 2, 4], [W / 2 - 2, 4], [W / 2 + 2, 4], [W / 2, 3]]);

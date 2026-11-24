@@ -212,6 +212,23 @@ export const DIFFICULTY: Record<DifficultyId, {
   hard: { peak: 1.2, relax: 0.75, build: 1.3, mob: 1.25, mobEvery: 0.85, slots: [0, 0, 1, 1], spCd: 0.85, ambient: 1.2, wander: 1.2, brute: 1.15, bruteHp: 1.15, spHp: 1.1, dmg: 1.5, intro: 0.05, ladder: 5 },
   nightmare: { peak: 1.35, relax: 0.55, build: 1.6, mob: 1.5, mobEvery: 0.7, slots: [1, 1, 1, 1], spCd: 0.7, ambient: 1.4, wander: 1.4, brute: 1.25, bruteHp: 1.3, spHp: 1.25, dmg: 2.2, intro: 0.1, ladder: Infinity },
 };
+/**
+ * Horde focus (L4D-style "one at a time"): commons and the Brute all go for one survivor, the focus,
+ * instead of each going for whoever is nearest. The focus is the standing survivor with the most
+ * active commons within `near` m (ties: the weakest), kept until they go down, die, leave or can't
+ * be reached; every `reconsider` s another survivor takes over only if `margin` more commons are on
+ * them. A zombie still swings at any other standing survivor within `block` m of it (they are in
+ * its way). Movement: a zombie on the target's floor runs straight at them while the straight line
+ * is clear for its body (re-tested every `recheck` s, out to `beeline` m), else it follows the field.
+ */
+export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline: 32, recheck: 0.3 };
+/**
+ * A Big Hold On (a step with `big: true`, shared/level.ts): stage hordes x `horde`, the trickle every
+ * `trickle` x as often and `clump` walkers at a time, room for `cap[n - 1]` commons at once (n
+ * survivors; normally min(46, 20 + 6n)), queued hordes drain one walker every `drain` s (normally
+ * 0.22), and `specials` more specials alive at once.
+ */
+export const BIG_HOLD = { horde: 2.4, trickle: 0.45, clump: [2, 4] as const, cap: [60, 75, 95, 110] as const, drain: 0.08, specials: 1 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 export const BRUTE_HP_PER = 1100;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */

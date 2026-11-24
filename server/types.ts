@@ -31,6 +31,7 @@ export interface Player {
   /** Solo self-revives left this attempt, and the revive time the current one needs (s). */ selfRev: number; revNeed: number;
   /** Shove fatigue (PLAYER.shoveMax). */ shoveFat: number;
   /** Ammo piles and safe-room weapon stacks this survivor has used (each serves every survivor once). */ ammoUsed: Set<number>;
+  /** Mounted gun this survivor is manning (index into ChapterDef.mounts), -1 = none. The server keeps them at its seat. */ mount: number;
 }
 
 export interface Zombie {
@@ -55,6 +56,8 @@ export interface Zombie {
   region: number;
   /** Weeper: still sitting (not yet woken), and her anger 0..1 (WEEPER). */
   sit: boolean; anger: number;
+  /** Running straight at its target (the line there is clear, see FOCUS), and seconds until that is tested again. */
+  run: boolean; runT: number; /** Survivor `run` was tested toward. */ runTgt: number;
 }
 
 /**

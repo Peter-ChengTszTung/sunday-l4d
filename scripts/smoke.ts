@@ -87,6 +87,8 @@ await sleep(200);
 if (a.events.filter((e) => e[0] === 'got' && e[1] === a.id && e[2] === pile.id).length !== 1) fail('ammo pile should serve a survivor exactly once');
 if (b.events.some((e) => e[0] === 'pk' && e[1] === pile.id)) fail('ammo pile disappeared for a teammate');
 console.log('ok: pickups work');
+// Beta waits back in the start room: the horde goes for one survivor at a time, and one in a safe room never draws it.
+{ const s = MAP.spawns[1] ?? MAP.spawns[0]; for (let i = 0; i < 4; i++) { b.send({ t: 'p', x: s.x, y: s.y ?? 0, z: s.z, ry: 0, rx: 0, w: 0, a: 0 }); await sleep(60); } }
 
 // Start rooms are sealed until step 1 (usually "use the radio") opens the door: do that first.
 const first = MAP.steps[0];
@@ -123,9 +125,9 @@ if (kills < 3) fail(`expected kills, got ${kills}`);
 if (!b.events.some((e) => e[0] === 'shot' && e[1] === a.id)) fail('shots not relayed to teammate');
 console.log(`ok: zombies attacked, ${kills} killed, shots relayed`);
 
-// New weapons: a Kebabber round through two walkers in a line, then a Bloop Tube grenade.
-const SNIPER = weaponIndex('sniper'), LAUNCHER = weaponIndex('launcher');
-const hold = () => a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: SNIPER, a: 0 });
+// New weapons: a Desert Eagle round through two walkers in a line, then a Bloop Tube grenade.
+const DEAGLE = weaponIndex('deagle'), LAUNCHER = weaponIndex('launcher');
+const hold = () => a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: DEAGLE, a: 0 });
 const walkersInSight = () => a.snap!.z
   .filter((z) => z[1] === ZT.WALKER && Math.hypot(z[2] - pos.x, z[3] - pos.z) < 30 && L.hasLOS(pos.x, pos.y + 1.2, pos.z, z[2], z[6] + 1.2, z[3], a.snap!.g))
   .sort((p, q) => Math.hypot(p[2] - pos.x, p[3] - pos.z) - Math.hypot(q[2] - pos.x, q[3] - pos.z));
@@ -135,11 +137,11 @@ for (let i = 0; i < 80 && !pierced; i++) {
   const w = walkersInSight();
   if (w.length < 2) { await sleep(100); continue; }
   const near = w[0], far = w[w.length - 1];
-  a.send({ t: 'f', w: SNIPER, h: [[near[0], 1, 0], [far[0], 1, 0]], e: [far[2], 1, far[3]] });
+  a.send({ t: 'f', w: DEAGLE, h: [[near[0], 1, 0], [far[0], 1, 0]], e: [far[2], 1, far[3]] });
   await sleep(500);
   pierced = a.events.some((e) => e[0] === 'zdie' && e[1] === far[0] && e[6] === a.id);
 }
-if (!pierced) fail('a piercing Kebabber round did not kill the second walker in line');
+if (!pierced) fail('a piercing Desert Eagle round did not kill the second walker in line');
 let boomed = false;
 for (let i = 0; i < 80 && !boomed; i++) {
   hold();
@@ -160,7 +162,35 @@ for (let i = 0; i < 80 && !boomed; i++) {
   if (!boomed) fail('the grenade did not kill the walker at ground zero');
 }
 if (!boomed) fail('no walker in sight for the grenade test');
-console.log('ok: piercing sniper round and grenade blast validated');
+console.log('ok: piercing Desert Eagle round and grenade blast validated');
+
+// Mounted guns: Beta can't fire one it isn't manning; Alpha mans chapter 1's first one, fires it, lets go.
+{
+  const M = MAP.mounts[0];
+  if (!M) fail('chapter 1 has no mounted gun (a Big Hold On needs one)');
+  const MW = weaponIndex(M.kind);
+  const shots = (bt: Bot, who: Bot) => bt.events.filter((e) => e[0] === 'shot' && e[1] === who.id && e[2] === MW).length;
+  b.send({ t: 'f', w: MW, h: [], e: [M.x, M.y + 1, M.z - 5], n: 900 });
+  await sleep(200);
+  if (shots(a, b)) fail('a mounted gun fired by a survivor who is not manning it was accepted');
+  const near = { x: M.x + Math.sin(M.yaw) * 1.2, z: M.z + Math.cos(M.yaw) * 1.2 };
+  for (let i = 0; i < 6; i++) { a.send({ t: 'p', x: near.x, y: M.y, z: near.z, ry: M.yaw, rx: 0, w: 1, a: 0 }); await sleep(60); }
+  a.send({ t: 'm', id: M.id });
+  await sleep(250);
+  if (!a.events.some((e) => e[0] === 'mount' && e[1] === a.id && e[2] === M.id)) fail('manning a mounted gun was refused');
+  if (a.snap!.p.find((p) => p[0] === a.id)![15] !== M.id) fail('snapshot does not show the gunner on the mount');
+  b.send({ t: 'm', id: M.id });
+  await sleep(200);
+  if (b.events.some((e) => e[0] === 'mount' && e[1] === b.id && e[2] === M.id)) fail('two survivors manned the same gun');
+  a.send({ t: 'f', w: MW, h: [], e: [M.x - Math.sin(M.yaw) * 20, M.y + 1, M.z - Math.cos(M.yaw) * 20], n: 901 });
+  await sleep(250);
+  if (!shots(b, a)) fail('the gunner\'s mounted-gun shot was not relayed');
+  a.send({ t: 'm', id: -1 });
+  await sleep(250);
+  if (!a.events.some((e) => e[0] === 'mount' && e[1] === a.id && e[2] === -1)) fail('letting go of the mounted gun failed');
+  for (let i = 0; i < 6; i++) { a.send({ t: 'p', x: pos.x, y: pos.y, z: pos.z, ry: Math.PI, rx: 0, w: 1, a: 0 }); await sleep(60); }
+  console.log(`ok: mounted ${M.kind} manned, fired and let go`);
+}
 
 // Let Alpha go down, then have Beta revive.
 for (let i = 0; i < 600; i++) {

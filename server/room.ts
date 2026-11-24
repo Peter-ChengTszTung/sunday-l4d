@@ -2,11 +2,11 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, type DifficultyId, type ZombieDef } from '../shared/constants';
-import { F, cellOf, type HoldStage, type Level, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
+import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, MOUNT, type DifficultyId, type ZombieDef } from '../shared/constants';
+import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
@@ -57,7 +57,7 @@ export class Room implements CombatHost {
    * length, current stage index, seconds to the next final-stage special refill, and a Brute the
    * current stage still owes (retried every second until one fits).
    */
-  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0 };
+  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false };
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
@@ -114,6 +114,8 @@ export class Room implements CombatHost {
 
   /** Path field toward an awake Weeper's victim (she goes for them, not whoever is nearest); refreshed with the flow field. */
   private weeperField = new Int16Array(1);
+  /** Horde focus (FOCUS): id of the survivor the commons all go for (0 = none), when they were picked, and the BFS field toward them. */
+  private focus = 0; private focusAt = 0; private focusField = new Int16Array(1);
   /** Scratch for Level.neighbors8. */
   private nb: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   /** Node the last flowStep headed for (its own node when it returned null). */
@@ -153,6 +155,8 @@ export class Room implements CombatHost {
   private get diff() { return DIFFICULTY[this.difficulty]; }
   /** Team intensity that ends BUILD_UP, after difficulty. */
   private get peak(): number { return Math.min(95, DIRECTOR.peak * this.diff.peak); }
+  /** A Big Hold On is running (a holdout on a `big` step). */
+  private get bigHold(): boolean { return this.holdout >= 0 && this.hs.big; }
   /** Special slots for `n` survivors, after difficulty. */
   private specialSlots(n: number): number { const S = DIRECTOR.specials.slots; return Math.min(this.slotCap(), Math.max(1, S[Math.min(Math.max(n, 1), S.length) - 1] + this.slotBonus(n))); }
   /** Campaign position for INTRO: chapter + fraction of its route walked this attempt, shifted by difficulty. */
@@ -288,7 +292,7 @@ export class Room implements CombatHost {
     const s = this.settle(s0), y = s.y;
     Object.assign(p, { x: s.x, y, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
       revT: 0, reviving: 0, respawnT: 0, lastFire: 0, lastShove: 0, pinned: 0, freeAt: 0, fireW: 0, nades: [], shotAt: {}, intensity: 0,
-      downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0, regen: 0, regenRate: 0 });
+      downs: 0, selfRev: this.rules.selfRevives, revNeed: PLAYER.reviveTime, shoveFat: 0, ammoUsed: new Set<number>(), armor: 0, regen: 0, regenRate: 0, mount: -1 });
     if (fresh || p.primary === undefined) { p.primary = -1; p.sidearm = 0; p.melee = -1; p.thr = {}; }
     if (fresh || !p.meds) p.meds = MEDS.map(() => 0);
     if (fresh) p.kills = 0;
@@ -446,7 +450,7 @@ export class Room implements CombatHost {
     let i = 0;
     for (const p of this.players.values()) {
       const s = this.settle({ x: at.x + (i % 2) * 0.9, z: at.z + (i >> 1) * 0.9, y: at.y }); i++;
-      Object.assign(p, { x: s.x, y: s.y, z: s.z, st: PSTATE.ALIVE, hp: PLAYER.hp, pinned: 0 });
+      Object.assign(p, { x: s.x, y: s.y, z: s.z, st: PSTATE.ALIVE, hp: PLAYER.hp, pinned: 0, mount: -1 });
       this.place(p);
       this.events.push(['tp', p.id, s.x, s.z, Math.PI, r2(s.y)]);
       p.freeAt = this.time + TP_GRACE;
@@ -472,6 +476,7 @@ export class Room implements CombatHost {
     const c = this.nearestOpen({ x: ((area.x0 + area.x1 + 1) / 2) * TILE, z: ((area.z0 + area.z1 + 1) / 2) * TILE, y: (area.lv ?? 0) * STOREY });
     for (const p of this.players.values()) if (p.st !== PSTATE.DEAD && inDoor(p.x, p.gy, p.z, PLAYER.radius)) {
       if (p.pinned) this.unpin(p);
+      this.letGo(p);
       p.x = c.x; p.y = c.y; p.z = c.z;
       this.place(p);
       this.events.push(['tp', p.id, r2(p.x), r2(p.z), p.ry, r2(p.y)]);
@@ -497,7 +502,7 @@ export class Room implements CombatHost {
         if (![m.x, m.y, m.z, m.ry, m.rx].every(Number.isFinite)) return;
         // In the grace after a teleport, a claim near where the server put you means the client has caught up.
         if (this.time < p.freeAt && Math.hypot(m.x - p.x, m.z - p.z) < 2.5 && Math.abs(m.y - p.y) < 2) p.freeAt = 0;
-        if (p.st === PSTATE.ALIVE && !p.pinned && !(this.time < p.freeAt)) {
+        if (p.st === PSTATE.ALIVE && !p.pinned && p.mount < 0 && !(this.time < p.freeAt)) {
           // Feet may be at most a jump (or a knockback hop) above the floor under the claimed spot, never below it.
           const n = this.L.nodeAt(m.x, m.y, m.z), g = this.L.blocked(n, this.doors) ? p.gy : this.L.heightAt(n, m.x, m.z);
           p.x = m.x; p.z = m.z; p.y = Math.min(Math.max(m.y, g), g + MAX_LIFT); this.place(p);
@@ -509,6 +514,7 @@ export class Room implements CombatHost {
       case 'g': onBlast(this, p, m); break;
       case 'v': onShove(this, p); break;
       case 'u': if (!p.pinned) this.onUse(p, m.id | 0); break;
+      case 'm': if ((m.id | 0) < 0) this.letGo(p); else this.man(p, m.id | 0); break;
       case 'h': {
         const k = m.k === undefined ? 0 : m.k | 0, med = MEDS[k];
         if (!med || p.st !== PSTATE.ALIVE || p.pinned || !(p.meds[k] > 0) || !medUseful(k, p.hp, p.downs)) return;
@@ -557,6 +563,29 @@ export class Room implements CombatHost {
     this.lures.push({ x, y, z, t: LURE.time, by: by.id, w, field });
     this.events.push(['lure', r2(x), r2(z), LURE.time, r2(y)]);
     this.alertNear(x, y, z, LURE.wake);
+  }
+
+  /** Where the gunner of mount `m` stands: MOUNT.seat m behind its pivot. */
+  private seatOf(m: Mount): Pos3 {
+    return { x: m.x + Math.sin(m.yaw) * MOUNT.seat, y: m.y, z: m.z + Math.cos(m.yaw) * MOUNT.seat };
+  }
+  /** Man mounted gun `id`: free, in reach and on its floor. The survivor is put at its seat and kept there. */
+  private man(p: Player, id: number): void {
+    const m = this.def.mounts[id];
+    if (!m || p.st !== PSTATE.ALIVE || p.pinned || this.state !== 'play' || p.mount === id) return;
+    if (Math.hypot(m.x - p.x, m.z - p.z) > MOUNT.useRange + PLAYER.useRange || Math.abs(m.y - p.gy) > REACH_DY) return;
+    for (const q of this.players.values()) if (q !== p && q.mount === id) return;
+    if (p.mount >= 0) this.letGo(p);
+    const s = this.seatOf(m);
+    p.mount = id; p.x = s.x; p.y = s.y; p.z = s.z; p.ry = m.yaw;
+    this.place(p);
+    this.events.push(['mount', p.id, id]);
+  }
+  /** Let go of the mounted gun (E, Space, going down, being grabbed, dying, a reset). */
+  letGo(p: Player): void {
+    if (p.mount < 0) return;
+    p.mount = -1;
+    this.events.push(['mount', p.id, -1]);
   }
 
   private onUse(p: Player, id: number): void {
@@ -620,7 +649,7 @@ export class Room implements CombatHost {
         : isCommon(type) ? T.hp : Math.round(T.hp * this.diff.spHp),
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1, sit: false, anger: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1, sit: false, anger: 0, run: false, runT: 0, runTgt: 0,
     };
     this.zombies.set(zb.id, zb);
     return zb;
@@ -856,6 +885,7 @@ export class Room implements CombatHost {
 
   /** Zombie `z` takes hold of survivor `p` (Snatcher lasso, Piggyback ride): the server moves them until 'unpin'. */
   private grab(z: Zombie, p: Player): void {
+    this.letGo(p);
     p.pinned = z.id; p.reviving = 0;
     // The server moves them from here (Level.moveSlide): on the floor, out of any jump.
     p.y = p.gy;
@@ -950,6 +980,7 @@ export class Room implements CombatHost {
       this.events.push(['kb', p.id, r2(z.lx * CHARGER.knock), r2(z.lz * CHARGER.knock)]);
       return false;
     }
+    this.letGo(p);
     p.x = x; p.y = y; p.z = zz; p.pinned = z.id; p.reviving = 0;
     this.place(p);
     this.bumpIntensity(p, DIRECTOR.pin);
@@ -1053,6 +1084,7 @@ export class Room implements CombatHost {
         this.killPlayer(p);
         return;
       }
+      this.letGo(p);
       p.st = PSTATE.DOWN; p.hp = PLAYER.hp; p.revT = 0; p.y = p.gy;
       // Alone: get yourself up (slowly) while self-revives last.
       p.revNeed = this.players.size === 1 && p.selfRev > 0 ? PLAYER.reviveTime * PLAYER.selfReviveMul : PLAYER.reviveTime;
@@ -1063,7 +1095,7 @@ export class Room implements CombatHost {
   }
 
   private killPlayer(p: Player): void {
-    this.unpin(p);
+    this.unpin(p); this.letGo(p);
     p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = this.rules.respawn; p.y = p.gy;
     this.events.push(['dead', p.id]);
   }
@@ -1509,7 +1541,7 @@ export class Room implements CombatHost {
     for (const p of this.players.values()) p.intensity = 0;
     this.phase = Phase.BUILD_UP; this.phaseT = 0; this.phaseLen = roll(DIRECTOR.buildMax) * this.diff.build; this.phaseBest = this.best;
     this.advancedAt = this.time; this.campT = 0; this.objSeenKey = '';
-    this.spReady.fill(0); this.ambushUntil = Infinity; this.loner = 0; this.isoT.clear();
+    this.spReady.fill(0); this.ambushUntil = Infinity; this.loner = 0; this.isoT.clear(); this.focus = 0;
   }
 
   private setPhase(ph: Phase, why: string): void {
@@ -1540,7 +1572,7 @@ export class Room implements CombatHost {
     const ends = stages.map((g) => (acc += g.secs) * HOLD_SCALE);
     ends[ends.length - 1] = Infinity; // the last stage runs until the timer does, whatever the script adds up to
     this.holdout = hold * HOLD_SCALE;
-    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0 };
+    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: !!s.big };
     // Lurking specials from before join the fight now; from here on only the holdout's pushes hold.
     this.releaseAmbush('holdout');
     if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout ${hold}s x${HOLD_SCALE}: ${stages.map((g) => `${g.kind} ${g.secs}`).join(' | ')}`);
@@ -1560,7 +1592,7 @@ export class Room implements CombatHost {
       if (up) push = g.specials ?? H.push.specials[k];
       else { hs.bruteWant = true; hs.bruteTry = 0; }
     }
-    const size = g.horde ?? H.horde[g.kind];
+    const size = (g.horde ?? H.horde[g.kind]) * (hs.big ? BIG_HOLD.horde : 1);
     const msg = g.msg ?? (g.kind === 'final' ? H.finalMsg : '');
     if (msg) this.events.push(['msg', msg]);
     if (size > 0 && (i > 0 || opening)) this.horde(1, size, g.flank ?? g.kind === 'final');
@@ -1578,7 +1610,8 @@ export class Room implements CombatHost {
       byType[z.type]++;
       if (SLOTTED(z.type)) alive++;
     }
-    k = Math.min(k, Math.min(this.slotCap(), Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.slotBonus(n))) - alive);
+    const extra = this.bigHold ? BIG_HOLD.specials : 0;
+    k = Math.min(k, Math.min(this.slotCap(), Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.slotBonus(n) + extra)) - alive);
     let got = 0;
     for (let j = 0; j < k; j++) {
       const type = this.pickSpecial(byType, true);
@@ -1591,7 +1624,8 @@ export class Room implements CombatHost {
   }
 
   /** Holdout tick: advance the script by elapsed time, then the current stage's trickle, Brute and refills. */
-  private updateHoldout(dt: number, room: boolean, specials: number, brute: boolean): void {
+  /** `room`: how many more commons may spawn before the cap. */
+  private updateHoldout(dt: number, room: number, specials: number, brute: boolean): void {
     const H = DIRECTOR.holdout, hs = this.hs, n = this.players.size;
     if (!hs.stages.length) return;
     const el = hs.total - this.holdout;
@@ -1604,12 +1638,14 @@ export class Room implements CombatHost {
       if (brute) hs.bruteWant = false;
       else if ((hs.bruteTry -= dt) <= 0) { hs.bruteTry = 1; if (this.spawnBrute()) hs.bruteWant = false; }
     }
-    const every = H.trickle[g.kind];
+    const every = H.trickle[g.kind] * (hs.big ? BIG_HOLD.trickle : 1);
     if (every > 0) {
       this.t.ambient -= dt;
       if (this.t.ambient <= 0) {
-        this.t.ambient = Math.max(H.triMin, every - H.triPer * (n - 1)) / this.diff.ambient;
-        if (room) this.spawnAt(this.commonType(), 6, 18);
+        this.t.ambient = Math.max(hs.big ? H.triMin * BIG_HOLD.trickle : H.triMin, every - H.triPer * (n - 1)) / this.diff.ambient;
+        // A Big Hold On trickles in clumps.
+        const clump = hs.big ? Math.round(roll(BIG_HOLD.clump)) : 1;
+        for (let j = 0; j < Math.min(clump, room); j++) if (!this.spawnAt(this.commonType(), 6, 18)) break;
       }
     }
     if (g.kind === 'final' && (hs.drip -= dt) <= 0) {
@@ -1772,7 +1808,7 @@ export class Room implements CombatHost {
       commons++;
       if (this.flow[this.nodeOf(z)] <= D.fadeNear) nearCommons++;
     }
-    const cap = Math.min(46, 20 + 6 * n);
+    const cap = this.bigHold ? BIG_HOLD.cap[Math.min(Math.max(n, 1), 4) - 1] : Math.min(46, 20 + 6 * n);
 
     this.decayIntensity(dt);
     if (this.holdout < 0) this.updatePhase(dt, nearCommons);
@@ -1802,13 +1838,13 @@ export class Room implements CombatHost {
     if (wave) {
       t.hordeTick -= dt;
       if (t.hordeTick <= 0) {
-        t.hordeTick = 0.22;
+        t.hordeTick = this.bigHold ? BIG_HOLD.drain : 0.22;
         if (commons < cap && this.spawnWaveMember(wave)) wave.left--;
         if (wave.left <= 0) this.waves.shift();
       }
     }
 
-    if (this.holdout >= 0) { this.updateHoldout(dt, commons < cap - 4, specials, brute); return; }
+    if (this.holdout >= 0) { this.updateHoldout(dt, cap - 4 - commons, specials, brute); return; }
     // Safe rooms are a breather: no new pressure while the whole team is inside one.
     if (allSafe) return;
 
@@ -1918,6 +1954,45 @@ export class Room implements CombatHost {
     this.L.distanceField(src, this.doors, this.flow);
   }
 
+  /**
+   * Pick (or keep) the horde's focus (FOCUS) and rebuild the field toward them. Solo, the flow field
+   * already leads to the only survivor, so there is no focus.
+   */
+  private recomputeFocus(): void {
+    let stand = this.standing();
+    if (stand.length < 2) { this.focus = 0; return; }
+    // Someone hanging back in a safe room doesn't draw the horde while a teammate is out in it.
+    const out = stand.filter((p) => this.L.floorAt(p.x, p.y, p.z) !== F.SAFE);
+    if (out.length) stand = out;
+    const F2 = FOCUS.near * FOCUS.near;
+    const score = (p: Player): number => {
+      let k = 0;
+      for (const z of this.zombies.values()) {
+        if (z.dormant || z.hp <= 0 || !isCommon(z.type)) continue;
+        const dx = z.x - p.x, dz = z.z - p.z;
+        if (dx * dx + dz * dz < F2 && Math.abs(z.y - p.gy) < STOREY) k++;
+      }
+      return k;
+    };
+    const cur = this.players.get(this.focus);
+    const ok = !!cur && cur.st === PSTATE.ALIVE && stand.includes(cur) && !this.L.blocked(cur.node, this.doors);
+    if (this.focusField.length !== this.flow.length) this.focusField = new Int16Array(this.flow.length);
+    if (ok && this.time - this.focusAt < FOCUS.reconsider) { this.L.distanceField([cur.node], this.doors, this.focusField); return; }
+    let best: Player | null = null, bs = -1;
+    for (const p of stand) {
+      if (this.L.blocked(p.node, this.doors)) continue;
+      // The weakest wins a tie (a fraction never outweighs a whole common).
+      const v = score(p) + (1 - p.hp / PLAYER.hp) * 0.9;
+      if (v > bs) { bs = v; best = p; }
+    }
+    // A held focus only hands over to someone clearly busier.
+    if (ok && best && best !== cur && bs < score(cur) + FOCUS.margin) best = cur;
+    if (!best) { this.focus = 0; return; }
+    if (best.id !== this.focus) { this.focus = best.id; if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} horde focus -> ${best.name}`); }
+    this.focusAt = this.time;
+    this.L.distanceField([best.node], this.doors, this.focusField);
+  }
+
   /** Zombies the soft separation never pushes: the Brute, and Chargers mid-rush or pinning. */
   private anchored(z: Zombie): boolean {
     return z.type === ZT.BRUTE || z.sit || z.st === ZSTATE.PIN || (z.type === ZT.CHARGER && z.st === ZSTATE.CHARGE);
@@ -2001,9 +2076,15 @@ export class Room implements CombatHost {
       const pd = Math.hypot(p.x - z.x, p.z - z.z, p.gy - z.y);
       if (p.st === PSTATE.ALIVE) { if (pd < d) { d = pd; tgt = p; } } else if (pd < dDown) { dDown = pd; tgtDown = p; }
     }
-    if (tgtDown && (!tgt || (dDown < T.range && d > T.range + 1))) { tgt = tgtDown; d = dDown; }
-    // Goo wave members go for the nearest marked survivor while the mark lasts (they path on markFlow).
+    // Commons and the Brute go for the horde's focus (FOCUS), unless another survivor is right in their way.
     let field = this.flow;
+    const fp = this.focus ? this.players.get(this.focus) : undefined;
+    if (fp && fp.st === PSTATE.ALIVE && !z.dormant && (isCommon(z.type) || z.type === ZT.BRUTE) && this.focusField[zn] < INF) {
+      if (fp === tgt) field = this.focusField;
+      else if (!tgt || d > FOCUS.block) { tgt = fp; d = Math.hypot(fp.x - z.x, fp.z - z.z, fp.gy - z.y); field = this.focusField; }
+    }
+    if (tgtDown && (!tgt || (dDown < T.range && d > T.range + 1))) { tgt = tgtDown; d = dDown; field = this.flow; }
+    // Goo wave members go for the nearest marked survivor while the mark lasts (they path on markFlow).
     if (z.hunt > this.time && this.marks.size && this.markFlow[zn] < INF) {
       let mt: Player | null = null, md = Infinity;
       for (const p of players) {
@@ -2268,7 +2349,17 @@ export class Room implements CombatHost {
   private moveZombie(c: ZCtx): void {
     const { z, T, tgt: target, d, field, zn, dt } = c, L = this.L;
     let dx = 0, dz = 0;
-    if (d < 6 && c.level && this.sees(c)) { dx = target.x - z.x; dz = target.z - z.z; }
+    // Run straight at the target while the line there is clear for its body (FOCUS), re-tested a few times a second.
+    if (c.level && d < FOCUS.beeline) {
+      // A new target: the clear line was tested toward the old one.
+      if (z.runTgt !== target.id) { z.run = false; z.runT = 0; }
+      if ((z.runT -= dt) <= 0) {
+        z.runT = FOCUS.recheck * rand(0.8, 1.2);
+        z.run = this.sees(c) && (d < 1.5 || this.clearRun(z, target, T.radius, c.go));
+        z.runTgt = target.id;
+      }
+    } else z.run = false;
+    if (z.run || (d < 6 && c.level && this.sees(c))) { dx = target.x - z.x; dz = target.z - z.z; }
     else {
       if (field[zn] >= INF) { z.st = ZSTATE.IDLE; return; }
       // No better neighbour (it is in the target's node): settle on its own spot in this one.
@@ -2293,6 +2384,26 @@ export class Room implements CombatHost {
     z.st = ZSTATE.RUN;
   }
 
+  /**
+   * True if `z` could walk the straight line to `t` (on its own floor) without being blocked: a dry run
+   * of its own slide in steps of about a metre. Props that don't block sight (barriers, benches) and
+   * ledges count, unlike a sight test.
+   */
+  private clearRun(z: Zombie, t: Player, r: number, go: number): boolean {
+    const L = this.L, dx = t.x - z.x, dz = t.z - z.z, len = Math.hypot(dx, dz);
+    if (len < 0.01) return true;
+    const steps = Math.ceil(len / 0.9), sx = dx / steps, sz = dz / steps, w = this.runProbe;
+    w.x = z.x; w.y = z.y; w.z = z.z;
+    for (let i = 0; i < steps; i++) {
+      const px = w.x, pz = w.z;
+      L.moveSlide(w, sx, sz, r, go);
+      // Stopped short (a wall, a prop, a closed door) or slid sideways along something.
+      if (Math.abs(w.x - (px + sx)) > 0.05 || Math.abs(w.z - (pz + sz)) > 0.05) return false;
+    }
+    return Math.abs(w.y - t.gy) < REACH_DY;
+  }
+  private runProbe: Pos3 = { x: 0, y: 0, z: 0 };
+
   /** Soft separation so the horde doesn't collapse into one blob. */
   private separate(zs: Zombie[], go: number): void {
     const L = this.L;
@@ -2311,6 +2422,19 @@ export class Room implements CombatHost {
         const push = (min - d) * 0.5, nx = d > 0.001 ? dx / d : 1, nz = d > 0.001 ? dz / d : 0;
         if (!this.anchored(a)) L.moveSlide(a, -nx * push, -nz * push, ra, go);
         if (!this.anchored(b) && !b.dormant) L.moveSlide(b, nx * push, nz * push, rb, go);
+      }
+    }
+    // A gunner can't step back out of the crowd: zombies are kept out of a manned seat instead.
+    for (const p of this.players.values()) {
+      if (p.mount < 0 || p.st !== PSTATE.ALIVE) continue;
+      for (const z of zs) {
+        if (z.dormant || z.hp <= 0 || this.anchored(z) || Math.abs(z.y - p.gy) > REACH_DY) continue;
+        const min = PLAYER.radius + ZTYPES[z.type].radius, dx = z.x - p.x, dz = z.z - p.z;
+        if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
+        const d = Math.hypot(dx, dz);
+        if (d >= min) continue;
+        const nx = d > 0.001 ? dx / d : -Math.sin(p.ry), nz = d > 0.001 ? dz / d : -Math.cos(p.ry);
+        L.moveSlide(z, nx * (min - d), nz * (min - d), ZTYPES[z.type].radius, go);
       }
     }
   }
@@ -2361,6 +2485,8 @@ export class Room implements CombatHost {
 
   private updatePlayers(dt: number): void {
     const all = [...this.players.values()];
+    // Down, grabbed or dead: hands off the mounted gun.
+    for (const p of all) if (p.mount >= 0 && (p.st !== PSTATE.ALIVE || p.pinned)) this.letGo(p);
     const revived = new Set<number>();
     for (const p of all) {
       if (p.st !== PSTATE.ALIVE || !p.reviving) continue;
@@ -2437,7 +2563,7 @@ export class Room implements CombatHost {
       this.updatePlayers(dt);
       this.updateHazards(dt);
       this.t.flow -= dt;
-      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeMarks(); this.recomputeWeeper(); this.updateLoner(0.25); }
+      if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeFocus(); this.recomputeMarks(); this.recomputeWeeper(); this.updateLoner(0.25); }
       this.director(dt);
       this.updateZombies(dt);
       if (this.state === 'play') this.updateQuest(dt);
@@ -2456,7 +2582,7 @@ export class Room implements CombatHost {
     const p: PlayerSnap[] = [];
     for (const q of this.players.values()) {
       p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, packMeds(q.meds),
-        r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), packThrowables((wi) => q.thr[wi] ?? 0)]);
+        r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), packThrowables((wi) => q.thr[wi] ?? 0), q.mount ?? -1]);
     }
     const z: ZombieSnap[] = [];
     for (const q of this.zombies.values()) z.push([q.id, q.type, r2(q.x), r2(q.z), r2(q.ry), q.st, r2(q.y)]);

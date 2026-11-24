@@ -22,7 +22,7 @@ const WALL_COL: Record<number, string> = { [WALL.BUILDING]: '#2a2140', [WALL.ROC
 const PICK_COL: Record<string, string> = { medkit: '#ff6b8a', ammo: '#a9e34b', obj: '#ffd43b', item: '#ff922b', armor: '#b9a4ff', firebomb: '#ff7a3a', rattle: '#ff7a3a', plaster: '#63e6be', vitamins: '#63e6be', cocoa: '#63e6be' };
 /** Any other pickup kind is a weapon. */
 const WEAPON_COL = '#74c0fc';
-const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', autoshotgun: 'D', sniper: 'K', launcher: 'L', magnum: 'M', bat: 'b', machete: 'm', axe: 'x', firebomb: 'F', rattle: 'R', armor: 'V', obj: '!', item: '★', plaster: 'p', vitamins: 'v', cocoa: 'c' };
+const PICK_LETTER: Record<string, string> = { medkit: '+', ammo: 'a', smg: 'S', shotgun: 'G', rifle: 'R', autoshotgun: 'D', launcher: 'L', magnum: 'M', deagle: 'E', bat: 'b', machete: 'm', firebomb: 'F', rattle: 'R', armor: 'V', obj: '!', item: '★', plaster: 'p', vitamins: 'v', cocoa: 'c' };
 const KIND_COL: Record<string, string> = { reach: '#74c0fc', gather: '#7ddc6a', use: '#ffd43b', collect: '#ff922b', holdout: '#ff5d8f' };
 
 const LAYERS = { grid: false, props: true, loot: true, lamps: true, paint: true, quest: true, route: true, heat: false, items: true, regions: false };
@@ -271,6 +271,15 @@ function draw(): void {
     g.strokeStyle = '#1a1226'; g.lineWidth = 1.5 * px; g.stroke();
     g.fillStyle = '#1a1226'; g.font = `bold 0.5px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(PICK_LETTER[p.kind] ?? '?', x, z + 0.02);
     g.globalAlpha = 1;
+  }
+  // Mounted guns: a dark disc with a barrel showing where it faces.
+  for (const m of def.mounts) {
+    if (lvOfY(m.y) !== lv) continue;
+    const x = m.x / TILE, z = m.z / TILE;
+    g.strokeStyle = '#1a1226'; g.lineWidth = 4 * px; g.beginPath(); g.moveTo(x, z); g.lineTo(x - Math.sin(m.yaw) * 0.9, z - Math.cos(m.yaw) * 0.9); g.stroke();
+    g.fillStyle = '#ff6b6b'; g.beginPath(); g.arc(x, z, 0.42, 0, 7); g.fill();
+    g.lineWidth = 1.5 * px; g.stroke();
+    g.fillStyle = '#1a1226'; g.font = 'bold 0.5px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(m.kind === 'minigun' ? 'G' : m.kind === 'cannon' ? 'C' : 'P', x, z + 0.02);
   }
   for (const n of def.notes) {
     if (lvOfY(n.y) !== lv) continue;

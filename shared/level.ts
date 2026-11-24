@@ -19,7 +19,7 @@
 // Stairs and ladders are ramps: cells on storey k whose floor rises along a direction from
 // storey k to k+1 (stairs over several cells, a ladder over one, climbed slowly). The cells above a
 // ramp are air (the stairwell hole). Walking off a ramp's high end steps onto storey k+1.
-import { TILE, STOREY, STEP_UP, CEIL_H, WEAPONS, type WeaponId } from './constants';
+import { TILE, STOREY, STEP_UP, CEIL_H, WEAPONS, type WeaponId, type MountKind } from './constants';
 
 /** Floor types. NONE is solid building/rock (or, upstairs, air); WATER is solid but see-through. */
 export const F = {
@@ -50,8 +50,8 @@ export type PropType =
 export type ObjLook = 'gen' | 'radio' | 'lever' | 'terminal' | 'valve' | 'battery' | 'beacon';
 /** Collectible quest items. */
 export type ItemLook = 'fuel' | 'fuse' | 'keycard' | 'medicine' | 'part' | 'tape';
-/** Weapon pickups use the weapon id (every weapon except the starting pistol can be found): guns, close-in weapons and throwables. */
-export type GunKind = Exclude<WeaponId, 'pistol'>;
+/** Weapon pickups use the weapon id (every weapon except the starting pistol and the mounted guns can be found): guns, close-in weapons and throwables. */
+export type GunKind = Exclude<WeaponId, 'pistol' | MountKind>;
 /** Small medical items (shared/constants.ts MEDS, all but the medkit). */
 export type SmallMed = 'plaster' | 'vitamins' | 'cocoa';
 export type LootKind = GunKind | 'ammo' | 'medkit' | 'armor' | SmallMed;
@@ -76,6 +76,12 @@ export interface Pickup {
 export interface Door extends Rect { id: number; /** `bridge`: a drawbridge leaf standing up across an upstairs deck; it folds down flat when opened. `boom`: a striped checkpoint barrier. `lift`: steel elevator doors. */
   kind: 'shutter' | 'barricade' | 'fence' | 'bridge' | 'boom' | 'lift'; label?: string; lv: number }
 export interface Note { id: number; x: number; z: number; y: number; title: string; text: string }
+/**
+ * A mounted support gun (shared/constants.ts MOUNT): its pivot at (x, z) on the floor at height y
+ * (metres), facing `yaw` (0 = -Z, PI/2 = -X, the camera's convention). The gunner stands MOUNT.seat m
+ * behind the pivot. Its tile stays walkable; a low sandbag ring is drawn around it.
+ */
+export interface Mount { id: number; kind: MountKind; x: number; z: number; y: number; yaw: number }
 export interface Label { text: string; x: number; z: number; size: number; color: string; rot: number; /** Floor height (m). */ y: number }
 export interface Arrow { x: number; z: number; rot: number; /** Floor height (m). */ y: number }
 /** A stair flight or ladder, for rendering: tile rect on storey `lv`, rising along `dir` to storey lv+1. */
@@ -114,6 +120,11 @@ export interface Step {
   /** Door ids closed when the step completes (seal a safe room behind the team). */ closes: number[];
   /** Completing this step saves a checkpoint (the team restarts here after a wipe). */ checkpoint: boolean;
   /** Spawn a horde / a Brute when the step begins (a `use` step with `hold`: its horde comes when the machine is used). */ horde: boolean; brute: boolean;
+  /**
+   * A Big Hold On: the holdout runs with far bigger hordes and a heavier trickle (server/tuning.ts
+   * BIG_HOLD), and the map puts a mounted gun (`LevelBuilder.mount`) at the stand to answer it.
+   */
+  big?: boolean;
   /** Where the HUD waypoint points (metres; `y` = floor height). */ at: Vec2;
   /**
    * Client set piece for a `use` step with a hold (client/src/setpieces.ts): `lift` counts the nearest
@@ -148,7 +159,7 @@ export interface ChapterDef {
   /** Floor height at a ramp node's low and high edge, relative to its storey's floor. */ rampLo: Float32Array; rampHi: Float32Array;
   /** Stair flights and ladders (for rendering). */ ramps: Ramp[];
   /** Door id per node, -1 where there is none. */ doorCell: Int8Array;
-  props: Prop[]; pickups: Pickup[]; lamps: Vec2[]; arrows: Arrow[];
+  props: Prop[]; pickups: Pickup[]; lamps: Vec2[]; arrows: Arrow[]; mounts: Mount[];
   labels: Label[]; doors: Door[]; notes: Note[]; steps: Step[];
   spawns: Vec2[]; startCell: { x: number; z: number; lv: number };
   /** Per step index: where the team respawns if it wipes after that checkpoint. */ checkpointSpawns: Record<number, Vec2[]>;
@@ -175,7 +186,7 @@ export const DEFAULT_THEME: Theme = {
 export interface StepOpts {
   objective: string; radio?: RadioLine[]; area?: Rect; target?: number; group?: string; hold?: number; holdScript?: HoldStage[];
   opens?: number[]; closes?: number[]; checkpoint?: boolean; horde?: boolean; brute?: boolean; at?: [number, number] | [number, number, number];
-  cue?: StepCue;
+  cue?: StepCue; big?: boolean;
 }
 
 /**
@@ -191,7 +202,7 @@ export class LevelBuilder {
   private readonly touched: Uint8Array;
   readonly ramps: Ramp[] = [];
   readonly props: Prop[] = []; readonly pickups: Pickup[] = []; readonly lamps: Vec2[] = [];
-  readonly arrows: Arrow[] = []; readonly labels: Label[] = [];
+  readonly arrows: Arrow[] = []; readonly labels: Label[] = []; readonly mounts: Mount[] = [];
   readonly doors: Door[] = []; readonly notes: Note[] = []; readonly steps: Step[] = [];
   readonly checkpointSpawns: Record<number, Vec2[]> = {};
   readonly densityRects: DensityRect[] = [];
@@ -349,6 +360,22 @@ export class LevelBuilder {
     return id;
   }
 
+  /**
+   * A mounted support gun on tile (x, z) of this storey, facing `dir` (where its barrel points; the
+   * gunner turns MOUNT.arc either side of it). The tile behind it (opposite `dir`) is where the gunner
+   * stands, so it must be open floor too. Returns the mount id.
+   */
+  mount(kind: MountKind, x: number, z: number, dir: RampDir): number {
+    const i = this.idx(x, z);
+    const back = { '+x': [-1, 0], '-x': [1, 0], '+z': [0, -1], '-z': [0, 1] }[dir];
+    if (!back) throw new Error(`bad mount direction ${dir}`);
+    const j = this.idx(x + back[0], z + back[1]);
+    for (const k of [i, j]) if (this.solid[k] || this.floor[k] === F.NONE || this.ramp[k]) throw new Error(`mount ${kind} at ${x},${z}: it and the tile behind it must be open flat floor`);
+    const yaw = { '+x': -Math.PI / 2, '-x': Math.PI / 2, '+z': Math.PI, '-z': 0 }[dir];
+    this.mounts.push({ id: this.mounts.length, kind, x: (x + 0.5) * TILE, z: (z + 0.5) * TILE, y: this.baseY, yaw });
+    return this.mounts.length - 1;
+  }
+
   /** Lamp post at tile coordinates (fractional allowed), on this storey. */
   lamp(x: number, z: number): this { this.lamps.push({ x: x * TILE, z: z * TILE, y: this.baseY }); return this; }
   /** Painted floor arrow, rot 0 points +Z, PI/2 points +X, -PI/2 points -X, PI points -Z. */
@@ -387,7 +414,7 @@ export class LevelBuilder {
     if (o.area?.lv !== undefined && !(o.area.lv >= 0 && o.area.lv < this.levels)) throw new Error(`step "${o.objective}": area storey ${o.area.lv} does not exist`);
     this.steps.push({
       kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold, holdScript: o.holdScript,
-      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...extra,
+      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...(o.big ? { big: true } : {}), ...extra,
     });
     return this.steps.length - 1;
   }
@@ -573,7 +600,7 @@ export class LevelBuilder {
       ...meta, theme: meta.theme ?? this.theme, W: this.W, H: this.H, levels: this.levels,
       floor: this.floor, solid: this.solid, opaque: this.opaque, propCell: this.propCell, wallH: this.wallH, wallKind: this.wallKind,
       air: this.air, ramp: this.ramp, ladder: this.ladderCell, rampLo: this.rampLo, rampHi: this.rampHi, ramps: this.ramps,
-      doorCell: this.doorCell, props: this.props, pickups: this.pickups, lamps: this.lamps, arrows: this.arrows, labels: this.labels,
+      doorCell: this.doorCell, props: this.props, pickups: this.pickups, lamps: this.lamps, arrows: this.arrows, labels: this.labels, mounts: this.mounts,
       doors: this.doors, notes: this.notes, steps: this.steps, spawns: this.spawns, startCell: this.startCell, checkpointSpawns: this.checkpointSpawns,
       density: this.densityRects,
     };

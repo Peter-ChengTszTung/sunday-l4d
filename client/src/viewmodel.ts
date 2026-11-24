@@ -7,7 +7,7 @@ import { WEAPONS, type WeaponDef } from '../../shared/constants';
 
 type GunId = WeaponDef['id'];
 type P3 = [number, number, number];
-export interface Gun { ent: pc.Entity; muzzle: P3; pump: pc.Entity | null }
+export interface Gun { ent: pc.Entity; muzzle: P3; pump: pc.Entity | null; /** The minigun's barrel cluster, spun round Z while it fires. */ spin: pc.Entity | null }
 
 const cube = box();
 const cyl = cylinder(14);
@@ -29,8 +29,11 @@ const MUZZLE_GAP = 0.02;
  * The gun sits at the right of the screen, so the player mostly sees its top and its left (-X) side:
  * one-sided detail goes there.
  */
-function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
-  const b = new Batch();
+function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean; spin: { b: Batch; y: number } | null } {
+  const main = new Batch();
+  /** Where parts go: the gun itself, or (the minigun's barrels) a batch that spins round the Z axis. */
+  let b = main;
+  let spin: { b: Batch; y: number } | null = null;
   /** Centre and Z length of the part just added. */
   let lx = 0, ly = 0, lz = 0, ld = 0;
   const part = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, rx = 0) => {
@@ -172,36 +175,6 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       trigger(-0.05, 0.005);
       part(0.09, 0.135, 0.025, PAD, 0, 0.045, 0.3);
       break;
-    case 'sniper': // Kebabber: long mint bolt-action with a fat scope and a skewer-tip muzzle.
-      part(0.075, 0.1, 0.5, 0x63e6be, 0, 0.06, -0.12);
-      tube(0.022, 0.56, DARK, 0, 0.075, -0.63);
-      part(0.05, 0.05, 0.07, GOLD, 0, 0.075, -0.93); tip();
-      tube(0.036, 0.26, DARK, 0, 0.165, -0.24);
-      tube(0.044, 0.035, 0xff8fab, 0, 0.165, -0.38);
-      tube(0.04, 0.03, 0xff8fab, 0, 0.165, -0.1);
-      part(0.03, 0.06, 0.03, DARK, 0, 0.12, -0.31);
-      part(0.03, 0.06, 0.03, DARK, 0, 0.12, -0.16);
-      part(0.09, 0.025, 0.025, GOLD, 0.065, 0.085, 0.0);
-      part(0.06, 0.15, 0.08, DARK, 0, -0.05, 0.04, 0.25);
-      part(0.07, 0.13, 0.28, WOOD, 0, 0.035, 0.24);
-      // Scope: lenses and adjustment turrets.
-      stud(0.032, 0.008, 0x74c0fc, 0, 0.165, -0.399);
-      stud(0.028, 0.008, SOOT, 0, 0.165, -0.084);
-      tube(0.016, 0.03, GOLD, 0, 0.208, -0.24, 'y');
-      tube(0.016, 0.03, GOLD, -0.045, 0.165, -0.24, 'x');
-      // Bolt knob, wooden fore-end with a folded bipod, barrel ring.
-      ball(0xff8fab, 0.115, 0.085, 0.0, 0.02);
-      part(0.065, 0.06, 0.16, WOOD, 0, 0.038, -0.43); // a hair under the body: a shared underside flickered
-      group([0.06, 0.025, 0.03, DARK, 0, 0.04, -0.525], [0.012, 0.012, 0.22, DARK, -0.024, 0.035, -0.64], [0.012, 0.012, 0.22, DARK, 0.024, 0.035, -0.64]); // bipod
-      tube(0.03, 0.02, 0xff8fab, 0, 0.075, -0.87);
-      // Body: box magazine, pale stripe, trigger, cheek rest, butt pad.
-      part(0.05, 0.07, 0.1, DARK, 0, -0.02, -0.2);
-      deco(0.054, 0.012, 0.104, GOLD, 0, -0.05, -0.2);
-      deco(0.078, 0.012, 0.36, 0xc3fae8, 0, 0.03, -0.14);
-      trigger(-0.04, 0.01);
-      part(0.05, 0.03, 0.16, 0x63e6be, 0, 0.108, 0.25);
-      part(0.076, 0.145, 0.025, PAD, 0, 0.035, 0.39);
-      break;
     case 'launcher': // Bloop Tube: fat bubblegum tube with yellow bands, a pop-gun on steroids.
       tube(0.08, 0.5, 0xda77f2, 0, 0.1, -0.24);
       tube(0.092, 0.055, GOLD, 0, 0.1, -0.47);
@@ -248,6 +221,77 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       stud(0.017, 0.069, 0xffd43b, 0, -0.06, 0.083, 'x');
       part(0.07, 0.02, 0.088, 0xffd43b, 0, -0.153, 0.055, 0.3);
       break;
+    case 'deagle': // Desert Eagle: a chunky chrome hand cannon with a gold trim and a black grip.
+      part(0.08, 0.1, 0.34, STEEL, 0, 0.07, -0.12); tip();
+      part(0.066, 0.17, 0.085, SOOT, 0, -0.05, 0.03, 0.22);
+      // Slide: a polished top strip, a raised rib with sights, rear serrations, the wide bore.
+      deco(0.084, 0.02, 0.3, 0xe6e1f5, 0, 0.1, -0.12);
+      part(0.03, 0.02, 0.3, DARK, 0, 0.13, -0.12);
+      part(0.02, 0.03, 0.02, GOLD, 0, 0.15, -0.26);
+      part(0.045, 0.025, 0.02, DARK, 0, 0.15, 0.02);
+      for (const z of [-0.01, 0.015, 0.04]) deco(0.086, 0.06, 0.012, 0x9a94b5, 0, 0.07, z);
+      stud(0.026, 0.01, SOOT, 0, 0.07, -0.291);
+      // Frame: trigger, grip panel, a gold magazine base and hammer.
+      trigger(-0.03, 0.02, DARK, GOLD);
+      deco(0.07, 0.1, 0.05, PAD, 0, -0.04, 0.03, 0.22);
+      part(0.07, 0.022, 0.095, GOLD, 0, -0.13, 0.05, 0.22);
+      ball(GOLD, 0, 0.1, 0.055, 0.018);
+      break;
+    // Mounted support guns: bigger, and held square in the middle of the screen (see ViewModel).
+    case 'minigun': { // Popcorn Gatling: a red motor housing, six spinning barrels, a striped popcorn bucket for an ammo box.
+      part(0.16, 0.16, 0.34, 0xff6b6b, 0, 0.06, 0.04);
+      part(0.172, 0.05, 0.3, GOLD, 0, 0.155, 0.04);
+      deco(0.164, 0.03, 0.2, 0xffffff, 0, 0.02, 0.04);
+      // The barrels and their clamps go on a separate batch that spins round the axis y = 0.06.
+      spin = { b: new Batch(), y: 0.06 }; b = spin.b;
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; tube(0.02, 0.6, STEEL, Math.sin(a) * 0.048, Math.cos(a) * 0.048, -0.43); }
+      tube(0.074, 0.03, DARK, 0, 0, -0.2);
+      tube(0.074, 0.03, DARK, 0, 0, -0.5);
+      tube(0.07, 0.03, BRASS, 0, 0, -0.71);
+      stud(0.02, 0.01, SOOT, 0, 0, -0.73);
+      b = main;
+      muzzle = [0, 0.06, -0.725 - MUZZLE_GAP];
+      // Spade grips with gold thumb triggers.
+      group([0.03, 0.12, 0.03, DARK, -0.1, 0.03, 0.24], [0.03, 0.12, 0.03, DARK, 0.1, 0.03, 0.24], [0.23, 0.03, 0.03, DARK, 0, 0.08, 0.24]);
+      part(0.03, 0.02, 0.025, GOLD, -0.06, 0.1, 0.24);
+      part(0.03, 0.02, 0.025, GOLD, 0.06, 0.1, 0.24);
+      // Popcorn bucket on the left, a chute feeding the housing.
+      part(0.13, 0.15, 0.15, 0xfff5f5, -0.19, 0.0, 0.04);
+      for (const z of [-0.01, 0.05]) deco(0.134, 0.15, 0.025, 0xff6b6b, -0.19, 0.0, z);
+      for (let i = 0; i < 4; i++) ball(0xffe8a3, -0.19 + (i % 2 ? 0.03 : -0.03), 0.09, 0.02 + (i > 1 ? 0.04 : 0), 0.025);
+      part(0.06, 0.03, 0.1, DARK, -0.11, 0.09, 0.04);
+      break;
+    }
+    case 'cannon': // Thump Cannon: an olive tank gun, a fat barrel with a muzzle brake, a breech and side plates.
+      part(0.22, 0.2, 0.32, 0x6f9a6b, 0, 0.06, 0.1);
+      tube(0.068, 0.8, 0x86b281, 0, 0.08, -0.45);
+      tube(0.095, 0.13, DARK, 0, 0.08, -0.9); tip();
+      // Muzzle brake slots, a gold collar, a star on the breech, the bore.
+      for (const z of [-0.88, -0.92]) deco(0.2, 0.04, 0.02, SOOT, 0, 0.08, z);
+      tube(0.09, 0.05, GOLD, 0, 0.08, -0.1);
+      deco(0.005, 0.07, 0.07, GOLD, -0.112, 0.08, 0.1);
+      stud(0.05, 0.01, SOOT, 0, 0.08, -0.967);
+      // Side plates, grips, a crate of shells on the right.
+      part(0.03, 0.26, 0.24, 0x5d8a5a, -0.18, 0.1, -0.12);
+      part(0.03, 0.26, 0.24, 0x5d8a5a, 0.18, 0.1, -0.12);
+      group([0.03, 0.1, 0.03, DARK, -0.13, -0.01, 0.28], [0.03, 0.1, 0.03, DARK, 0.13, -0.01, 0.28], [0.29, 0.03, 0.03, DARK, 0, 0.04, 0.3]);
+      part(0.14, 0.1, 0.18, WOOD, 0.24, -0.03, 0.12);
+      for (const z of [0.07, 0.12, 0.17]) stud(0.022, 0.03, BRASS, 0.24, 0.03, z, 'y');
+      break;
+    case 'rockets': { // Fizzbang Pod: a sky-blue box of eight tubes with red rocket noses peeking out.
+      part(0.3, 0.2, 0.5, 0x74c0fc, 0, 0.1, -0.16); tip();
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+        const x = -0.105 + c * 0.07, y = 0.055 + r * 0.09;
+        stud(0.028, 0.01, SOOT, x, y, -0.412);
+        stud(0.018, 0.01, 0xff6b6b, x, y, -0.405);
+      }
+      // Gold bands, a sight frame on top, grips behind.
+      for (const z of [-0.3, -0.02]) deco(0.304, 0.204, 0.03, GOLD, 0, 0.1, z);
+      group([0.02, 0.07, 0.02, DARK, -0.06, 0.235, -0.2], [0.02, 0.07, 0.02, DARK, 0.06, 0.235, -0.2], [0.14, 0.02, 0.02, DARK, 0, 0.27, -0.2]);
+      group([0.03, 0.12, 0.03, DARK, -0.1, -0.02, 0.15], [0.03, 0.12, 0.03, DARK, 0.1, -0.02, 0.15], [0.23, 0.03, 0.03, DARK, 0, 0.03, 0.15]);
+      part(0.03, 0.02, 0.025, GOLD, 0.06, 0.05, 0.15);
+      break;
+    }
     // Close-in weapons: the business end points down -Z like a barrel; the rig tips them upright (see ViewModel).
     case 'bat': // Bonk Bat: fat wooden slugger with a red tip band and taped grip.
       tube(0.026, 0.2, DARK, 0, 0.03, 0.0);
@@ -275,21 +319,6 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       for (const z of [-0.04, 0.0, 0.04]) deco(0.044, 0.059, 0.012, 0x38d9a9, 0, 0.03, z);
       group([0.03, 0.015, 0.11, 0x38d9a9, 0, -0.045, 0.0], [0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, -0.05], [0.03, 0.05, 0.015, 0x38d9a9, 0, -0.02, 0.05]);
       part(0.046, 0.062, 0.02, GOLD, 0, 0.03, 0.09);
-      break;
-    case 'axe': // Big Chop: fire axe, red head with a silver edge.
-      tube(0.024, 0.66, WOOD, 0, 0.03, -0.24); tip();
-      // The blade hangs on the -Y side: held upright (the rig tips the tip up) that side faces forward, away from you.
-      part(0.034, 0.2, 0.16, 0xff6b6b, 0, -0.06, -0.5);
-      part(0.022, 0.05, 0.2, STEEL, 0, -0.175, -0.5);
-      part(0.04, 0.07, 0.1, DARK, 0, 0.065, -0.5);
-      // Head: collar round the haft, white stripe, rivets.
-      tube(0.031, 0.13, 0xc94f4f, 0, 0.03, -0.5);
-      deco(0.038, 0.022, 0.164, 0xfff5f5, 0, -0.105, -0.5); // a hair longer than the head: flush ends flickered
-      for (const z of [-0.545, -0.455]) stud(0.012, 0.04, GOLD, 0, -0.04, z, 'x');
-      // Haft: taped grip between two yellow rings, red end knob.
-      tube(0.027, 0.14, DARK, 0, 0.03, -0.01);
-      for (const z of [-0.085, 0.065]) tube(0.03, 0.014, GOLD, 0, 0.03, z);
-      tube(0.03, 0.025, 0xff6b6b, 0, 0.03, 0.085);
       break;
     // Throwables.
     case 'firebomb': // Hot Sauce: a squat red bottle with a yellow label and a rag in the neck.
@@ -325,21 +354,24 @@ function gunParts(id: GunId): { b: Batch; muzzle: P3; pump: boolean } {
       deco(0.02, 0.02, 0.012, 0xff922b, 0, 0.05, -0.252);
       break;
   }
-  b.trimHulls(); // no outline slivers where one part ends inside another
-  return { b, muzzle, pump };
+  main.trimHulls(); // no outline slivers where one part ends inside another
+  spin?.b.trimHulls();
+  return { b: main, muzzle, pump, spin };
 }
 
 /** First-person gun for the viewmodel layer (separate toon and ink draws; the pump is its own entity). */
 export function buildGun(id: GunId): Gun {
-  const { b, muzzle, pump: hasPump } = gunParts(id);
+  const { b, muzzle, pump: hasPump, spin: sp } = gunParts(id);
   const ent = b.build(VM, true);
+  let spin: pc.Entity | null = null;
+  if (sp) { spin = sp.b.build(VM, true); spin.setLocalPosition(0, sp.y, 0); ent.addChild(spin); }
   let pump: pc.Entity | null = null;
   if (hasPump) {
     pump = inkBox(PUMP.w, PUMP.h, PUMP.d, PUMP.color, PUMP.t, VM, true);
     pump.setLocalPosition(PUMP.x, PUMP.y, PUMP.z);
     ent.addChild(pump);
   }
-  return { ent, muzzle, pump };
+  return { ent, muzzle, pump, spin };
 }
 
 const worldGunMeshes = new Map<GunId, pc.Mesh>();
@@ -347,8 +379,9 @@ const worldGunMeshes = new Map<GunId, pc.Mesh>();
 function worldGunMesh(id: GunId): pc.Mesh {
   let m = worldGunMeshes.get(id);
   if (!m) {
-    const { b, pump } = gunParts(id);
+    const { b, pump, spin } = gunParts(id);
     const { solids, hulls } = b.take();
+    if (spin) { const t = spin.b.take(), at = trs(0, spin.y, 0); for (const g of t.solids) solids.push(make(g, undefined, at)); for (const g of t.hulls) hulls.push(make(g, undefined, at)); }
     if (pump) {
       const g = make(cube, PUMP.color, new pc.Mat4().setScale(PUMP.w, PUMP.h, PUMP.d)), at = trs(PUMP.x, PUMP.y, PUMP.z);
       solids.push(make(g, undefined, at));
@@ -405,12 +438,6 @@ const SWINGS: Partial<Record<GunId, { secs: number; keys: SwingKey[]; alt?: Swin
     keys: [rest(0), [0.16, 0.07, 0.11, 0.02, 1.55, -0.25, -0.55], [0.5, -0.27, -0.15, -0.14, -0.3, 0.95, 0.75], rest(1)],
     alt: [rest(0), [0.16, -0.3, -0.1, 0.0, 0.25, 1.15, 0.85], [0.5, 0.1, 0.1, -0.14, 1.05, -0.7, -0.7], rest(1)],
   },
-  // Big Chop: hauled up overhead, slammed straight down the middle, and stuck for a beat before it comes back.
-  axe: {
-    secs: 0.64,
-    // Kept inside the frame the whole way: raised beside the crosshair rather than over it, and the head lands in view.
-    keys: [rest(0), [0.3, -0.03, 0.08, 0.05, 1.55, 0.1, -0.1], [0.47, -0.1, 0.05, -0.2, 0.12, 0.12, 0], [0.66, -0.1, 0.02, -0.18, 0.02, 0.12, 0], rest(1)],
-  },
 };
 const _swing: SwingKey = [0, 0, 0, 0, 0, 0, 0];
 /** The swing pose at progress `k`, eased between the two keys around it (into `_swing`). */
@@ -440,6 +467,10 @@ export class ViewModel {
   private melee: boolean[];
   /** Throwables: held loosely at the right; `aim` (0..1) is the arm drawn back for a throw, `held` whether there is one in the hand. */
   private thrown: boolean[];
+  /** Mounted guns: held square in the middle of the screen; the minigun's barrels spin up while it fires (`spinV` rad/s, `spinA` angle). */
+  private mounted: boolean[];
+  private spinV = 0;
+  private spinA = 0;
   private aim = 0;
   private aimWant = false;
   private held = true;
@@ -456,6 +487,7 @@ export class ViewModel {
     this.ids = ids;
     this.melee = ids.map((id) => !!WEAPONS.find((w) => w.id === id)?.melee);
     this.thrown = ids.map((id) => !!WEAPONS.find((w) => w.id === id)?.thrown);
+    this.mounted = ids.map((id) => WEAPONS.find((w) => w.id === id)?.slot === 'mount');
     // Parked far below the level so nothing in the world layer is ever near it.
     this.root.setPosition(0, -500, 0);
     const cam = this.cam;
@@ -499,6 +531,7 @@ export class ViewModel {
   fire(): void {
     if (this.melee[this.current]) { this.swingT = 1; this.swings++; return; }
     this.kick = 1;
+    if (this.guns[this.current].spin) this.spinV = Math.min(40, this.spinV + 9);
     this.flashT = 0.055;
     const [x, y, z] = this.guns[this.current].muzzle;
     this.flash.setLocalPosition(x, y, z);
@@ -566,7 +599,17 @@ export class ViewModel {
       // (Kept at arm's length: nearer the eye it fills the corner of the screen.)
       this.rig.setLocalPosition(lp.x + 0.05 + a * 0.03, lp.y - 0.06 + a * 0.13 + Math.sin(this.bob * 3) * 0.004 * a, lp.z - 0.05 + a * 0.02);
       setRot(this.rig, 1.35 + a * 0.55 - this.swap * 0.8, this.swayX * 2, -0.12 - a * 0.1);
+    } else if (this.mounted[this.current]) {
+      // A mounted gun sits square in front of you, lower and further out; it shakes rather than kicks up, and tips down while it cools.
+      this.rig.setLocalPosition(this.swayX * 0.5 + (Math.random() - 0.5) * this.kick * 0.006, -0.24 - this.swap * 0.3 - r * 0.08 + this.swayY * 0.5, -0.5 + this.kick * 0.035);
+      setRot(this.rig, this.kick * 0.03 - r * 0.35 - this.swap * 0.8, this.swayX, 0);
     } else setRot(this.rig, this.kick * 0.16 - r * 0.9 - this.swap * 0.8, 0.04 + this.swayX * 2, r * 0.5);
+    const spin = this.guns[this.current].spin;
+    if (spin) {
+      this.spinV = Math.max(0, this.spinV - dt * 14);
+      this.spinA += this.spinV * dt;
+      setRot(spin, 0, 0, this.spinA);
+    }
     this.guns[this.current].ent.enabled = !this.thrown[this.current] || this.held;
     const pump = this.guns[this.current].pump;
     if (pump) pump.setLocalPosition(0, 0.01, -0.36 + Math.sin(Math.min(1, this.kick * 1.4) * Math.PI) * 0.09);

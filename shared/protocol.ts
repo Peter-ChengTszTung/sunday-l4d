@@ -1,7 +1,7 @@
 // Wire protocol (JSON over WebSocket). Tuples keep snapshots compact.
 
-// [id, x, y, z, yaw, pitch, hp, state, weapon, meds (counts per kind, see constants.ts packMeds: a lone medkit is 1), reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables)]
-export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+// [id, x, y, z, yaw, pitch, hp, state, weapon, meds (counts per kind, see constants.ts packMeds: a lone medkit is 1), reviveFrac, anim, respawnIn, armor, throwables (counts per kind, see constants.ts packThrowables), mount (ChapterDef.mounts index manned, -1 = none)]
+export type PlayerSnap = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 // Player y is the absolute height of their feet (floor height of their storey/stair + any jump).
 // [id, type, x, z, yaw, state, y] (y: floor height under it, metres; multi-storey maps, see shared/level.ts)
 export type ZombieSnap = [number, number, number, number, number, number, number];
@@ -70,7 +70,9 @@ export type GameEvent =
   // Survivor `pid`'s armour soaked up part of a hit.
   | ['armor', pid: number]
   // The Weeper `zid` is stirring (stage 1) or awake and after survivor `pid` (stage 2).
-  | ['weeper', zid: number, stage: number, pid: number];
+  | ['weeper', zid: number, stage: number, pid: number]
+  // Survivor `pid` manned mounted gun `mount` (ChapterDef.mounts index), or let go of it (-1). Manning, they stand at its seat.
+  | ['mount', pid: number, mount: number];
 
 /** GET /api/rooms entry (listed rooms only). */
 /** `diff`: DifficultyId (shared/constants.ts DIFFICULTIES); absent = 'normal'. */
@@ -105,6 +107,8 @@ export type ClientMsg =
   // Dev-server only: test switches for the whole room. `god`: survivors take no damage. `calm`: every
   // zombie the director makes is removed at once (ones spawned with 'dbgz' stay). Omitted = unchanged.
   | { t: 'dbgf'; god?: 0 | 1; calm?: 0 | 1 }
+  // Man mounted gun `id` (ChapterDef.mounts index; -1 = let go of the one you are on).
+  | { t: 'm'; id: number }
   // Launcher grenade impact claim for the oldest grenade this player fired ('f' with a blast weapon).
   // The server checks range and line of sight from where it was fired, then applies the blast.
   | { t: 'g'; x: number; y: number; z: number; n?: number };

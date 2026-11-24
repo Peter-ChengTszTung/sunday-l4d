@@ -1,12 +1,13 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, PSTATE, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, armoredFront, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, healAmount } from '../../shared/constants';
+import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, PSTATE, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, armoredFront, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, healAmount, MOUNT } from '../../shared/constants';
 import { isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { buildSetPieces } from './setpieces';
+import { buildMounts, type MountAim } from './mounts';
 import { Chibi, survivorLook } from './chibi';
 import { ViewModel, gunMuzzle } from './viewmodel';
 import { app, setTorch } from './gfx';
@@ -37,7 +38,7 @@ camera.addComponent('camera', { fov: 74, nearClip: 0.08, farClip: 600, clearColo
 // 74° vertical FOV (about 105° horizontal at 16:9). On wider screens, hold the horizontal angle
 // instead so ultrawide monitors don't get a fish-eye view.
 const FOV_V = 74, FOV_H_MAX = 2 * Math.atan(Math.tan((FOV_V * Math.PI) / 360) * (16 / 9));
-/** The unzoomed vertical FOV for this window; a sniper scope narrows from it (see updateCamera). */
+/** The vertical FOV for this window (see fitFov). */
 let baseFov = FOV_V;
 function fitFov(): void {
   const aspect = (canvas.clientWidth || 16) / (canvas.clientHeight || 9);
@@ -64,14 +65,17 @@ function loadChapter(ch: number): void {
   chapter = ch;
 }
 function useLevel(next: Level): void {
-  world.dispose(); pieces.dispose();
-  L = next; world = buildWorld(L); pieces = buildSetPieces(L, sfx, fx);
+  world.dispose(); pieces.dispose(); mounts.dispose();
+  L = next; world = buildWorld(L); pieces = buildSetPieces(L, sfx, fx); mounts = buildMounts(L);
+  me.mount = -1;
   step = 0; qc = 0; doors = 0;
 }
 const fx = new FX();
 const sfx = new Sfx();
 /** Scripted moments on cue steps (the elevator, the tram). */
 let pieces = buildSetPieces(L, sfx, fx);
+/** Mounted guns in the world. */
+let mounts = buildMounts(L);
 fx.onSplat = (x, y, z) => sfx.at(y).splat(x, z);
 fx.onCrackle = (x, y, z) => sfx.at(y).fireCrackle(x, z);
 fx.onRattle = (x, y, z) => sfx.at(y).rattle(x, z);
@@ -120,9 +124,8 @@ const me = {
    * healing until 'unpin'. The server owns your position meanwhile: (pinX, pinZ) follows your own snapshot.
    */
   pinned: false, pinX: 0, pinY: 0, pinZ: 0, pinType: 0,
-  /** Right mouse held (a scoped weapon aims while it is), and how far the scope has zoomed in (0..1). */
-  scopeHeld: false, zoom: 0,
   /** Metres since the last footstep sound. */ stride: 0,
+  /** Mounted gun you man (ChapterDef.mounts index, -1 = none): you stand at its seat and fire its gun. */ mount: -1,
 };
 /** Eye-height offset that eases a sudden floor change (a step onto a ledge) out of the camera; 0 on smooth stairs. */
 let camDip = 0;
@@ -137,16 +140,8 @@ function slideMe(dx: number, dz: number): void {
   L.moveSlide(_mv, dx, dz, PLAYER.radius, doors);
   me.x = _mv.x; me.z = _mv.z; me.gy = _mv.y;
 }
-/** The scope of the weapon in hand while it is up (held, and not reloading/healing/pinned), else null. */
-function scopeUp(): NonNullable<(typeof WEAPONS)[number]['scope']> | null {
-  const s = WEAPONS[me.weapon].scope;
-  return s && me.scopeHeld && me.st === PSTATE.ALIVE && !me.pinned && me.reloadT <= 0 && me.healT <= 0 ? s : null;
-}
-/** Current spread before bloom: the scoped figure once the scope is (nearly) all the way in. */
-function baseSpread(): number {
-  const w = WEAPONS[me.weapon];
-  return w.scope && me.zoom > 0.85 ? w.scope.spread : w.spread;
-}
+/** Current spread before bloom. */
+const baseSpread = (): number => WEAPONS[me.weapon].spread;
 /** Spread added by moving (scaled by speed) and by being in the air (WeaponDef.moving). */
 function moveSpread(): number {
   const run = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed);
@@ -180,9 +175,16 @@ document.addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!active()) return;
   if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
-  if (e.code === 'Space') jumpBuf = JUMP_BUFFER;
+  if (e.code === 'Space' && me.mount < 0) jumpBuf = JUMP_BUFFER;
   // Range: X clears the numbers. Weapons come off the rack; the number keys are the same slots as in a room.
   if (range && e.code === 'KeyX') { range.resetStats(); hud.feed(t('Stats cleared')); return; }
+  // Manning a mounted gun: E or Space lets go; the gun overheats instead of reloading, and nothing else is in reach.
+  if (me.mount >= 0) {
+    if (e.code === 'KeyE' || e.code === 'Space') letGo();
+    else if (e.code === 'KeyF') { torchOn = !torchOn; sfx.dryFire(); }
+    else if (e.code === 'KeyM') { sfx.setMuted(!sfx.muted); hud.feed(t(sfx.muted ? 'Sound off' : 'Sound on')); }
+    return;
+  }
   switch (e.code) {
     case 'KeyR': startReload(); break;
     case 'Digit1': if (me.primary >= 0) switchWeapon(me.primary); break;
@@ -204,11 +206,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('keyup', (e) => { keys.delete(e.code); if (e.code === 'KeyQ') me.healLatch = false; });
-window.addEventListener('blur', () => { keys.clear(); mouse.left = false; me.scopeHeld = false; });
+window.addEventListener('blur', () => { keys.clear(); mouse.left = false; });
 document.addEventListener('mousemove', (e) => {
   if (!locked || me.st === PSTATE.DEAD) return;
-  // Scoped: slow the look down with the zoom so the crosshair moves the same on screen.
-  const sens = 0.0023 * (camera.camera!.fov / baseFov);
+  const sens = 0.0023;
   me.yaw -= e.movementX * sens;
   me.pitch = Math.max(-1.5, Math.min(1.5, me.pitch - e.movementY * sens));
   lookDX += e.movementX; lookDY += e.movementY;
@@ -218,13 +219,13 @@ document.addEventListener('mousedown', (e) => {
   sfx.unlock();
   if (!locked && !DEBUG) { if (!ended) lockPointer(); return; }
   if (e.button === 0) mouse.left = true;
-  // Right mouse: aim down the scope with a scoped weapon (hold), else shove. V always shoves.
-  if (e.button === 2) { if (WEAPONS[me.weapon].scope) me.scopeHeld = true; else shove(); }
+  // Right mouse (or V): shove.
+  if (e.button === 2 && me.mount < 0) shove();
 });
-document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; if (e.button === 2) me.scopeHeld = false; });
+document.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; });
 document.addEventListener('contextmenu', (e) => { if (inGame) e.preventDefault(); });
 document.addEventListener('wheel', (e) => {
-  if (!active()) return;
+  if (!active() || me.mount >= 0) return;
   // Cycle through what you carry: primary, sidearm, close-in, throwables.
   const have = [me.primary, me.sidearm, me.melee, ...THROWABLES.filter((_, k) => me.thr[k] > 0)].filter((w) => w >= 0), i = have.indexOf(me.weapon);
   if (have.length > 1) switchWeapon(have[(i + (e.deltaY > 0 ? 1 : have.length - 1)) % have.length]);
@@ -232,7 +233,7 @@ document.addEventListener('wheel', (e) => {
 
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  if (!locked) { keys.clear(); mouse.left = false; me.scopeHeld = false; }
+  if (!locked) { keys.clear(); mouse.left = false; }
   hud.pause(inGame && !locked && !ended && !DEBUG);
 });
 
@@ -254,6 +255,41 @@ function switchWeapon(i: number): void {
   equip(i);
   range?.resetStats(); // each weapon's numbers start clean
 }
+
+/** The weapon in hand when you manned a mounted gun: back in hand when you let go. */
+let mountFrom = 0;
+/** Where you stand to man mount `id` (MOUNT.seat m behind its pivot), on its floor. */
+function seatOf(id: number): { x: number; y: number; z: number } {
+  const m = L.def.mounts[id];
+  return { x: m.x + Math.sin(m.yaw) * MOUNT.seat, y: m.y, z: m.z + Math.cos(m.yaw) * MOUNT.seat };
+}
+/** You took mount `id` (the server said so): stand at its seat facing its way, its gun in hand. */
+function manMount(id: number): void {
+  const m = L.def.mounts[id];
+  if (!m) return;
+  if (me.mount < 0) mountFrom = me.weapon;
+  me.mount = id; me.aiming = false;
+  const s = seatOf(id);
+  placeMe(s.x, s.y, s.z); me.vx = me.vz = me.kx = me.kz = 0;
+  me.yaw = m.yaw; me.pitch = 0;
+  const wi = weaponIndex(m.kind);
+  me.mag[wi] = WEAPONS[wi].mag;
+  equip(wi);
+  range?.resetStats();
+  hud.feed(t('Manning the {w} — E or Space to let go', { w: t(WEAPONS[wi].name) }));
+}
+/** You let go (or were knocked off): your own weapon back in hand. */
+function leftMount(): void {
+  if (me.mount < 0) return;
+  me.mount = -1;
+  const back = mountFrom, tk = THROWABLES.indexOf(back);
+  const owned = back === me.primary || back === me.sidearm || back === me.melee || (tk >= 0 && me.thr[tk] > 0);
+  const own = owned ? back : me.primary >= 0 ? me.primary : me.sidearm;
+  // Downed on the gun: the sidearm is out (applyPlayers), and getting up brings back what you had before the gun.
+  if (downFrom >= 0 && WEAPONS[downFrom]?.slot === 'mount') downFrom = own;
+  if (me.st === PSTATE.ALIVE || WEAPONS[me.weapon]?.slot === 'mount') equip(me.st === PSTATE.DOWN ? me.sidearm : own);
+}
+function letGo(): void { if (me.mount >= 0) net.send({ t: 'm', id: -1 }); }
 
 function startReload(): void {
   const w = WEAPONS[me.weapon];
@@ -278,29 +314,17 @@ function aimBasis(): AimBasis {
  * and first-person rig pose, which are only final after `updateCamera` and `vm.update`.
  */
 const ownTracers: number[] = [];
-/** Scoped tracers start this far ahead of the eye (m). */
-const SCOPE_TRACER_Z = 3;
 let ownNade: Nade | null = null;
 /** Draw this frame's own shots from the first-person gun's muzzle to where the eye ray ended. */
 function flushOwnShots(): void {
   if (!ownTracers.length && !ownNade) return;
-  const tanF = Math.tan((camera.camera!.fov * Math.PI) / 360);
-  if (me.zoom < 0.5) vm.muzzleWorld(camera, _muz);
-  else {
-    // Scoped, the gun is hidden: the streak rises from just under the bottom edge of the screen, on
-    // the centre line and well out in front so its near end stays thin. It still ends at the world
-    // point the eye ray hit at fire time, which recoil has since pushed below the crosshair.
-    camera.getRotation().transformVector(_v3.set(0, -tanF * SCOPE_TRACER_Z * 1.05, -SCOPE_TRACER_Z), _v3);
-    _muz.x = cam.x + _v3.x; _muz.y = cam.y + _v3.y; _muz.z = cam.z + _v3.z;
-  }
-  // Keep the streak the same thickness on screen when the world FOV narrows (scope zoom).
-  const thin = tanF / Math.tan((baseFov * Math.PI) / 360);
+  vm.muzzleWorld(camera, _muz);
   const mx = _muz.x - cam.x, my = _muz.y - cam.y, mz = _muz.z - cam.z;
   for (let i = 0; i < ownTracers.length; i += 4) {
     _end.x = ownTracers[i]; _end.y = ownTracers[i + 1]; _end.z = ownTracers[i + 2];
     // Point-blank hits end nearer than the muzzle: no streak rather than one flying backwards.
     const ex = _end.x - cam.x, ey = _end.y - cam.y, ez = _end.z - cam.z;
-    if ((ex * mx + ey * my + ez * mz) > mx * mx + my * my + mz * mz) fx.tracer(_muz, _end, ownTracers[i + 3] * thin);
+    if ((ex * mx + ey * my + ez * mz) > mx * mx + my * my + mz * mz) fx.tracer(_muz, _end, ownTracers[i + 3]);
   }
   ownTracers.length = 0;
   if (ownNade) { ownNade.mx = mx; ownNade.my = my; ownNade.mz = mz; placeNade(ownNade); ownNade = null; }
@@ -613,7 +637,8 @@ function shove(): void {
 }
 
 // ------------------------------------------------------------- interactions
-type Target = { kind: 'revive'; mate: Mate } | { kind: 'pickup'; pv: PickupView; usable: boolean; text: string } | { kind: 'note'; nv: NoteView } | null;
+type Target = { kind: 'revive'; mate: Mate } | { kind: 'pickup'; pv: PickupView; usable: boolean; text: string } | { kind: 'note'; nv: NoteView }
+  | { kind: 'mount'; id: number; usable: boolean; text: string } | null;
 let target: Target = null;
 
 function findTarget(): Target {
@@ -625,6 +650,14 @@ function findTarget(): Target {
     if (d < bestD) { bestD = d; best = { kind: 'revive', mate: m }; }
   }
   if (best) return best;
+  // Mounted guns: reach the pivot or the seat.
+  for (const m of L.def.mounts) {
+    if (Math.abs(m.y - me.gy) > 1.6) continue;
+    const s = seatOf(m.id), d = Math.min(Math.hypot(m.x - me.x, m.z - me.z), Math.hypot(s.x - me.x, s.z - me.z) + 0.3);
+    if (d >= Math.max(bestD, MOUNT.useRange)) continue;
+    const name = t(WEAPONS[weaponIndex(m.kind)].name), taken = [...mates.values()].find((q) => q.mount === m.id && q.st === PSTATE.ALIVE);
+    bestD = d; best = { kind: 'mount', id: m.id, usable: !taken, text: taken ? t('{who} is on the {w}', { who: taken.name, w: name }) : t('Man the {w}', { w: name }) };
+  }
   for (const nv of world.notes) {
     const d = Math.hypot(nv.def.x - me.x, (nv.def.y ?? 0) - me.gy, nv.def.z - me.z);
     if (d < bestD) { bestD = d; best = { kind: 'note', nv }; }
@@ -657,6 +690,7 @@ function interact(): void {
   if (hud.noteOpen) { hud.note(null); return; }
   if (!target) return;
   if (target.kind === 'pickup' && target.usable) net.send({ t: 'u', id: target.pv.def.id });
+  if (target.kind === 'mount' && target.usable) net.send({ t: 'm', id: target.id });
   if (target.kind === 'note') { hud.note(t(target.nv.def.title), t(target.nv.def.text)); openNote = target.nv; world.setNoteRead(target.nv.def.id); sfx.pickup(); }
 }
 let openNote: NoteView | null = null;
@@ -736,6 +770,9 @@ function applyPlayers(list: PlayerSnap[]): void {
     me.hp = hp; me.st = st; me.rev = rev; me.respawn = respawn;
     me.meds = unpackMeds(medkits); me.medSel = medSelect(me.meds, me.medSel);
     me.armor = p[13] ?? 0;
+    // The server decides who mans what: follow it if an event was missed (a reconnect, a restart).
+    const mt = p[15] ?? -1;
+    if (mt !== me.mount) { if (mt >= 0) manMount(mt); else leftMount(); }
     // Just after a throw the snapshot may still count it: per kind, keep your own lower count until the server
     // agrees (or, after a few seconds, accept that the throw never counted and it is still yours).
     const thr = unpackThrowables(p[14] ?? 0);
@@ -753,7 +790,7 @@ function onEvent(ev: GameEvent): void {
     case 'reset': {
       const [, ch, st, dm, taken, keep] = ev;
       remotes.clear();
-      fx.clearGoo(); me.pinned = false; me.shoveFat = 0; me.armor = 0; me.throwCd = 0;
+      fx.clearGoo(); me.pinned = false; me.shoveFat = 0; me.armor = 0; me.throwCd = 0; me.mount = -1;
       const newChapter = ch !== chapter;
       clearNades();
       loadChapter(ch);
@@ -761,6 +798,7 @@ function onEvent(ev: GameEvent): void {
         // Checkpoint restart: keep your gun, top the ammo back up.
         for (let i = 0; i < WEAPONS.length; i++) { me.mag[i] = WEAPONS[i].mag; me.reserve[i] = WEAPONS[i].reserve; }
         Object.assign(me, { reloadT: 0, vy: 0, jy: 0, y: me.gy, onGround: true, kx: 0, kz: 0 });
+        if (WEAPONS[me.weapon]?.slot === 'mount') equip(me.primary >= 0 ? me.primary : me.sidearm);
       } else {
         Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, mag: WEAPONS.map((w) => w.mag), reserve: WEAPONS.map((w) => w.reserve), reloadT: 0, vy: 0, jy: 0, y: me.gy, onGround: true, kx: 0, kz: 0, pitch: 0 });
         clearThrowables();
@@ -778,6 +816,12 @@ function onEvent(ev: GameEvent): void {
       break;
     }
     case 'tp': if (ev[1] === me.id) { placeMe(ev[2], ev[5] ?? 0, ev[3]); me.yaw = ev[4]; me.vx = me.vz = 0; } break;
+    case 'mount': {
+      if (ev[1] === me.id) { if (ev[2] >= 0) manMount(ev[2]); else leftMount(); }
+      else if (ev[2] >= 0) { const m = mates.get(ev[1]), mk = L.def.mounts[ev[2]]; if (m && mk) hud.feed(t('{who} is on the {w}', { who: m.name, w: t(WEAPONS[weaponIndex(mk.kind)].name) })); }
+      sfx.gate();
+      break;
+    }
     case 'msg': hud.feed(tMsg(ev[1])); break;
     case 'heal': if (ev[1] === me.id) { sfx.heal(); if (MEDS[ev[2]]?.steady) me.lastLegs = false; if (range) rangeHeal(ev[2]); } break;
     case 'shot': {
@@ -796,7 +840,7 @@ function onEvent(ev: GameEvent): void {
       }
       if (w?.melee) {
         // A swing: no tracer, just the pose and the whoosh.
-        m.swing = w.id === 'axe' ? 0.6 : w.id === 'machete' ? 0.3 : 0.45; sfx.at(m.y).shoot(ev[2], m.x, m.z);
+        m.swing = w.id === 'machete' ? 0.3 : 0.45; sfx.at(m.y).shoot(ev[2], m.x, m.z);
         break;
       }
       if (w?.blast) {
@@ -821,7 +865,7 @@ function onEvent(ev: GameEvent): void {
       const who = ev[1] === me.id ? t('You') : roster.get(ev[1])?.name ?? t('Someone');
       hud.feed(t('{a}: {b}', { a: who, b: t(L.def.pickups[ev[2]]?.label ?? 'used it').replace(/\s*[(（].*[)）]$/, '') }));
       sfx.gate();
-      if (s?.hold) { hud.banner(t('HOLD OUT!'), true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
+      if (s?.hold) { hud.banner(t(s.big ? 'THE BIG HOLD ON! Man the guns!' : 'HOLD OUT!'), true); if (!s.horde) sfx.horde(); } // with `horde` the server's 'horde' event (just before) already roared
       break;
     }
     case 'door': {
@@ -962,7 +1006,7 @@ net.onMessage = (m: ServerMsg) => {
       loadChapter(m.ch);
       me.id = m.id; placeMe(m.x, m.y ?? 0, m.z);
       // A new room starts you with the pistol only, whatever you carried in the last one.
-      Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, pinned: false });
+      Object.assign(me, { weapon: 0, primary: -1, sidearm: 0, melee: -1, armor: 0, pinned: false, mount: -1 });
       clearThrowables();
       vm.setWeapon(0);
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
@@ -1079,7 +1123,7 @@ $('leaverange').addEventListener('click', leaveRange);
 /** The range's numbers panel, rewritten only when it changes. */
 function updateRangePanel(): void {
   if (!range) return;
-  const html = rangePanelHtml(WEAPONS[me.weapon], range.stats, { base: baseSpread(), now: shotSpread() }, baseFov);
+  const html = rangePanelHtml(WEAPONS[me.weapon], range.stats, { base: baseSpread(), now: shotSpread() });
   if (html !== rangeHtml) { rangeHtml = html; $('rangepanel').innerHTML = html; }
 }
 let rangeHtml = '';
@@ -1101,6 +1145,7 @@ function enterStep(i: number, announce: boolean): void {
   if (!s) return;
   hud.radio(s.radio.map(([who, line]): [string, string] => [t(who), t(line)]), true);
   if (announce) { hud.flashObjective(); sfx.pickup(); }
+  if (announce && s.kind === 'holdout' && s.big) hud.banner(t('THE BIG HOLD ON! Man the guns!'), true);
 }
 
 /** Where the quest marker should point right now (world metres; `y` = the floor height there). */
@@ -1156,14 +1201,20 @@ function updateMe(dt: number): void {
 
   // Movement.
   let f = 0, s = 0;
-  if (on) { f = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0); s = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0); }
+  const manned = me.mount >= 0 && !!L.def.mounts[me.mount];
+  if (on && !manned) { f = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0); s = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0); }
+  if (manned) {
+    // At a mounted gun you turn within its arc and tilt within its limits.
+    const m = L.def.mounts[me.mount];
+    let rel = me.yaw - m.yaw;
+    rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    me.yaw = m.yaw + Math.max(-MOUNT.arc, Math.min(MOUNT.arc, rel));
+    me.pitch = Math.max(MOUNT.pitchDown, Math.min(MOUNT.pitchUp, me.pitch));
+  }
   const len = Math.hypot(f, s) || 1;
-  const sc = scopeUp();
-  me.zoom += ((sc ? 1 : 0) - me.zoom) * Math.min(1, dt * 14);
-  if (me.zoom < 0.01) me.zoom = 0;
   // Slow on a ladder: the one you're on, or the one this frame's step would put you on.
   const ladder = Math.min(L.speedAt(me.x, me.gy, me.z, LADDER_SPEED), L.speedAt(me.x + me.vx * dt, me.gy, me.z + me.vz * dt, LADDER_SPEED));
-  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (sc ? sc.move : 1) * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1) * ladder;
+  const speed = PLAYER.speed * WEAPONS[me.weapon].move * (me.hp < 40 ? 0.82 : 1) * (me.slowT > 0 ? 0.55 : 1) * (me.healT > 0 ? MEDS[me.medSel]?.move ?? 0.35 : 1) * ladder;
   const sin = Math.sin(me.yaw), cos = Math.cos(me.yaw);
   const wx = ((-sin * f + cos * s) / len) * speed, wz = ((-cos * f - sin * s) / len) * speed;
   const k = Math.min(1, dt * (me.onGround ? 14 : 4));
@@ -1177,11 +1228,14 @@ function updateMe(dt: number): void {
       const pk = Math.min(1, dt * 14);
       me.x += (me.pinX - me.x) * pk; me.z += (me.pinZ - me.z) * pk; me.gy += (me.pinY - me.gy) * pk;
       me.vx = me.vz = me.kx = me.kz = 0;
+    } else if (manned) {
+      const st = seatOf(me.mount);
+      me.x = st.x; me.z = st.z; me.gy = st.y; me.vx = me.vz = me.kx = me.kz = 0;
     } else slideMe((me.vx + me.kx) * dt, (me.vz + me.kz) * dt);
     me.kx *= Math.max(0, 1 - dt * 5); me.kz *= Math.max(0, 1 - dt * 5);
     // Jumps (and knockback) lift you off whatever floor you are on; you land back on it.
     // Held Space keeps hopping; a buffered press (jumpBuf) catches taps that came and went between two frames.
-    if (on && (keys.has('Space') || jumpBuf > 0) && me.onGround) { me.vy = 6.4; me.onGround = false; jumpBuf = 0; }
+    if (on && !manned && (keys.has('Space') || jumpBuf > 0) && me.onGround) { me.vy = 6.4; me.onGround = false; jumpBuf = 0; }
     jumpBuf = Math.max(0, jumpBuf - dt);
     me.vy -= 19 * dt; me.jy += me.vy * dt;
     if (me.jy <= 0) { if (!me.onGround) sfx.land(-me.vy, indoorAt(me.x, me.gy, me.z)); me.jy = 0; me.vy = 0; me.onGround = true; }
@@ -1191,16 +1245,24 @@ function updateMe(dt: number): void {
       if (me.stride > 1.8) { me.stride = 0; sfx.step(indoorAt(me.x, me.gy, me.z)); }
     }
     // Zombies are solid: get shouldered out of them (not while one has hold of you; only on your floor).
-    if (!me.pinned) for (const z of zeds.values()) {
-      const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
-      if (Math.abs(dx) > min || Math.abs(dz) > min || Math.abs(z.y - me.gy) > 1.2) continue;
-      const d = Math.hypot(dx, dz);
-      if (d < min && d > 0.001) slideMe((dx / d) * (min - d), (dz / d) * (min - d));
+    // In a crowd the pushes add up: move by their sum, but never further than the deepest single overlap
+    // (summed in full, a pack of 70 shoved you 15 m in a second).
+    if (!me.pinned && !manned) {
+      let px = 0, pz = 0, deepest = 0;
+      for (const z of zeds.values()) {
+        const min = PLAYER.radius + ZTYPES[z.type].radius * 0.85, dx = me.x - z.x, dz = me.z - z.z;
+        if (Math.abs(dx) > min || Math.abs(dz) > min || Math.abs(z.y - me.gy) > 1.2) continue;
+        const d = Math.hypot(dx, dz);
+        if (d >= min || d <= 0.001) continue;
+        px += (dx / d) * (min - d); pz += (dz / d) * (min - d); deepest = Math.max(deepest, min - d);
+      }
+      const len = Math.hypot(px, pz);
+      if (len > 0.0001) { const k = Math.min(1, deepest / len); slideMe(px * k, pz * k); }
     }
     // Teammates are soft: ease apart from one you stand inside (each client pushes itself, so the two of
     // you part halfway each). Standing in one put your eye inside their model and the screen went black.
     // Not off a downed one (you crouch over them to help them up) or while held.
-    if (!me.pinned) for (const m of mates.values()) {
+    if (!me.pinned && !manned) for (const m of mates.values()) {
       if (m.st !== PSTATE.ALIVE || !m.chibi.group.enabled || Math.abs(m.y - me.gy) > 1.2) continue;
       const min = PLAYER.radius * 2, dx = me.x - m.x, dz = me.z - m.z;
       if (Math.abs(dx) > min || Math.abs(dz) > min) continue;
@@ -1245,7 +1307,7 @@ function updateMe(dt: number): void {
   }
   // Medical item channel: hold Q to use the selected one (small items are quick; the medkit takes its time).
   const mk = me.medSel, med = MEDS[mk];
-  const healing = on && keys.has('KeyQ') && !me.healLatch && !!med && me.meds[mk] > 0 && medUseful(mk, me.hp, me.lastLegs ? 1 : 0);
+  const healing = on && !manned && keys.has('KeyQ') && !me.healLatch && !!med && me.meds[mk] > 0 && medUseful(mk, me.hp, me.lastLegs ? 1 : 0);
   if (healing) {
     if (me.healT === 0) sfx.bandage();
     me.healT += dt;
@@ -1265,7 +1327,7 @@ function updateMe(dt: number): void {
   }
 
   // Revive channel.
-  target = on ? findTarget() : null;
+  target = on && !manned ? findTarget() : null;
   const wantRevive = target?.kind === 'revive' && keys.has('KeyE') ? target.mate.id : 0;
   if (wantRevive !== me.reviving) { me.reviving = wantRevive; net.send({ t: 'r', id: wantRevive }); }
 
@@ -1305,8 +1367,7 @@ function updateSelfBody(dt: number, show: boolean): void {
 }
 
 function updateCamera(dt: number): void {
-  const scopeFov = WEAPONS[me.weapon].scope?.fov ?? baseFov;
-  camera.camera!.fov = baseFov + (scopeFov - baseFov) * me.zoom;
+  camera.camera!.fov = baseFov;
   me.trauma = Math.max(0, me.trauma - dt * 2.2);
   const shake = me.trauma * me.trauma * 0.05;
   if (me.st === PSTATE.DEAD) {
@@ -1389,7 +1450,8 @@ function updateHud(dt: number): void {
   hud.setMeds(me.meds, me.medSel);
   // In hand: a gun shows its magazine, a close-in weapon nothing, a throwable how many you have left.
   const held = heldThrowable();
-  hud.setAmmo(t(w.name), w.melee ? Infinity : held >= 0 ? me.thr[held] : me.mag[me.weapon], held >= 0 ? -1 : me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
+  if (w.slot === 'mount') hud.setAmmo(me.reloadT > 0 ? `${t(w.name)} · ${t('cooling…')}` : t(w.name), me.mag[me.weapon], -1, w.mag, false, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '', 0, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '');
+  else hud.setAmmo(t(w.name), w.melee ? Infinity : held >= 0 ? me.thr[held] : me.mag[me.weapon], held >= 0 ? -1 : me.reserve[me.weapon], w.mag, me.reloadT > 0, me.primary >= 0 ? t(WEAPONS[me.primary].name) : '',
     held >= 0 ? 4 + held : me.weapon === me.primary ? 1 : me.weapon === me.melee ? 3 : 2, t(WEAPONS[me.sidearm].name), me.melee >= 0 ? t(WEAPONS[me.melee].name) : '',
     me.thr.map((n, k) => (n > 0 ? `${t(WEAPONS[THROWABLES[k]].name)} ×${n}` : '')));
   let n = 0;
@@ -1405,8 +1467,7 @@ function updateHud(dt: number): void {
   hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
   if (openNote && Math.hypot(openNote.def.x - me.x, (openNote.def.y ?? 0) - me.gy, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
-  hud.crosshair((me.st === PSTATE.ALIVE || downShooter()) && me.zoom < 0.5);
-  hud.scope(me.st === PSTATE.ALIVE && me.zoom >= 0.5);
+  hud.crosshair(me.st === PSTATE.ALIVE || downShooter());
   hud.spread(6 + shotSpread() * 260);
   const solo = roster.size <= 1;
   hud.spectate(me.st === PSTATE.DEAD ? (me.respawn < 0 ? t('Knocked out — your team can rescue you at the next safe room') : t('Knocked out — a teammate will rescue you in {s}s', { s: me.respawn }))
@@ -1421,12 +1482,20 @@ function updateHud(dt: number): void {
     else { hud.ring(null); hud.prompt(`<kbd>${t('Hold E')}</kbd> ${t('Help {who} up', { who: target.mate.name })}`); }
   } else {
     hud.ring(null);
-    hud.prompt(target?.kind === 'pickup' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
+    hud.prompt(me.mount >= 0 && me.st === PSTATE.ALIVE ? `<kbd>E</kbd> ${t('Let go')}`
+      : target?.kind === 'pickup' || target?.kind === 'mount' ? (target.usable ? `<kbd>E</kbd> ${target.text}` : target.text)
       : target?.kind === 'note' && !hud.noteOpen ? `<kbd>E</kbd> ${t('Read: {title}', { title: t(target.nv.def.title) })}`
         : me.st !== PSTATE.DEAD && fx.inFire(me.x, me.z, me.gy) ? t('You are standing in the fire!')
           : me.st !== PSTATE.DEAD && fx.inGoo(me.x, me.z, me.gy) ? t('Get out of the goo!') : null);
   }
   hud.update(dt);
+}
+
+/** Who is aiming mount `id` right now (you, or a teammate on it), for mounts.ts. */
+function mountAim(id: number): MountAim | null {
+  if (me.mount === id && me.st === PSTATE.ALIVE) return { yaw: me.yaw, pitch: me.pitch + me.recoil, mine: true };
+  for (const m of mates.values()) if (m.mount === id && m.st === PSTATE.ALIVE) return { yaw: m.ry, pitch: m.pitch, mine: false };
+  return null;
 }
 
 // ---------------------------------------------------------------------- loop
@@ -1440,9 +1509,10 @@ app.on('update', (dt: number) => {
     updateMe(dt);
     updateCamera(dt);
     remotes.update(dt, time, { cam, listenY, level: L });
+    mounts.update(dt, mountAim);
     updateHud(dt);
     const moving = Math.min(1, Math.hypot(me.vx, me.vz) / PLAYER.speed) * (me.onGround ? 1 : 0.2);
-    vm.visible = (me.st === PSTATE.ALIVE || downShooter()) && me.zoom < 0.5 && rideCam < 0.05; // the scope overlay replaces the gun; none in the ride camera
+    vm.visible = (me.st === PSTATE.ALIVE || downShooter()) && rideCam < 0.05; // none in the ride camera
     vm.update(dt, moving, lookDX, lookDY);
     flushOwnShots();
     lookDX = lookDY = 0;
@@ -1456,8 +1526,9 @@ app.on('update', (dt: number) => {
     camera.setPosition(cam.x, cam.y, cam.z);
     camera.setRotation(cam.rot);
     vm.visible = false;
-    me.zoom = 0; camera.camera!.fov = baseFov;
+    camera.camera!.fov = baseFov;
     vm.update(dt, 0, 0, 0);
+    mounts.update(dt, () => null);
   }
   world.update(time, dt, cam.x, cam.y, cam.z);
   pieces.update(time, dt, step, inGame && holdout >= 0);

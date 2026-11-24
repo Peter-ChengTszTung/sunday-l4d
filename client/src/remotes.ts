@@ -20,6 +20,7 @@ export interface Mate {
   hp: number; st: number; respawn: number; rev: number; speed: number; /** Metres since the last footstep sound. */ stride: number;
   /** Seconds left of the close-in swing pose. */ swing: number;
   /** Body drawn (not swallowed by the fog); the name tag shows regardless. */ near: boolean;
+  /** Mounted gun they man (ChapterDef.mounts index, -1 = none) and their look pitch (the gun follows both). */ mount: number; pitch: number;
 }
 /** `y`/`ty`: the floor height it stands on (shown / latest snapshot); `sfxT`: alarm-ring timer; `vox`: seconds until a special's next presence cue. */
 export interface Zed { id: number; type: number; chibi: Chibi; x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
@@ -96,7 +97,7 @@ export class Remotes {
     chibi.group.addChild(tag);
     chibi.group.enabled = false;
     app.root.addChild(chibi.group);
-    const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0, stride: 0, swing: 0, near: true };
+    const m: Mate = { id: r.id, name: r.name, look: r.look, color, chibi, tag, gun: null, gunW: -1, x: 0, y: 0, z: 0, ry: 0, tx: 0, ty: 0, tz: 0, tr: 0, hp: 100, st: 0, respawn: 0, rev: 0, speed: 0, stride: 0, swing: 0, near: true, mount: -1, pitch: 0 };
     this.mates.set(r.id, m);
     return m;
   }
@@ -111,12 +112,12 @@ export class Remotes {
   /** Teammates' part of a snapshot (your own entry, `myId`, is skipped). */
   applyMates(list: PlayerSnap[], myId: number): void {
     for (const p of list) {
-      const [id, x, y, z, ry, , hp, st, w, , rev, , respawn] = p;
+      const [id, x, y, z, ry, rx, hp, st, w, , rev, , respawn] = p;
       if (id === myId) continue;
       const m = this.mates.get(id);
       if (!m) continue;
       const fresh = !m.chibi.group.enabled && st !== PSTATE.DEAD;
-      m.tx = x; m.ty = y; m.tz = z; m.tr = ry; m.hp = hp; m.st = st; m.rev = rev; m.respawn = respawn;
+      m.tx = x; m.ty = y; m.tz = z; m.tr = ry; m.hp = hp; m.st = st; m.rev = rev; m.respawn = respawn; m.mount = p[15] ?? -1; m.pitch = rx;
       if (fresh || Math.hypot(x - m.x, z - m.z) > 8 || Math.abs(y - m.y) > 2) { m.x = x; m.y = y; m.z = z; m.ry = ry; }
       m.chibi.group.enabled = st !== PSTATE.DEAD;
       if (m.gunW !== w) {
@@ -246,9 +247,10 @@ export class Remotes {
       // Your eye inside their body (you walked into them, or a teleport put you there): drawn, its inside and
       // ink hull would black out the whole screen, so leave them out until you have stepped apart.
       m.chibi.root.enabled = near && !(Math.hypot(m.x - cam.x, m.z - cam.z) < 0.55 && cam.y > m.y - 0.1 && cam.y < m.y + 1.9);
-      if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE;
+      // Manning a mounted gun, the hands are on it (drawn by mounts.ts), not on a gun of their own.
+      if (m.gun) m.gun.enabled = m.st === PSTATE.ALIVE && m.mount < 0;
       m.swing -= dt;
-      m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : this.pinned.has(m.id) ? 'stagger' : m.swing > 0 ? (WEAPONS[m.gunW]?.id === 'axe' ? 'chop' : WEAPONS[m.gunW]?.id === 'machete' ? 'slash' : 'swing') : m.speed > 1 ? 'run' : 'aim', time, dt);
+      m.chibi.animate(m.st === PSTATE.DOWN ? 'down' : this.pinned.has(m.id) ? 'stagger' : m.swing > 0 ? (WEAPONS[m.gunW]?.id === 'machete' ? 'slash' : 'swing') : m.speed > 1 ? 'run' : 'aim', time, dt);
       m.tag.setRotation(cam.rot);
     }
     for (const z of this.zeds.values()) {

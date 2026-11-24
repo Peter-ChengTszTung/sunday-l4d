@@ -15,6 +15,8 @@ export interface ChapterReport {
 const INF = 32767;
 /** Minimum loot in each start/checkpoint safe room: weapons there are stacks (Level.stacks), so this is the choice on offer. */
 export const MIN_ROOM_GUNS = 4, MIN_ROOM_AMMO = 2;
+/** A Big Hold On's mounted gun must be within this many path tiles of the step's stand (`at`). */
+export const BIG_MOUNT_TILES = 10;
 
 const STAGE_KINDS = new Set(['wave', 'breather', 'specials', 'brute', 'final']);
 
@@ -218,6 +220,21 @@ export function validateChapter(L: Level): ChapterReport {
     const a = s.area;
     stock((c) => { const x = L.nodeX(c), z = L.nodeZ(c); return L.lvOf(c) === (a.lv ?? 0) && x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1; }, `${name(i)} safe room`);
   });
+
+  // Mounted guns: reachable, and every Big Hold On has one at its stand (within BIG_MOUNT_TILES path tiles of the waypoint).
+  const mountCell = (m: (typeof def.mounts)[number]) => L.node(cellOf(m.x), cellOf(m.z), L.storeyOf(m.y));
+  for (const m of def.mounts ?? []) if (all[mountCell(m)] >= INF) errors.push(`mount #${m.id} (${m.kind}) at tile ${tile(mountCell(m))} is unreachable`);
+  def.steps.forEach((s, i) => {
+    if (!s.big) return;
+    if (!s.hold) { errors.push(`${name(i)}: big is only for holdouts (a holdout step, or a use step with hold)`); return; }
+    if (s.hold < 120) warnings.push(`${name(i)}: a Big Hold On should last at least 120 s (has ${s.hold})`);
+    // A use step's stand is its machine (a solid tile): search from the tiles round it, as the reachability check does.
+    const open = L.doorsAfter(i), from = s.kind === 'use' ? useCells(s.at.x, s.at.z, s.at.y ?? 0).filter((c) => !L.blocked(c, open)) : [cell(s.at)];
+    const near = L.distanceField(from, open);
+    const has = (def.mounts ?? []).some((m) => near[mountCell(m)] <= BIG_MOUNT_TILES);
+    if (!has) errors.push(`${name(i)}: a Big Hold On needs a mounted gun (LevelBuilder.mount) within ${BIG_MOUNT_TILES} path tiles of its stand`);
+  });
+  if (!def.steps.some((s) => s.big)) warnings.push('no Big Hold On step (big: true) in this chapter');
 
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));
   // A lift may stay shut for good (a faulted car is set dressing); any other door that never opens is a mistake.

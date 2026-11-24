@@ -73,6 +73,7 @@ export class ShootingRange {
       case 'v': this.onShove(); break;
       // The rack never empties: hand the gun over without marking it taken.
       case 'u': if (this.L.def.pickups[m.id]) this.events.push(['got', this.pid, m.id]); break;
+      case 'm': if (m.id < 0 || this.L.def.mounts[m.id]) this.events.push(['mount', this.pid, m.id < 0 ? -1 : m.id]); break;
       // Medical items: the client keeps its own health here (no player snapshots), so just confirm the use.
       case 'h': this.events.push(['heal', this.pid, m.k ?? 0]); break;
     }

@@ -45,8 +45,10 @@ export const shoveFatigue = (f: number, dt: number): number => Math.max(0, f - d
 /** Cooldown that applies to the next shove at fatigue `f`. */
 export const shoveCooldown = (f: number): number => (f >= PLAYER.shoveMax ? PLAYER.shoveTiredCd : PLAYER.shoveCd);
 
-export type WeaponId = 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'autoshotgun' | 'sniper' | 'launcher' | 'magnum'
-  | 'bat' | 'machete' | 'axe' | 'firebomb' | 'rattle';
+export type WeaponId = 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'autoshotgun' | 'launcher' | 'magnum'
+  | 'bat' | 'machete' | 'firebomb' | 'rattle' | 'deagle' | MountKind;
+/** Mounted support guns (MOUNT): never picked up, only manned where a map places one. */
+export type MountKind = 'minigun' | 'cannon' | 'rockets';
 /**
  * Close-in weapon: a swing hits up to `cleave` zombies within `reach` m (plus their radius) inside a
  * cone of half-angle acos(`arc`) around where you face. `stun`/`knock`: stagger seconds and shove-back
@@ -69,8 +71,10 @@ export interface WeaponDef {
   /**
    * Which slot it occupies: the sidearm slot keeps infinite reserve; `melee` (key 3) never runs out;
    * `throw` is a throwable (G): up to THROW_MAX carried in any mix, each gone once thrown.
+   * `mount`: a mounted support gun (MOUNT), only fired while manning one; endless, it overheats
+   * instead of reloading (`mag` shots, then `reload` seconds to cool).
    */
-  slot: 'primary' | 'sidearm' | 'melee' | 'throw';
+  slot: 'primary' | 'sidearm' | 'melee' | 'throw' | 'mount';
   /** 1 = basic loot, 2 = later, rarer finds. */ tier: 0 | 1 | 2;
   /** Zombies one bullet can pass through (stops at a Brute). */ pierce: number;
   /** View kick (radians of pitch) and camera trauma per shot. */ recoil: number; shake: number;
@@ -88,8 +92,6 @@ export interface WeaponDef {
   bloom: readonly [number, number, number];
   /** Extra spread (radians) at full running speed; jumping adds 1.5x this again. Scales with how fast you move. */
   moving: number;
-  /** Hold right mouse to aim down a scope: zoomed vertical FOV, spread and move speed while scoped (`spread` is then the hip-fire spread). */
-  scope?: { fov: number; spread: number; move: number };
   blast?: BlastDef;
   melee?: MeleeDef;
   /** Throwables (they fly like a launcher shell, see `blast`): what happens where it lands (FIRE / LURE). */
@@ -104,8 +106,8 @@ export interface ZombieDef {
 }
 export interface SurvivorLook { name: string; shirt: number; hair: number; style: 'cap' | 'spiky' | 'buns' | 'bob' }
 
-// Index 0 is the starting sidearm with infinite reserve ammo. Indices go over the wire
-// (shots, snapshots), so only ever append.
+// Index 0 is the starting sidearm with infinite reserve ammo. Indices go over the wire (shots,
+// snapshots); client and server ship together, so a build may renumber them.
 export const WEAPONS: WeaponDef[] = [
   { id: 'pistol', name: 'Pea Shooter', dmg: 26, rate: 0.17, mag: 15, reserve: Infinity, spread: 0.010, pellets: 1, range: 70, reload: 1.2, auto: false, slot: 'sidearm', tier: 0, pierce: 1, recoil: 0.025, shake: 0.07, falloff: [18, 45, 0.65], move: 1.05, bloom: [0.006, 0.02, 0.15], moving: 0.012 },
   { id: 'smg', name: 'Buzz Blaster', dmg: 20, rate: 0.068, mag: 50, reserve: 450, spread: 0.028, pellets: 1, range: 60, reload: 1.4, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.02, shake: 0.07, falloff: [14, 35, 0.5], move: 1, bloom: [0.009, 0.02, 0.08], moving: 0.008 },
@@ -113,7 +115,6 @@ export const WEAPONS: WeaponDef[] = [
   { id: 'rifle', name: 'Long Bonker', dmg: 36, rate: 0.105, mag: 30, reserve: 270, spread: 0.014, pellets: 1, range: 90, reload: 2.1, auto: true, slot: 'primary', tier: 1, pierce: 1, recoil: 0.03, shake: 0.07, falloff: [35, 70, 0.75], move: 0.95, bloom: [0.006, 0.03, 0.04], moving: 0.014 },
   // Tier 2: rarer, later finds with a clear job each.
   { id: 'autoshotgun', name: 'Rumble Drum', dmg: 14, rate: 0.26, mag: 10, reserve: 90, spread: 0.075, pellets: 9, range: 24, reload: 2.4, auto: true, slot: 'primary', tier: 2, pierce: 1, recoil: 0.05, shake: 0.22, falloff: [8, 19, 0.25], move: 0.93, bloom: [0.025, 0.03, 0.08], moving: 0.012 },
-  { id: 'sniper', name: 'Kebabber', dmg: 90, rate: 0.42, mag: 8, reserve: 64, spread: 0.045, pellets: 1, range: 120, reload: 2.8, auto: false, slot: 'primary', tier: 2, pierce: 4, recoil: 0.09, shake: 0.2, falloff: [120, 120, 1], move: 0.9, bloom: [0.02, 0.04, 0.1], moving: 0.05, scope: { fov: 18, spread: 0.0015, move: 0.45 } },
   { id: 'launcher', name: 'Bloop Tube', dmg: 0, rate: 0.75, mag: 3, reserve: 12, spread: 0.004, pellets: 1, range: 110, reload: 3.2, auto: false, slot: 'primary', tier: 2, pierce: 1, recoil: 0.1, shake: 0.35, falloff: [110, 110, 1], move: 0.88, bloom: [0, 0, 0.1], moving: 0.01,
     blast: { dmg: 240, radius: 4.5, edge: 0.35, speed: 38, grav: 6, fuse: 3, arm: 3 } },
   { id: 'magnum', name: 'Thunder Pea', dmg: 60, rate: 0.32, mag: 8, reserve: Infinity, spread: 0.006, pellets: 1, range: 80, reload: 1.6, auto: false, slot: 'sidearm', tier: 2, pierce: 2, recoil: 0.07, shake: 0.15, falloff: [30, 60, 0.7], move: 1.02, bloom: [0.012, 0.03, 0.12], moving: 0.015 },
@@ -122,14 +123,26 @@ export const WEAPONS: WeaponDef[] = [
     melee: { reach: 2.3, arc: 0.3, cleave: 3, stun: 1.1, knock: 8, brute: 0.5 } },
   { id: 'machete', name: 'Snip-Snap', dmg: 75, rate: 0.38, mag: 1, reserve: Infinity, spread: 0, pellets: 1, range: 2.4, reload: 0, auto: true, slot: 'melee', tier: 2, pierce: 4, recoil: 0, shake: 0.1, falloff: [3, 3, 1], move: 1.05, bloom: [0, 0, 1], moving: 0,
     melee: { reach: 2.4, arc: 0.35, cleave: 4, stun: 0.6, knock: 4, brute: 0.5 } },
-  { id: 'axe', name: 'Big Chop', dmg: 170, rate: 0.85, mag: 1, reserve: Infinity, spread: 0, pellets: 1, range: 2.6, reload: 0, auto: true, slot: 'melee', tier: 2, pierce: 2, recoil: 0, shake: 0.28, falloff: [3, 3, 1], move: 0.97, bloom: [0, 0, 1], moving: 0,
-    melee: { reach: 2.6, arc: 0.5, cleave: 2, stun: 1.2, knock: 6, brute: 0.6 } },
   // Throwables (G). The blast def is the lob; `thrown` says what the landing does.
   { id: 'firebomb', name: 'Hot Sauce', dmg: 0, rate: 0.8, mag: 1, reserve: 0, spread: 0, pellets: 1, range: 24, reload: 0, auto: false, slot: 'throw', tier: 2, pierce: 1, recoil: 0, shake: 0.1, falloff: [24, 24, 1], move: 1, bloom: [0, 0, 1], moving: 0,
     thrown: 'fire', blast: { dmg: 0, radius: 0, edge: 1, speed: 17, grav: 14, fuse: 3, arm: 0 } },
   { id: 'rattle', name: 'Rattle Bomb', dmg: 0, rate: 0.8, mag: 1, reserve: 0, spread: 0, pellets: 1, range: 24, reload: 0, auto: false, slot: 'throw', tier: 2, pierce: 1, recoil: 0, shake: 0.1, falloff: [24, 24, 1], move: 1, bloom: [0, 0, 1], moving: 0,
     thrown: 'lure', blast: { dmg: 280, radius: 5.5, edge: 0.4, speed: 17, grav: 14, fuse: 3, arm: 0 } },
+  // Desert Eagle: the heaviest sidearm. Slow, a big kick, and a round that drops a common anywhere and goes through three.
+  { id: 'deagle', name: 'Desert Eagle', dmg: 85, rate: 0.42, mag: 7, reserve: Infinity, spread: 0.008, pellets: 1, range: 85, reload: 1.9, auto: false, slot: 'sidearm', tier: 2, pierce: 3, recoil: 0.11, shake: 0.22, falloff: [35, 70, 0.75], move: 1, bloom: [0.03, 0.05, 0.12], moving: 0.02 },
+  // Mounted support guns (MOUNT), manned at a Big Hold On. They overheat rather than reload: `mag` shots, then `reload` s to cool.
+  { id: 'minigun', name: 'Popcorn Gatling', dmg: 28, rate: 0.045, mag: 150, reserve: Infinity, spread: 0.026, pellets: 1, range: 85, reload: 3.2, auto: true, slot: 'mount', tier: 0, pierce: 2, recoil: 0.004, shake: 0.05, falloff: [30, 70, 0.6], move: 0, bloom: [0.002, 0.014, 0.12], moving: 0 },
+  { id: 'cannon', name: 'Thump Cannon', dmg: 0, rate: 0.3, mag: 1, reserve: Infinity, spread: 0.002, pellets: 1, range: 140, reload: 1.6, auto: false, slot: 'mount', tier: 0, pierce: 1, recoil: 0.12, shake: 0.5, falloff: [140, 140, 1], move: 0, bloom: [0, 0, 1], moving: 0,
+    blast: { dmg: 460, radius: 6.5, edge: 0.3, speed: 75, grav: 3, fuse: 4, arm: 6 } },
+  { id: 'rockets', name: 'Fizzbang Pod', dmg: 0, rate: 0.17, mag: 8, reserve: Infinity, spread: 0.022, pellets: 1, range: 120, reload: 4, auto: true, slot: 'mount', tier: 0, pierce: 1, recoil: 0.03, shake: 0.18, falloff: [120, 120, 1], move: 0, bloom: [0, 0, 1], moving: 0,
+    blast: { dmg: 200, radius: 4.2, edge: 0.35, speed: 44, grav: 1, fuse: 4, arm: 4 } },
 ];
+/**
+ * Mounted support guns. A survivor mans one with E (and lets go with E or Space): they stand at its
+ * seat, turn within `arc` radians either side of the way it faces, and fire its weapon (WEAPONS id
+ * = the kind). Down, grabbed or dead, they let go. `seat`: metres behind the gun's pivot the gunner stands.
+ */
+export const MOUNT = { arc: 1.4, pitchUp: 0.45, pitchDown: -0.55, seat: 0.9, useRange: 2.2 };
 /** Most throwables a survivor carries at once, of any mix of kinds. */
 export const THROW_MAX = 3;
 /** Weapon indices of the throwables, in the order the wire and the HUD list them. */

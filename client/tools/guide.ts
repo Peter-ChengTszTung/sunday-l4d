@@ -81,12 +81,14 @@ const WNOTES: Record<string, string> = {
   shotgun: 'Nine pellets. Deletes what is in front of you; barely tickles at 20 m.',
   rifle: 'The all-rounder. Tight in bursts, drifts on long sprays.',
   autoshotgun: 'A shotgun that keeps firing. Eats ammo; made for holdouts.',
-  sniper: 'Each round skewers up to four in a line. Wild from the hip: hold right mouse to scope.',
   launcher: 'Lobbed shells with a big blast. Half-armed closer than 3 m; nicks the squad near its centre.',
   magnum: 'Replaces the pistol. Endless ammo, pierces two, kicks.',
+  deagle: 'The heaviest sidearm. Endless ammo; one round drops a common anywhere and goes through three. Slow, with a big kick.',
+  minigun: 'Mounted at a Big Hold On. A hose of bullets that pierce two; overheats after 150 rounds and needs a few seconds to cool.',
+  cannon: 'Mounted at a Big Hold On. A tank-gun shell with a huge blast every couple of seconds. Keep it off your own feet.',
+  rockets: 'Mounted at a Big Hold On. Eight rockets as fast as you can pull, then a long reload.',
   bat: 'Wide flat swing. One-hits commons, three at a time, and sends survivors of it flying.',
   machete: 'Quick alternating cuts. The fastest way to clear a doorway by hand.',
-  axe: 'Slow overhead chop that hurts. The close-in answer to specials.',
   firebomb: 'Hold left mouse to aim, release to throw. A burning patch: zombies run through it and die. It burns you too; Raincoats ignore it.',
   rattle: 'Hold left mouse to aim, release to throw. Every common nearby drops everything and crowds the rattle, then it explodes.',
 };
@@ -154,7 +156,7 @@ const items: Item[] = [
   ...ZTYPES.map((T, i): Item => ({ tab: 'zombies', key: `z-${T.id}`, label: ZNOTES[i]?.name ?? T.id, z: i, note: t('{hp} hp', { hp: T.hp }),
     group: i === ZT.BRUTE ? 'Boss' : i === ZT.WEEPER ? 'Hazard' : isCommon(i) ? 'Commons' : 'Specials' })),
   ...WEAPONS.map((w, i): Item => ({ tab: 'weapons', key: `w-${w.id}`, label: w.name, w: i, note: w.melee ? t('{dmg} dmg', { dmg: w.dmg }) : w.thrown ? String(4 + THROWABLES.indexOf(i)) : t('{rpm} RPM', { rpm: Math.round(60 / w.rate) }),
-    group: w.slot === 'primary' ? 'Primary (1)' : w.slot === 'sidearm' ? 'Sidearm (2)' : w.slot === 'melee' ? 'Close-in (3)' : 'Throwables (4, 5)' })),
+    group: w.slot === 'primary' ? 'Primary (1)' : w.slot === 'sidearm' ? 'Sidearm (2)' : w.slot === 'melee' ? 'Close-in (3)' : w.slot === 'mount' ? 'Mounted (E)' : 'Throwables (4, 5)' })),
   { tab: 'weapons', key: 'g-armor', label: 'Pillow Vest', group: 'Gear', note: t('{n} armour', { n: ARMOR.max }), gear: 'armor' },
   // Medical items: Q uses the selected one, Z picks the next.
   ...MEDS.map((m): Item => ({ tab: 'weapons', key: `g-${m.id}`, label: m.name, group: 'Medical (Q, Z)', note: m.id === 'medkit' ? t('{s} s', { s: m.time }) : `+${m.heal + m.regen}`, gear: m.id })),
@@ -258,7 +260,6 @@ function weaponInfo(w: WeaponDef): string {
     if (!w.blast) rows.push(row('Reach', floor >= 1 ? t('full damage to {max} m', { max: w.range }) : t('full to {near} m, {pct}% from {far} m, max {max} m', { near, far, pct: pct(floor), max: w.range })), row('Pierces', String(w.pierce)));
     else rows.push(row('Arms at', `${w.blast.arm} m`), row('Shell', t('{v} m/s, {s} s fuse', { v: w.blast.speed, s: w.blast.fuse })));
     rows.push(row('Spread', t('{a}°, up to +{b}° firing, +{c}° running', { a: degs(w.spread), b: degs(w.bloom[1]), c: degs(w.moving) })), row('Move speed', `${pct(w.move)}%`));
-    if (w.scope) rows.push(row('Scope (RMB)', t('{a}° spread, move {pct}%', { a: degs(w.scope.spread), pct: pct(w.scope.move * w.move) })));
   }
   let table = '';
   if (!w.thrown && !w.blast) {
