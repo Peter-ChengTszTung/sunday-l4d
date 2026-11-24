@@ -2,13 +2,14 @@
 // Brief: docs/campaign.md, "Chapter 3: Night Freight".
 //
 // Big open industrial ground under sodium lamps, then the Hush Works plant, then the
-// waterfront. Three storeys (0 ground, 1 at 4.2 m, 2 at 8.4 m):
+// waterfront and the docks south of the river. Three storeys (0 ground, 1 at 4.2 m, 2 at 8.4 m):
 //   - the freight-car roofs, the water-tower deck, two container stacks, the tank-farm valve
-//     catwalk and a wharf stack at the siding are storey-1 perches reached by ladders;
+//     catwalk, a wharf stack at the siding and the old coal stage are storey-1 perches;
 //   - the yardmaster's office is a cabin on stilts (storey 1): front stairs up, back stairs down;
 //   - the Hush Works labs (2F) sit over the mixing floor (storey 1), up the main or back stairs,
 //     with the break room upstairs too and a fire escape down to the loading yard;
-//   - the drawbridge control tower is stacked: hall (0), switchgear (1), control room (2).
+//   - the drawbridge control tower is stacked: hall (0), switchgear (1), control room (2);
+//   - the Guard command post at the railhead has its office (and Bertha's cab key) upstairs.
 //
 //   x: 0        45          103 112                       179
 //  z 0  +--------T-----------+---+------------------------+
@@ -24,9 +25,15 @@
 //   117 +-----------+----TOWER---+--+--------------+-pier gate+
 //       ~~~~~~~~~~~~ PIER ~~~~~~~~~ barges, dock cranes ~~~~~~~
 //   123 ~~~~~ RIVER ~~~~~ | drawbridge ~~~~~~~~~~~~~~~~~~~~~~~~~
-//   140 | DOCK SIDING apron: BERTHA (finale), wharf stack (1F),  ~~~~
-//       | boxcars, dock shed                              harbour
-//   179 +-------------------------------------------------~~~~~
+//   140 | DOCK SIDING apron: BERTHA + Guard gun flatcar (finale,|  ~~~~
+//       | Big Hold On), wharf stack (1F), boxcars, dock shed    |  harbour
+//   178 +-L-------------------------G-+---------------------+-~~~~~   L lane, G Fish Dock Road gate
+//       |MISSION | bonded store     |R| FISH MARKET: wet fish |Q|~~   R road, Q quay
+//       |(CP)    |                  |d| auction, packing, ice |u|~~
+//   195 +--------+ depot lane       |X+-----------------------+a+~~   X Guard checkpoint (closed)
+//       | ROUNDHOUSE      TURNTABLE |  GUARD RAILHEAD: sidings, tents, field kitchen
+//       | COAL STAGE (1F)  (pit)    =  level crossing        COMMAND POST (1F: key)
+//   251 +-----------------------------------------------------------+
 //
 // Route: switchman's hut → across the switching yard to the only gap in the stopped
 // freight train → hill-line switch at the water tower (crescendo 1, deck perch) → yard gate →
@@ -36,7 +43,11 @@
 // (Hank) → main stairs up to the labs (2F) → Wren's lab, terminal four (crescendo 2: zombies
 // come up both stairwells) → break room (checkpoint, 2F) → fire escape down → loading yard →
 // pier west → control tower: up two flights to the control room → back down and over the
-// drawbridge → dock siding → Bertha (finale) → cab and flatcar.
+// drawbridge (Bertha in sight, requisitioned by the Guard, cab padlocked) → south down Fish Dock
+// Road → through the fish market to the quay → Guard railhead, command post upstairs for the cab
+// key (the siren: a horde) → run west past the old turntable to the Seafarers' Mission
+// (checkpoint) → siding door → Bertha (Big Hold On: the Guard's Thump Cannon on the flatcar
+// beside her) → cab and flatcar.
 // Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
 import { LevelBuilder, F, WALL, type Theme } from '../level';
 import { STOREY } from '../constants';
@@ -47,6 +58,9 @@ const S = 0, E = Math.PI / 2, WEST = -Math.PI / 2, N = Math.PI;
 const SODIUM = '#ffb347', CREAM = '#fff1c9', RED = '#ff5a5a', GOLD = '#ffd43b', LAV = '#c9a8ff', PINK = '#ff8fc8';
 const TEAL = '#5fd6c8', STEEL = '#a9aec4', RUSTL = '#ff8a5c', WHITE_L = '#f4f4ff';
 const CHERRY = 0xc8324b, YELLOW = 0xf2c14e, LAVTANK = 0xc9a8ff, WHITE = 0xeef2f6;
+/** National Guard olive drab, canvas khaki, coal black. */
+const OLIVE = 0x5a6b3a, KHAKI = 0x9a8f62, COAL = 0x26242c;
+const OLIVE_L = '#b8c77a';
 /** Rust-red and teal boxes, with a few ochre, navy and grey ones. */
 const BOX = [0xb5523b, 0x2f8f8a, 0x8a3a32, 0x3f6f8a, 0xc98a3a, 0x2a6a66, 0xa84a5a, 0x5a6478];
 
@@ -64,7 +78,7 @@ const THEME: Theme = {
 const INTRO = '5:20 a.m. No helicopter, but Dot knows trains. Old Bertha, a diesel locomotive older than Taro, sits dry on the dock siding, and the hill line runs straight out of town. Between you and her: a rail yard, a lot of fog, and the factory where the fog comes from. Someone else is on the radio now. Humming.';
 
 export function build() {
-  const b = new LevelBuilder(180, 180, 3);
+  const b = new LevelBuilder(180, 252, 3);
   let bi = 0;
   /** A shipping container / boxcar / reefer; colour cycles through the rust-and-teal palette. */
   const box = (x: number, z: number, w: number, d: number, color?: number) => b.prop('container', x, z, w, d, { color: color ?? BOX[bi++ % BOX.length] });
@@ -396,7 +410,7 @@ export function build() {
   for (const x of [130, 142, 154, 166]) { b.prop('valve', x, 18); fog(x + 2, 19); }
   b.prop('barrier', 120, 18, 1, 6); b.prop('barrier', 128, 32, 6, 1); b.prop('barrier', 150, 33, 6, 1);
   // Valve catwalk (storey 1): a walkway on stilts over the valve row between the two tank rows,
-  // a ladder at each end against its concrete footings. Optional: a sniper perch over the farm.
+  // a ladder at each end against its concrete footings. Optional: a rifle perch over the farm.
   b.fill(124, 18, 125, 19); b.fill(174, 18, 175, 19);
   b.walls(124, 18, 125, 19, WALL.BUILDING, STOREY); b.walls(174, 18, 175, 19, WALL.BUILDING, STOREY);
   b.ladder(123, 18, '+x'); b.ladder(176, 19, '-x');
@@ -652,14 +666,19 @@ export function build() {
   b.level(0);
 
   // ------------------------------------------------------------------
-  // 13. Dock siding: an open apron with containers on both sides, Bertha (finale)
+  // 13. Dock siding: an open apron with containers on both sides, Bertha (finale: the Big Hold On)
   // ------------------------------------------------------------------
   b.carve(6, 140, 130, 177, F.CONCRETE);
   b.walls(0, 140, 5, 179, WALL.FENCE, 3); b.walls(6, 178, 130, 179, WALL.FENCE, 3);
   rail(6, 150.5, 130, 150.5); rail(6, 166, 82, 166); rail(84, 158, 130, 158);
   b.label('DOCK SIDING', 64, 147.5, 26, SODIUM, 0);
-  // Wharf stacks (north) and yard stacks (south): flanking lanes for the horde.
-  for (const [x0, z0] of [[8, 142], [48, 142], [92, 142], [110, 142], [26, 156], [46, 156], [66, 156], [112, 154], [10, 172], [40, 172]]) {
+  // Two ways out of the apron's south fence: Fish Dock Road (section 14) and the lane from the
+  // Seafarers' Mission's siding door (section 17), which is how the team comes back to Bertha.
+  b.carve(77, 178, 82, 179, F.ASPHALT);
+  b.carve(10, 178, 13, 180, F.CONCRETE);
+  // Wharf stacks (north) and yard stacks (south): flanking lanes for the horde. The strip south of
+  // Bertha (z 152-155) stays clear east to x 111: the cannon's firing lane.
+  for (const [x0, z0] of [[8, 142], [48, 142], [92, 142], [110, 142], [46, 156], [66, 156], [112, 154], [40, 172]]) {
     box(x0, z0, 6, 1); box(x0 + 6, z0, 6, 1); box(x0, z0 + 1, 6, 1);
   }
   // Wharf stack (storey 1 on top): a perch over Bertha's crank, one ladder at each end. Strong
@@ -700,13 +719,229 @@ export function build() {
   const cabDoor = b.door(23, 152, 24, 152, 'shutter', 'BERTHA');
   const ignition = b.obj('valve', 26, 153, 'Pour the diesel and crank Bertha');
   b.label('BERTHA', 18.5, 147.6, 26, '#fff3e0', 0); b.label('No. 9 DIESEL, 1958', 30, 147.8, 11, CREAM, 0);
-  b.label('FLATCAR', 33, 154, 11, CREAM, 0);
+  b.label('REQUISITIONED: MALLOW BAY GUARD', 22, 153.7, 9, OLIVE_L, 0);
+  // The Guard's gun flatcar on the spur beside her: the convoy's escort Thump Cannon, bolted down
+  // facing east down the apron (the bridge foot, the road gate and the far wharf all feed that
+  // way), with a sandbagged side to the south. Its blast can splash the team, so the lane it
+  // covers is long and clear.
+  rail(14, 155, 46, 155);
+  b.paint(27, 154, 37, 156, F.ASPHALT);
+  b.prop('barrier', 27, 156, 5, 1);
+  b.mount('cannon', 34, 155, '+x');
+  b.label('GUARD FLATCAR', 31, 157.4, 11, OLIVE_L, 0); b.label('THUMP CANNON', 37.4, 153.6, 10, GOLD, E);
   b.pick('ammo', 30, 154); b.pick('ammo', 31, 154); b.pick('ammo', 32, 154); b.pick('medkit', 20, 154); b.pick('ammo', 42, 147); b.pick('ammo', 43, 147); b.pick('medkit', 44, 154);
   b.pick('rattle', 33, 154);                                     // for Bertha's long crank
   b.pick('ammo', 60, 154); b.pick('ammo', 61, 154); b.pick('medkit', 72, 146);
   for (const [x, z] of [[19, 154], [30, 155.5], [40, 148], [14, 146], [56, 148], [76, 145], [64, 160], [88, 155], [104, 148], [122, 160], [22, 168], [50, 162]]) b.lamp(x, z);
-  b.arrow(80, 143, WEST); b.arrow(62, 147, WEST); b.arrow(44, 152, WEST);
-  zz(70, 145, WEST); zz(50, 147, WEST);
+  // First visit: Bertha in sight, but the arrows lead south to Fish Dock Road. Second visit: the
+  // mission lane's arrows lead north to her.
+  b.arrow(80, 143, S); b.arrow(80.5, 160, S); b.arrow(80, 175, S);
+  b.label('FISH DOCK ROAD', 80, 171.5, 16, SODIUM); b.lamp(76.6, 177.4); b.lamp(83.4, 177.4);
+  b.arrow(11.5, 175, N); b.arrow(11, 161, N); b.arrow(17, 158.5, E);
+  zz(70, 145, WEST); zz(50, 147, WEST); zz(80, 166, S);
+
+  // ------------------------------------------------------------------
+  // 14. Fish Dock Road: south from the apron to the Guard's closed checkpoint
+  // ------------------------------------------------------------------
+  // The only way south from the apron. The Guard closed the road with sandbags and trucks at
+  // z 207 (see-through, not passable), so the team has to go through the fish market.
+  b.walls(0, 180, 5, 251, WALL.FENCE, 3); b.walls(6, 249, 179, 251, WALL.FENCE, 3); b.walls(178, 214, 179, 248, WALL.FENCE, 3);
+  b.carve(75, 180, 84, 248, F.ASPHALT);
+  b.paint(75, 180, 75, 206, F.SIDEWALK); b.paint(84, 180, 84, 185, F.SIDEWALK); b.paint(84, 190, 84, 206, F.SIDEWALK);
+  b.walls(73, 180, 74, 235, WALL.FENCE, 3); b.walls(73, 246, 74, 248, WALL.FENCE, 3);
+  b.prop('truck', 76, 183, 2, 5, { color: WHITE }); b.label('FRESH FISH', 77, 189.4, 9, TEAL, 0);   // a reefer truck
+  b.prop('van', 82, 194, 1, 3, { color: 0x3f6f8a }); b.prop('truck', 77, 198, 2, 5, { color: 0xa8503c, rot: N });
+  b.prop('crate', 83, 182); b.prop('crate', 80, 192); b.prop('dumpster', 83, 201, 1, 2); b.prop('barrel', 76, 194);
+  b.pick('ammo', 76, 181); b.pick('medkit', 83, 190);                     // before the market
+  // The Guard checkpoint: a sandbag line across the road and two trucks behind it.
+  b.prop('barrier', 75, 207, 10, 1);
+  b.prop('truck', 76, 209, 2, 5, { color: OLIVE }); b.prop('truck', 82, 210, 2, 5, { color: OLIVE });
+  b.label('GUARD CHECKPOINT', 79.5, 204.6, 14, OLIVE_L); b.label('ROAD CLOSED', 79.5, 206.2, 11, RED);
+  b.label('FISH DOCK ROAD', 79.5, 196, 20, CREAM);
+  for (const z of [184, 196]) { b.lamp(75.4, z); b.lamp(84.6, z + 6); }
+  b.lamp(79.5, 206.6);
+  b.arrow(80, 181.5, S); b.arrow(82.5, 187.5, E);
+  zz(79, 184, S); zz(83, 188, E);
+
+  // ------------------------------------------------------------------
+  // 15. Fish market: wet fish stalls, the auction floor, the packing room and ice house, the quay
+  // ------------------------------------------------------------------
+  // A long dark hall cut into three bays by walls with one gap each, at alternate ends, so the
+  // route zig-zags: in at the west door, south through the stalls, north across the auction floor,
+  // south-east through packing and out onto the quay. Tight aisles (shotgun ground), the Piggyback's
+  // favourite hiding place; the quay outside is the first long sightline in a while.
+  b.walls(85, 180, 149, 213, WALL.BUILDING, 6);
+  b.carve(87, 182, 147, 211, F.TILES);
+  b.carve(85, 186, 86, 189, F.TILES);                                     // west doors (from the road)
+  b.fill(108, 182, 109, 203); b.fill(108, 210, 109, 211);                  // wall A: gap at the south end
+  b.fill(128, 188, 129, 211);                                              // wall B: gap at the north end
+  b.carve(148, 193, 149, 197, F.TILES);                                   // east doors (to the quay)
+  b.label('FISH MARKET', 80, 186.2, 16, SODIUM); b.lamp(84.6, 185.4); b.lamp(84.6, 190.6);
+  // Bay 1: wet fish stalls (counters in blocks, aisles between).
+  for (const x of [89, 94, 99, 104]) for (const z of [183, 193]) b.prop('counter', x, z, 2, 6, { color: 0xc9d4e0 });
+  for (const [x, z] of [[92, 186], [97, 196], [102, 184], [103, 200], [91, 199]]) b.prop('crate', x, z, 1, 1, { color: 0x9ad0e0 });   // ice tubs
+  b.prop('pallet', 90, 203, 2, 2); b.prop('pallet', 96, 206, 3, 2); b.prop('pallet', 101, 202, 2, 2); b.prop('truck', 88, 208, 2, 3, { color: YELLOW });  // fish boxes, a forklift
+  b.label('WET FISH', 97.5, 191, 18, TEAL, E);
+  b.pick('ammo', 98, 191); b.pick('shotgun', 106, 205); b.pick('ammo', 103, 210);
+  b.lamp(97, 191.5); b.lamp(103, 206);
+  b.arrow(92, 191, E); b.arrow(106.5, 196, S); b.arrow(106, 206.5, E);
+  // Bay 2: the auction floor (a sandbag-low ring of rails round the tote board).
+  b.prop('barrier', 114, 193, 4, 1); b.prop('barrier', 120, 193, 4, 1); b.prop('barrier', 114, 201, 4, 1); b.prop('barrier', 120, 201, 4, 1);
+  b.prop('barrier', 114, 194, 1, 2); b.prop('barrier', 114, 199, 1, 2); b.prop('barrier', 123, 194, 1, 2); b.prop('barrier', 123, 199, 1, 2);
+  b.prop('counter', 117, 188, 3, 1, { color: 0x8a6a40 });                // the auctioneer's podium
+  for (const [x, z] of [[111, 184], [125, 196], [112, 209], [126, 207], [119, 205]]) b.prop('pallet', x, z, 2, 2);
+  b.label('AUCTION FLOOR', 118.5, 197, 16, GOLD, 0); b.label('LOT 14: EELS', 118.5, 199, 10, CREAM, 0);
+  b.note(118, 187, 'Auction board', '3:00 a.m. auction. Lot 14, live eels, going once, going tw');
+  b.pick('medkit', 124, 184); b.pick('ammo', 113, 205);
+  b.lamp(118.5, 197); b.lamp(112, 186); b.lamp(125, 185);
+  b.arrow(111.5, 200, N); b.arrow(122, 185.5, E);
+  // Bay 3: the packing room, the ice house (a cold dark pocket) in its south-west corner.
+  b.prop('counter', 133, 190, 4, 1, { color: 0xc9d4e0 }); b.prop('counter', 140, 190, 4, 1, { color: 0xc9d4e0 });
+  b.prop('barrier', 133, 196, 9, 1);                                       // roller conveyor
+  b.prop('shelf', 147, 183, 1, 5); b.prop('crate', 145, 202); b.prop('crate', 146, 207);
+  b.fill(130, 200, 141, 200); b.fill(141, 201, 141, 211); b.carve(134, 200, 135, 200, F.TILES);
+  b.paint(130, 201, 140, 211, F.INTERIOR);
+  b.prop('shelf', 130, 203, 1, 8, { color: 0x9aa0b4 }); b.prop('shelf', 140, 203, 1, 8, { color: 0x9aa0b4 });
+  for (const [x, z] of [[133, 206], [137, 208], [134, 210]]) b.prop('crate', x, z, 1, 1, { color: 0x9ad0e0 });
+  b.pick('deagle', 136, 210); b.pick('autoshotgun', 137, 210); b.pick('medkit', 132, 210); b.pick('ammo', 138, 202);   // off-route reward
+  b.label('ICE HOUSE', 134.5, 198.6, 12, WHITE_L, 0); b.label('PACKING ROOM', 138, 186.6, 14, CREAM, E);
+  b.lamp(138, 192); b.lamp(146, 195);
+  b.arrow(133, 185.5, E); b.arrow(145, 190, S); b.arrow(146.5, 195, E);
+  zz(113, 196, N); zz(140, 193, E);
+  // The quay: bollards, nets, two trawlers in the basin.
+  b.carve(150, 180, 156, 213, F.SIDEWALK); b.carve(157, 180, 179, 213, F.WATER);
+  for (const z of [183, 190, 199, 206]) b.prop('barrel', 156, z, 1, 1, { color: 0x2b2a36 });
+  b.prop('pallet', 151, 186, 2, 2); b.prop('crate', 154, 201); b.prop('crate', 150, 209);
+  b.prop('container', 158, 185, 7, 2, { color: 0x3f6f8a }); b.prop('container', 158, 197, 8, 2, { color: 0xa8503c });
+  b.label('TRAWLER: LITTLE HADDOCK', 161.5, 188.2, 9, CREAM, 0);
+  b.label('QUAY', 153, 194, 18, SODIUM, 0);
+  b.pick('ammo', 151, 211); b.pick('medkit', 150, 181);
+  for (const z of [187, 197, 207]) b.lamp(156.6, z);
+  b.arrow(153, 200, S); b.arrow(153, 210, S);
+
+  // ------------------------------------------------------------------
+  // 16. Guard railhead: the National Guard's evacuation train and its command post
+  // ------------------------------------------------------------------
+  // The Guard meant to run the convoy's gear up the hill line behind Bertha. Their train still
+  // stands on two sidings (porous walls of flatcars and boxcars, gaps to slip through), tents and
+  // a field kitchen between, and the command post in the far corner: the sergeant's office, with
+  // Bertha's cab key, is upstairs. Grabbing it sets off the siren: the horde comes from the west
+  // half of the yard, the way back.
+  b.carve(85, 214, 177, 248, F.DIRT);
+  b.paint(150, 214, 156, 219, F.SIDEWALK); b.paint(155, 230, 177, 248, F.CONCRETE);
+  rail(85, 221, 177, 221); rail(85, 229, 177, 229); rail(20, 241, 160, 241);
+  for (const x of [90, 97, 104, 116, 123, 130, 142, 149, 161]) b.prop('truck', x, 220, 5, 2, { color: OLIVE });   // trucks on flatcars
+  for (const x of [88, 96, 112, 120, 136, 144, 160]) box(x, 228, 6, 2, OLIVE);                                  // boxcars
+  b.label('MALLOW BAY GUARD', 128, 224.6, 14, OLIVE_L, 0);
+  for (const x of [93, 100, 107]) b.prop('container', x, 233, 3, 3, { color: KHAKI });                         // tents
+  b.prop('counter', 114, 234, 4, 1, { color: 0x6f7f9a }); b.prop('barrel', 119, 234); b.prop('barrel', 119, 236);
+  b.label('FIELD KITCHEN', 116, 236.2, 11, CREAM, E);
+  b.prop('tank', 170, 223, 3, 3, { color: OLIVE });
+  b.prop('truck', 137, 237, 5, 2, { color: OLIVE }); b.prop('truck', 128, 244, 5, 2, { color: OLIVE, rot: N });
+  for (const [x, z] of [[112, 225], [140, 225], [100, 245], [150, 233]]) { b.prop('beacon', x, z); b.lamp(x + 0.5, z + 1.3); }   // light towers
+  b.prop('barrier', 152, 235, 1, 5); b.prop('barrier', 152, 243, 1, 4); b.prop('barrier', 146, 247, 5, 1);    // sandbags round the CP
+  b.pick('ammo', 112, 231); b.pick('medkit', 125, 237); b.pick('ammo', 144, 233); b.pick('ammo', 156, 225); b.pick('firebomb', 130, 232);
+  b.pick('rifle', 101, 237); b.pick('smg', 102, 237); b.pick('armor', 95, 237);                               // the tents' gun rack
+  b.label('GUARD RAILHEAD', 153, 217, 20, OLIVE_L);
+  b.arrow(153, 216, S); b.arrow(154.5, 226, S); b.arrow(158, 240.5, E);
+  zz(152, 223, S); zz(110, 240, WEST);
+  // The command post: radio room (0) and the sergeant's office (1) up an inside flight.
+  b.fill(162, 234, 176, 247); b.walls(162, 234, 176, 247, WALL.BUILDING, STOREY);
+  b.fill(177, 234, 177, 248);                                              // no slot behind it
+  b.carve(163, 235, 175, 246, F.INTERIOR);
+  b.carve(162, 239, 162, 241, F.INTERIOR);                                // front door
+  b.fill(172, 236, 172, 238); b.fill(175, 236, 175, 238);
+  b.stairs(173, 236, 174, 238, '-z');
+  b.prop('counter', 163, 245, 5, 1, { color: 0x6f7f9a }); b.prop('radio', 165, 244);
+  b.prop('bed', 169, 245, 2, 1); b.prop('bed', 172, 245, 2, 1); b.prop('shelf', 163, 235, 1, 3);
+  b.pick('medkit', 166, 236); b.pick('ammo', 167, 236); b.pick('rattle', 168, 236);   // for the run back
+  b.label('COMMAND POST', 159, 240.5, 14, RED, E); b.label('STAIRS UP', 173.5, 240.4, 10, GOLD, 0);
+  b.lamp(161.4, 238.4); b.lamp(168, 240);
+  b.arrow(165, 240.5, E);
+  b.level(1);
+  b.fill(162, 234, 176, 247);
+  b.carve(163, 235, 175, 246, F.INTERIOR);
+  b.prop('desk', 164, 243, 2, 1); b.prop('shelf', 163, 236, 1, 3); b.prop('beacon', 175, 246);
+  b.item('keycard', 'cabkey', 165, 245, "Bertha's cab key");
+  b.note(166, 244, 'Requisition order', '2:45 a.m. GUARD RAILHEAD. Loco No. 9 BERTHA taken for the hill line run. Escort gun on the flatcar beside her. Cab locked, key in the CP. Night watch: STAY AWAKE.');
+  b.pick('armor', 170, 244); b.pick('ammo', 171, 244);
+  b.label('SIREN', 174.5, 244.6, 10, RED, 0); b.label('STAIRS DOWN', 173.5, 235.5, 9, CREAM, N);
+  b.lamp(168, 241); b.lamp(165, 238);
+  b.level(0);
+
+  // ------------------------------------------------------------------
+  // 17. Old steam depot (turntable, roundhouse, coal stage) and the Seafarers' Mission (checkpoint)
+  // ------------------------------------------------------------------
+  // The way back, west over the level crossing with the siren horde behind. The flooded turntable
+  // pit sits in the middle (cross on its 2-wide deck or go round), the roundhouse blocks the north
+  // with bays to run through or round, and the coal stage is a storey-1 perch (stairs and a ladder)
+  // over it all. The mission is the sailors' chapel in the north-west corner.
+  b.carve(73, 236, 74, 245, F.ASPHALT);                                   // level crossing
+  b.label('LEVEL CROSSING', 76, 240.5, 11, GOLD, WEST);
+  b.carve(6, 195, 72, 248, F.DIRT);
+  b.paint(6, 195, 72, 198, F.CONCRETE);                                    // depot lane
+  b.label('OLD STEAM DEPOT', 64, 236, 20, SODIUM, WEST);
+  // Turntable: a flooded round pit with the deck across it.
+  for (let z = 213; z <= 231; z++) for (let x = 35; x <= 53; x++) if ((x - 44) ** 2 + (z - 222) ** 2 <= 81) b.carve(x, z, x, z, F.WATER);
+  b.carve(35, 221, 53, 222, F.CONCRETE);
+  b.label('TURNTABLE', 44, 221.9, 12, GOLD, WEST);
+  for (const r of [0.6, 1.2, 1.9, 2.5]) { const c = Math.cos(r), sn = Math.sin(r); rail(44 + c * 10, 222 + sn * 10, 44 + c * 17, 222 + sn * 17); }   // spokes
+  // Coal wagons: a line east of the pit.
+  for (const z of [213, 219, 225]) box(58, z, 2, 6, COAL);
+  // Roundhouse: five bays open to the turntable, two back doors to the depot lane.
+  b.fill(26, 200, 62, 210); b.walls(26, 200, 62, 210, WALL.BUILDING, 7);
+  b.carve(27, 201, 61, 208, F.INTERIOR);
+  for (const x of [29, 36, 43, 50, 57]) b.carve(x, 209, x + 3, 210, F.INTERIOR);
+  b.carve(31, 200, 32, 200, F.INTERIOR); b.carve(55, 200, 56, 200, F.INTERIOR);
+  b.prop('bus', 30, 202, 2, 6, { color: COAL }); b.prop('bus', 37, 202, 2, 6, { color: 0x3a2a2a }); b.prop('bus', 51, 202, 2, 6, { color: 0x2f4a3a });
+  b.prop('counter', 45, 201, 4, 1, { color: 0x6f7f9a }); b.prop('shelf', 61, 201, 1, 4);
+  b.pick('shotgun', 46, 202); b.pick('ammo', 47, 202); b.pick('medkit', 59, 207);
+  b.label('ROUNDHOUSE', 44.5, 212, 14, SODIUM, 0); b.lamp(44, 205); b.lamp(30.5, 211.4); b.lamp(58.5, 211.4);
+  // Coal stage: a storey-1 platform, stairs up its east side, a ladder on its north face.
+  b.fill(8, 228, 19, 237); b.walls(8, 228, 19, 237, WALL.BUILDING, STOREY);
+  b.fill(20, 229, 22, 229); b.fill(20, 232, 22, 232); b.walls(20, 229, 22, 232, WALL.BUILDING, STOREY);
+  b.stairs(20, 230, 22, 231, '-x');
+  b.ladder(13, 227, '+z');
+  b.label('COAL STAGE', 25.5, 233.6, 12, CREAM, WEST); b.label('LADDER', 13.5, 226.4, 10, GOLD, 0);
+  b.level(1);
+  b.carve(8, 228, 19, 237, F.CONCRETE);
+  box(9, 231, 2, 1, COAL); box(9, 235, 2, 1, COAL); box(15, 234, 1, 2, COAL);   // coal tubs
+  b.pick('rifle', 12, 236); b.pick('ammo', 17, 236); b.pick('firebomb', 9, 229);
+  b.label('COAL STAGE', 14, 232.5, 11, CREAM, E);
+  b.lamp(11, 230); b.lamp(17, 235);
+  b.level(0);
+  // Depot clutter: a dead engine and tender on the depot line, a water crane, ash pits.
+  b.prop('bus', 28, 240, 6, 2, { color: COAL }); box(35, 240, 5, 2, COAL);
+  b.prop('pillar', 26, 236, 1, 1, { color: 0x3a3a48 }); b.label('WATER CRANE', 26.5, 238.4, 9, STEEL, 0);
+  b.label('ASH PIT', 50, 236.5, 10, STEEL, WEST); b.prop('barrier', 47, 235, 6, 1);
+  for (const [x, z] of [[64, 214], [66, 228], [24, 218], [30, 246], [60, 246], [14, 214]]) b.prop('crate', x, z);
+  b.prop('barrel', 68, 205); b.prop('barrel', 8, 222);
+  b.pick('ammo', 66, 243); b.pick('medkit', 27, 225); b.pick('ammo', 20, 205);
+  for (const [x, z] of [[68, 238], [56, 244], [33, 233], [28, 216], [22, 204], [12, 199], [40, 196], [64, 199]]) b.lamp(x, z);
+  b.arrow(70, 240.5, WEST); b.arrow(50, 245, WEST); b.arrow(28, 236, N); b.arrow(29, 214, N); b.arrow(21, 205, N); b.arrow(15.5, 198, N);
+  zz(60, 240, WEST); zz(30, 228, N); zz(20, 200, N);
+  // The Seafarers' Mission: a sailors' chapel and canteen, sealed SAFE floor. In by the depot-lane
+  // door (opens when the key is taken), out by the siding door, then a short lane north to Bertha.
+  b.fill(6, 181, 25, 194); b.walls(6, 180, 25, 194, WALL.BUILDING, 6);
+  b.carve(8, 182, 23, 193, F.SAFE);
+  const missionEntry = b.door(14, 194, 16, 194, 'shutter', "SEAFARERS' MISSION");
+  b.label("SEAFARERS' MISSION", 15.5, 196.8, 14, SODIUM, 0); b.lamp(13.4, 195.4); b.lamp(17.6, 195.4);
+  b.prop('bed', 8, 184, 2, 1); b.prop('bed', 8, 187, 2, 1); b.prop('bed', 8, 190, 2, 1);   // bunks
+  b.prop('counter', 18, 182, 5, 1, { color: 0x8a6a40 });                  // the tea urn
+  b.prop('bench', 13, 190, 3, 1); b.prop('bench', 18, 190, 3, 1);          // pews
+  b.prop('beacon', 23, 187);                                                // the ship's bell
+  b.label("SHIP'S BELL", 21.5, 187.5, 9, GOLD, E);
+  b.note(21, 192, 'Mission noticeboard', "Seafarers welcome! Tea all night, bunks free. Please do NOT ring the ship's bell after ten. It brings the whole wharf over.");
+  b.pick('shotgun', 18, 193); b.pick('autoshotgun', 19, 193); b.pick('rifle', 20, 193); b.pick('smg', 21, 193); b.pick('launcher', 22, 193); b.pick('magnum', 23, 193);   // the Big Hold On is next
+  for (const x of [8, 9, 10, 11]) b.pick('medkit', x, 193);
+  b.pick('ammo', 23, 183); b.pick('ammo', 23, 184); b.pick('ammo', 23, 185);
+  b.pick('armor', 12, 186); b.pick('armor', 13, 186); b.pick('firebomb', 22, 189); b.pick('machete', 23, 191); b.pick('bat', 23, 190);
+  const missionLever = b.obj('lever', 15, 182, 'Unbar the siding door');
+  b.label('SAFE ROOM', 16, 186.6, 22, RED); b.label("SEAFARERS' MISSION", 16, 188.6, 11, SODIUM);
+  b.lamp(16, 188); b.lamp(11, 183.5);
+  const missionExit = b.door(10, 181, 13, 181, 'shutter', 'SIDING DOOR');
+  b.label('TO BERTHA', 11.5, 179, 10, GOLD, 0); b.lamp(13.6, 179.4);
+  b.density(87, 182, 147, 211, 1.5); b.density(85, 214, 177, 248, 1.3);
 
   // ------------------------------------------------------------------
   // Quest
@@ -811,31 +1046,77 @@ export function build() {
       ['Voice', 'Once you\'re across, I\'ll see your lights from the hill. Hurry.'],
     ],
   });
-  b.reach({ x0: 10, z0: 144, x1: 42, z1: 160 }, {
-    objective: 'Get to Bertha on the dock siding',
+  b.reach({ x0: 75, z0: 182, x1: 84, z1: 190 }, {
+    objective: 'Head south down Fish Dock Road',
     radio: [
       ['Taro', 'Bridge is down. Back downstairs, everyone.'],
-      ['Dot', 'There she is. Bertha! Hello, old girl.'],
+      ['Mochi', 'There\'s Bertha, end of the siding! ...Why is there a cannon parked next to her?'],
+      ['Nori', 'Army stencils on everything. The Guard took her, and they padlocked her cab.'],
+      ['Dot', 'Guard railhead\'s south, past the fish market. Their sergeant keeps the keys, sweet pea.'],
+    ],
+  });
+  b.reach({ x0: 150, z0: 205, x1: 156, z1: 213 }, {
+    objective: 'Cut through the fish market',
+    radio: [
+      ['Pip', 'A fish market. In the dark. Full of sleepers. Cool cool cool.'],
+      ['Taro', 'Mind the stalls. The little ones in onesies like to hide underneath.'],
+      ['Mochi', 'In the west door, out by the quay. Like a delivery with extra steps.'],
+    ],
+  });
+  b.collect('cabkey', {
+    objective: 'Find the key to Bertha\'s cab', opens: [missionEntry],
+    radio: [
+      ['Dot', 'That\'s the Guard railhead. Command post\'s the cabin with the siren on the roof.'],
+      ['Pip', 'Fetch quest! The key\'s upstairs. It\'s always upstairs.'],
+      ['Nori', 'Nobody touch the siren.'],
+    ],
+  });
+  b.gather({ x0: 8, z0: 182, x1: 23, z1: 193 }, {
+    objective: 'Run for the Seafarers\' Mission', checkpoint: true, horde: true, closes: [missionEntry],
+    radio: [
+      ['Pip', 'Got the key! Also I MAY have leaned on the siren button.'],
+      ['Nori', 'Pip.'],
+      ['Taro', 'The Seafarers\' Mission never locks its door. Back past the old turntable. Run!'],
+    ],
+  });
+  b.use(missionLever, {
+    objective: 'Unbar the siding door', opens: [missionExit],
+    radio: [
+      ['Taro', 'My wife and I sang carols here every Christmas. Same tea urn, I think.'],
+      ['Nori', 'Guns, kit, a bell nobody rings. Load up. Bertha\'s crank is a long one.'],
+      ['Mochi', 'Siding door goes straight to Bertha. Last drop of the night, team.'],
+    ],
+  });
+  b.reach({ x0: 18, z0: 153, x1: 40, z1: 158 }, {
+    objective: 'Get back to Bertha',
+    radio: [
+      ['Dot', 'Key in the cab, sweet pea, and say hello to Bertha for me.'],
       ['Taro', 'She\'s older than me. I like her already.'],
     ],
   });
   b.use(ignition, {
-    objective: 'Fuel up and start Bertha', horde: true, hold: 120, opens: [cabDoor],
-    // Authored crescendo (the other holdouts get the server's default curve): Bertha coughs to life
-    // in fits, so the waves come with breathers between, a Brute midway, then the big rush.
+    objective: 'Fuel up and start Bertha', horde: true, hold: 180, big: true, opens: [cabDoor],
+    // The waypoint stands on the open apron by the valve (the valve tile itself is solid), 8 tiles
+    // from the Guard's cannon on the flatcar.
+    at: [27.5, 154.5],
+    // The Big Hold On: Bertha coughs to life in fits, so the (much bigger) waves come with short
+    // breathers between, a Brute midway, a second flanking rush, then the long final push.
     holdScript: [
-      { kind: 'wave', secs: 22 },
-      { kind: 'breather', secs: 7, msg: 'Bertha wheezes... keep cranking!' },
-      { kind: 'wave', secs: 20, horde: 0.75, flank: true },
-      { kind: 'specials', secs: 14, horde: 0.4 },
+      { kind: 'wave', secs: 25 },
+      { kind: 'breather', secs: 8, msg: 'Bertha wheezes... keep cranking!' },
+      { kind: 'wave', secs: 22, horde: 0.8, flank: true },
+      { kind: 'specials', secs: 16, horde: 0.4 },
       { kind: 'breather', secs: 8, msg: 'Bertha coughs. That\'s good, right?' },
-      { kind: 'brute', secs: 22 },
+      { kind: 'brute', secs: 25 },
+      { kind: 'wave', secs: 24, horde: 0.9, flank: true, msg: 'Here comes the whole wharf! Thump them!' },
       { kind: 'breather', secs: 7 },
-      { kind: 'final', secs: 20, msg: 'She\'s nearly up! Hold the line!' },
+      { kind: 'final', secs: 45, msg: 'She\'s nearly up! Hold the line!' },
     ],
     radio: [
       ['Dot', 'Prime her, crank her, and hold on. Bertha takes her time and so should you.'],
-      ['Pip', 'Two minutes?! Dot, that\'s like a WEEK.'],
+      ['Pip', 'Three minutes?! Dot, that\'s like a MONTH.'],
+      ['Nori', 'That\'s the Guard\'s cannon on the flatcar. Somebody man it. Aim long, it splashes.'],
+      ['Pip', 'I CALL THE CANNON!'],
     ],
   });
   b.gather({ x0: 22, z0: 150, x1: 37, z1: 151 }, {
