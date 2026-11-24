@@ -59,7 +59,7 @@ export class Room implements CombatHost {
    */
   private hs = this.freshHold();
   /** Lane cells of the Big Hold On just won, while its escape step runs (trickle from every lane); null otherwise. */
-  private escape: { step: number; zone: number[]; t: number } | null = null;
+  private escape: { step: number; names: string[]; t: number } | null = null;
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
@@ -386,7 +386,7 @@ export class Room implements CombatHost {
     const s = this.cur;
     if (!s) return;
     if (this.escape && this.escape.step !== this.step) this.escape = null;
-    if (this.escape) this.hs.zone = this.escape.zone;
+    if (this.escape) this.useLanes(this.escape.names);
     this.collected = 0;
     this.holdout = -1;
     if (!silent) this.events.push(['step', this.step]);
@@ -446,7 +446,7 @@ export class Room implements CombatHost {
     const st = hs.stat;
     if (!process.env.NODE_ENV?.startsWith('prod')) console.log(`[big hold ${this.code}] ch${this.ch + 1} "${s.objective}" won in ${(this.time - st.t0).toFixed(0)} s, ${this.players.size} survivors: ${st.spawned} commons spawned, peak ${st.peak} alive, ${st.downs} downs, ${st.deaths} deaths, ${this.kills - st.kills} kills (${st.gunKills} by guns)`);
     const all = Object.keys(hs.lanes);
-    if (all.length) this.escape = { step: this.step + 1, zone: this.zoneOf(all), t: 0 };
+    if (all.length) this.escape = { step: this.step + 1, names: all, t: 0 };
   }
 
   private updateQuest(dt: number): void {
@@ -1184,18 +1184,23 @@ export class Room implements CombatHost {
       // A holdout with spawn zones: only there (however far), unless nowhere in them is hidden and walkable.
       // ZONE_MIN out first (the nearest of a few hidden cells past it, so a deep zone still feeds the
       // fight); a zone that does not reach that far uses the caller's minimum.
-      const zone = this.hs.zone, players = this.standing(), guns = this.def.mounts, g2 = ZONE_GUN_GAP * ZONE_GUN_GAP;
+      // One random live lane per spawn (the others only if it has nowhere valid), then the nearest of
+      // a few hidden cells in it: every live lane gets its share however short or long it is.
+      const sets = (this.hs.zoneSets.length ? this.hs.zoneSets : [this.hs.zone]).filter((z) => z.length), players = this.standing(), guns = this.def.mounts, g2 = ZONE_GUN_GAP * ZONE_GUN_GAP;
+      for (let k = sets.length - 1; k > 0; k--) { const j = (Math.random() * (k + 1)) | 0; [sets[k], sets[j]] = [sets[j], sets[k]]; }
       for (const far of [true, false]) {
         const lo = far ? Math.max(minD, ZONE_MIN) : minD;
-        let best = -1, found = 0;
-        for (let tries = 0; tries < 60 && found < 4; tries++) {
-          const c = zone[(Math.random() * zone.length) | 0], d = field[c];
-          if (d < lo || d >= INF || (best >= 0 && d >= field[best])) continue;
-          const o = this.L.centre(c);
-          if (far && guns.some((m) => (m.x - o.x) ** 2 + (m.z - o.z) ** 2 < g2)) continue;
-          if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) { best = c; found++; }
+        for (const zone of sets) {
+          let best = -1, found = 0;
+          for (let tries = 0; tries < 40 && found < 4; tries++) {
+            const c = zone[(Math.random() * zone.length) | 0], d = field[c];
+            if (d < lo || d >= INF || (best >= 0 && d >= field[best])) continue;
+            const o = this.L.centre(c);
+            if (far && guns.some((m) => (m.x - o.x) ** 2 + (m.z - o.z) ** 2 < g2)) continue;
+            if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) { best = c; found++; }
+          }
+          if (best >= 0) return best;
         }
-        if (best >= 0) return best;
       }
     }
     if (this.holdout >= 0 && field === this.flow) {
@@ -1638,7 +1643,7 @@ export class Room implements CombatHost {
   private freshHold() {
     return {
       stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false,
-      lanes: {} as Record<string, number[]>, zone: [] as number[], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0,
+      lanes: {} as Record<string, number[]>, zone: [] as number[], zoneSets: [] as number[][], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0,
       stat: { spawned: 0, peak: 0, downs: 0, deaths: 0, gunKills: 0, kills: 0, t0: 0 },
     };
   }
@@ -1672,6 +1677,8 @@ export class Room implements CombatHost {
 
   /** Cells of the named lanes (no lanes on the step: none, so spawns go anywhere as usual). */
   private zoneOf(names: string[]): number[] { return names.flatMap((n) => this.hs.lanes[n] ?? []); }
+  /** Point spawns at the named lanes (zone: all their cells; zoneSets: one list per lane). */
+  private useLanes(names: string[]): void { this.hs.zone = this.zoneOf(names); this.hs.zoneSets = names.map((n) => this.hs.lanes[n] ?? []).filter((c) => c.length); }
   /** Live lanes of stage `g`: its own list, else every lane but the flank 'C'. */
   private liveLanes(g: HoldStage): string[] { return g.lanes ?? Object.keys(this.hs.lanes).filter((n) => n !== 'C'); }
   /** Lanes stage `g`'s specials push and Brute come down: its `push`, else 'C' if the step has one, else its live lanes. */
@@ -1680,9 +1687,9 @@ export class Room implements CombatHost {
   private viaPush<T>(f: () => T): T {
     const hs = this.hs, g = hs.stages[hs.i];
     if (!g || !Object.keys(hs.lanes).length) return f();
-    const keep = hs.zone;
-    hs.zone = this.zoneOf(this.pushLanes(g));
-    try { return f(); } finally { hs.zone = keep; }
+    const keep = hs.zone, keepSets = hs.zoneSets;
+    this.useLanes(this.pushLanes(g));
+    try { return f(); } finally { hs.zone = keep; hs.zoneSets = keepSets; }
   }
 
   /** Begin holdout stage `i`. `opening`: the first stage, whose horde is the step's `horde` flag. */
@@ -1698,7 +1705,7 @@ export class Room implements CombatHost {
       if (up) push = g.specials ?? H.push.specials[k];
       else { hs.bruteWant = true; hs.bruteTry = 0; }
     }
-    if (Object.keys(hs.lanes).length) hs.zone = this.zoneOf(this.liveLanes(g));
+    if (Object.keys(hs.lanes).length) this.useLanes(this.liveLanes(g));
     let size = g.horde ?? H.horde[g.kind];
     if (hs.big) {
       // Budget: base x the stage's fraction; `open` of it comes now, the rest trickles over the stage.

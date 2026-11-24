@@ -87,6 +87,7 @@ export default {
   "item": "物品",
   "used it": "用了它",
   "Pick up {item}": "撿起{item}",
+  "{item}: needed once the hold starts": "{item}：死守開始後才用得上",
   "Restock {w}": "補滿{w}",
   "Already carrying the {w}": "已經拿著{w}了",
   "Swap your {old} for the {w}": "把{old}換成{w}",

@@ -600,7 +600,8 @@ export function buildWorld(L: Level): World {
       const s = def.steps[step];
       activeObj = s?.kind === 'use' && s.target !== undefined ? s.target : -1;
       for (const p of pickups) {
-        if (p.def.kind === 'item') p.shown = s?.kind === 'collect' && s.group === p.def.group;
+        // Items show in a collect step, or in a holdout that waits on them (Step.gates items).
+        if (p.def.kind === 'item') p.shown = (s?.kind === 'collect' || !!s?.gates?.some((g) => g.items !== undefined)) && s?.group === p.def.group;
         else if (p.def.kind === 'obj') p.shown = p.def.id === activeObj;
         p.group.enabled = p.shown && !p.taken;
       }

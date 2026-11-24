@@ -445,7 +445,7 @@ export class LevelBuilder {
     if (o.area?.lv !== undefined && !(o.area.lv >= 0 && o.area.lv < this.levels)) throw new Error(`step "${o.objective}": area storey ${o.area.lv} does not exist`);
     this.steps.push({
       kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold, holdScript: o.holdScript,
-      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...(o.big ? { big: true } : {}), ...(o.lanes ? { lanes: o.lanes } : {}), ...(o.gates ? { gates: o.gates } : {}), ...extra,
+      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...(o.big ? { big: true } : {}), ...(o.lanes ? { lanes: o.lanes } : {}), ...(o.gates ? { gates: o.gates, ...(o.gates.some((g) => g.items !== undefined) ? { count: Math.max(...o.gates.map((g) => g.items ?? 0)) } : {}) } : {}), ...extra,
     });
     return this.steps.length - 1;
   }
@@ -485,6 +485,17 @@ export class LevelBuilder {
    * ammo pile and a plaster on the nearest free floor to the machine (walked to, so never through a
    * wall). They are `keep`: the server's loot roll never thins them, so the stash is always there.
    */
+  /** Supplies within 6 tiles of a Big Hold On's stand (same storey) are its prepare-phase cache: never thinned. */
+  private keepBigStands(): void {
+    for (const s of this.steps) {
+      if (!s.big) continue;
+      for (const p of this.pickups) {
+        if (p.kind === 'obj' || p.kind === 'item' || Math.round((p.y ?? 0) / STOREY) !== Math.round((s.at.y ?? 0) / STOREY)) continue;
+        if (Math.hypot(p.x - s.at.x, p.z - s.at.z) <= 6 * TILE) p.keep = true;
+      }
+    }
+  }
+
   private stockHolds(): void {
     const { W, H, WH } = this;
     const used = new Set<number>();
@@ -626,6 +637,7 @@ export class LevelBuilder {
     if (!this.steps.length) throw new Error(`${meta.id}: a chapter needs quest steps`);
     this.finishStoreys();
     this.stockHolds();
+    this.keepBigStands();
     this.scatterMeds();
     return {
       ...meta, theme: meta.theme ?? this.theme, W: this.W, H: this.H, levels: this.levels,

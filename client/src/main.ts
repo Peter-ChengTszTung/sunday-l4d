@@ -673,7 +673,12 @@ function findTarget(): Target {
     else if (mk > 0) { usable = me.meds[mk] < MEDS[mk].max; text = usable ? t('Take the {w}', { w: t(MEDS[mk].name) }) : t('No room for more {w} ({n})', { w: t(MEDS[mk].name), n: MEDS[mk].max }); }
     else if (k === 'ammo') { usable = me.primary >= 0; text = t(usable ? 'Refill ammo' : 'Ammo pile (pistol ammo is endless)'); }
     else if (k === 'obj') { if (holdout >= 0) continue; text = t(pv.def.label ?? 'Use'); }
-    else if (k === 'item') text = t('Pick up {item}', { item: t(pv.def.label ?? 'item') });
+    else if (k === 'item') {
+      // A holdout's items only count once its timer is running.
+      const sc = L.def.steps[step];
+      usable = sc?.kind === 'collect' || holdout >= 0;
+      text = usable ? t('Pick up {item}', { item: t(pv.def.label ?? 'item') }) : t('{item}: needed once the hold starts', { item: t(pv.def.label ?? 'item') });
+    }
     else if (k === 'armor') { usable = me.armor < ARMOR.max; text = t(usable ? 'Strap on a Pillow Vest' : 'Your Pillow Vest is still plump'); }
     else {
       const wi = weaponIndex(k as WeaponId), w = WEAPONS[wi], cur = w.slot === 'sidearm' ? me.sidearm : w.slot === 'melee' ? me.melee : me.primary;
@@ -1464,7 +1469,7 @@ function updateHud(dt: number): void {
   hud.setTeam(team);
   hud.setHoldout(holdout);
   const s = L.def.steps[step];
-  hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
+  hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' || s.count ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();
   if (openNote && Math.hypot(openNote.def.x - me.x, (openNote.def.y ?? 0) - me.gy, openNote.def.z - me.z) > PLAYER.useRange + 1) { hud.note(null); openNote = null; }
   hud.crosshair(me.st === PSTATE.ALIVE || downShooter());
