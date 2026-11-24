@@ -8,10 +8,32 @@ Campaign brief for level design. Four chapters, each 30–60 minutes for a 4-pla
 - **Where** says which storey a step is on when it isn't street level. Every chapter has real stacked storeys (storey 0 is the ground, storey 1 the first floor up, and so on; see `docs/storeys.md`), joined by stairs, ramps, escalators and ladders. Areas, objectives and perches can sit on upper storeys, and the horde climbs the same stairs and ladders you do.
 - **HUD** is the objective line (max 40 chars). For `collect`, the engine appends the count, so it isn't in the text.
 - **Radio** lines play when the step begins (max 90 chars each). Speaker names are what the subtitle shows. Until chapter 4 step 8, Wren's subtitle is **Voice**.
-- **Flags** say what happens with the step: `horde` / `brute` when it begins, `holdout N s`, `checkpoint` (the team respawns here after a wipe), `opens: X` (a door or barrier that opens when the step completes), `closes: X` (a door that shuts behind the team when the step completes, sealing a safe room), `chapter end` (the last step). The start safe room needs no `checkpoint` flag: the team respawns there until it reaches the first checkpoint.
+- **Flags** say what happens with the step: `horde` / `brute` when it begins, `holdout N s`, `big` (a Big Hold On, see below), `checkpoint` (the team respawns here after a wipe), `opens: X` (a door or barrier that opens when the step completes), `closes: X` (a door that shuts behind the team when the step completes, sealing a safe room), `chapter end` (the last step). The start safe room needs no `checkpoint` flag: the team respawns there until it reaches the first checkpoint.
 - **Safe-room exits** are their own short `use` step after each checkpoint (a switch or lever by the back door), numbered with a "b" (for example 1.6b), so the main step numbers stay put.
 - **Pacing target:** about 3 minutes per main step including fighting, which puts 13–14 steps at roughly 40–50 minutes. The "b" exit steps take seconds and don't count. Reach legs should be long, winding street or interior runs, not short hops.
-- **Brute:** one per chapter, each with a nickname the radio uses.
+- **Brute:** one per chapter, each with a nickname the radio uses. The finale's script adds its own (two in chapter 4), and they have no nickname.
+
+### Big Hold On: the finale rules
+
+Each chapter ends with a Big Hold On: a `use` step with `big`, a 150 s hold, and a `gather` step after it that is the escape. The approved design is `docs/big-hold-on-v2.html`; the numbers below are the code (`server/tuning.ts` `BIG_HOLD`, `ZONE_MIN`, `ZONE_GUN_GAP`).
+
+- **Prepare.** Nothing spawns until someone uses the objective. Every finale has a supply stand within a few tiles of it: a medkit for each of four survivors, ammo and throwables. Use the time.
+- **Lanes.** The step names its lanes and gives each its own spawn zone behind its entrance. **A** and **B** are the front lanes, inside the mounted gun's arc (±80° of its facing), and carry the commons. **C** is the flank, outside every arc: the Brute and the special pushes come down it, and it is the rest of the team's job. Each stage lists its live lanes; wave 1 is lane A only.
+- **Spawns** land only in live lanes' zones, at least 24 path tiles from the team and at least 30 m in a straight line from every mounted gun, so the flood walks in down the lanes instead of appearing at the sandbags.
+- **Stage script.** Wave 35 s (A), breather 10 s, wave 35 s (A + B, a special push of 2), Brute 25 s (the Brute from C, a light trickle down A and B), breather 10 s, final 35 s (A + B, specials kept topped up to 2–3 from C). The final is no heavier than wave 2. Chapter 4 runs a shorter version with two Brute stages. A Brute stage while a Brute is still up becomes a specials push instead (one Brute at a time).
+- **Budgets per player count (Normal).** Commons are fixed budgets, not multipliers. Wave 1 is the base, wave 2 and the final are 1.5 × base, a Brute stage trickles 0.4 × base, a breather nothing. 60% of a wave arrives at once, the rest trickles evenly over the stage. Easy, Hard and Nightmare scale the base by their horde multiplier.
+
+  | Survivors | 1 | 2 | 3 | 4 |
+  | --- | --- | --- | --- | --- |
+  | Base (wave 1) | 22 | 30 | 40 | 50 |
+  | Wave 2 / final | 33 | 45 | 60 | 75 |
+  | Commons alive at once | 30 | 40 | 55 | 70 |
+
+- **Breathers bring the dead back.** A survivor who died comes back when a breather starts, so one early death doesn't end the hold.
+- **The gunner is a target.** In each special push, one grabber (Snatcher or Piggyback) goes for whoever is on a mounted gun.
+- **Timer stops** (`gates`). Chapters 2 and 3 stop the timer at set points until the team does a job (pick up a power cell, hold a crank). While it is stopped the stage doesn't advance, but the horde already queued keeps coming.
+- **Escape.** When the timer runs out the vehicle opens. Until everyone is aboard, one walker spawns every 1.1 s from the lane zones (all lanes, flank included), up to the cap. The run is short in chapters 1 to 3 and a real run in chapter 4.
+- **Map rules.** Each gun sits in a sandbag nest with a wall or vehicle at its back and both front lanes in its arc, with 25 m or more of open lane in front of it. Guns have 8 facings (diagonals included). Cover in the arena is low and imperfect. The arena itself has no sleepers waiting (density 0).
 
 ---
 
@@ -85,7 +107,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 **Intro card:**
 > 3:00 a.m. A sweet lavender fog rolled through Mallow Bay, and everyone asleep got out of bed and kept walking. You four were awake. Lucky you. Now the radio is crackling: a night dispatcher called Dot says there's a way out of town, and she'll talk you there. First, you have to get out of the laundromat.
 
-**Requirements check:** start safe room 1.1 · checkpoints 1.6, 1.10, 1.16 · crescendos 1.4, 1.8, 1.15 · collect 1.7 · Brute 1.17 · Big Hold On (finale) 1.19
+**Requirements check:** start safe room 1.1 · checkpoints 1.6, 1.10, 1.16 · crescendos 1.4, 1.8, 1.15 · collect 1.7 · Brute 1.17 · Big Hold On (finale, teaching: Popcorn Gatling, Brute from the flank) 1.19 · escape 1.20
 
 **1.1 · `use` · Start safe room**
 - **Where:** Suds & Bubbles 24h Laundromat. A row of dryers, a folding table with a CB radio, and a front roller shutter onto Marshmallow Avenue.
@@ -270,30 +292,40 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** brute
 
 **1.18 · `use` · Gate**
-- **Where:** The gate switch inside Gerald's guard booth. It opens every way into the depot yard.
+- **Where:** The gate switch inside Gerald's guard booth. It runs the whole yard: the depot gate, the freight spur gate and the bay roller door all roll up, so the finale's three lanes are open before anyone touches the ignition.
 - **HUD:** `Open the depot gate`
 - **Radio:**
   - Dot: "Gate switch is in Gerald's booth. Sorry, Gerald."
   - Taro: "Gerald and I shared a thermos most nights. Sleep well, big fella."
-  - Dot: "That switch opens every door in the yard. The shuttle will want a clear road."
-- **Flags:** opens: depot gate
+  - Dot: "That switch runs the whole yard, sweet pea. The gate, the freight tunnel and the bay roller door. Three ways in."
+- **Flags:** opens: depot gate, freight spur gate, bay roller door
 
 **1.19 · `use` · Big Hold On (finale)**
-- **Where:** The depot maintenance bay, one open yard from the fence to the back wall. Hospital Shuttle No. 4 sits in the middle and its ignition is at the driver's end. The Guard wired their evacuation siren to the bay, so cranking the shuttle sets it off and every sleeper downtown comes to hush it. One way in during the hold: the siren pulls the town into Depot Square and through the depot gate (north), straight at the Guard's **Popcorn Gatling** (a mounted minigun) on its sandbags just north of the ignition, facing the gate. The freight spur tunnel (north-east), the bay roller door (west) and the bus wash (south-west) stay shut until the shuttle starts (spawn zone: Depot Square). Cover is a dead shuttle, crates, sandbag lines and a Guard truck. A launcher, armor, firebombs, a rattle and ammo at each corner of the stand.
+- **Where:** The depot maintenance bay, one open yard from the fence to the back wall. Hospital Shuttle No. 4 is a walk-in body along the south half of the bay, ignition at its driver's (east) end, door just behind it. The Guard wired their evacuation siren to the bay, so cranking the shuttle sets it off and every sleeper downtown comes to hush it. This is the teaching finale: no side task, just the lanes, the gun and the run.
+  - **Lane A:** out of Depot Square through the depot gate in the bay's north-west corner (spawn zone: Depot Square and the passage from the signal box). Live in every wave.
+  - **Lane B:** from Mallow Junction down the freight spur tunnel to the spur gate in the north-east. Just inside the gate the spur widens into a loading cutting with a wagon parked in it, where lane B's crowd gathers out of sight (spawn zones: the cutting and the junction end of the spur). Opens with wave 2.
+  - **Lane C (flank):** the east lane outside the bay's west wall, through the bay roller door. The shuttle body hides it from the gun, and the crowd comes round either end of the shuttle. Brute and special pushes only.
+  - **Gun:** the Guard's **Popcorn Gatling** (minigun) in a sandbag nest at the shuttle's east end, beside the ignition, facing north, with a second dead shuttle parked behind it. The depot gate is about 55° west of its facing and 38 m away, the spur gate about 50° east and 28 m away, both inside its ±80° arc. The roller door is behind it.
+  - **Map:** two low sandbag lines split the north half. One runs from the Guard truck to the middle of the bay, so the gate crowd has to come round its east end into the gun's face (and lane C's way round the shuttle runs under it on the other side); the other parts the gate funnel from the tunnel funnel. The gun fires over both. The bus wash off the south-west corner is bricked up for good. Other cover: the Guard truck, crates, barrels, workbenches.
+  - **Supply stand:** between the nest and the ignition: four medkits, two ammo piles, a launcher, a firebomb, a rattle and armour. A spare ammo pile by the whiteboard is for whoever covers the roller door.
+  - **Escape:** the shuttle door opens about 4 tiles from the ignition, with the trickle coming from all three lanes.
 - **HUD:** `Start the hospital shuttle`
 - **Radio:**
-  - Dot: "Shuttle No. 4's battery is moody. Crank her and keep her company. Three minutes."
+  - Dot: "Shuttle No. 4's battery is moody. Crank her and keep her company. Two and a half minutes."
   - Dot: "And the Guard wired their evac siren to that bay. Every sleeper in town will come."
-  - Pip: "There's a Guard gun on those sandbags. Popcorn Gatling. I named it. It's named."
-  - Mochi: "Somebody on the popcorn! Everybody else, face out!"
+  - Pip: "There's a Guard gun on the sandbags by the ignition. Popcorn Gatling. I named it. It's named."
+  - Mochi: "Somebody on the popcorn! It sees the gate and the tunnel. Everybody else, watch the roller door!"
+  - Dot: "The Guard left supplies by the nest. Stock up before you crank her, sweet pea."
   - Pip: "Why do all the vehicles have moods?"
   - Dot: "Because they're old, sweet pea. Like me."
-- **Flags:** horde · holdout 180 s · big (Big Hold On; mount: minigun) · opens: shuttle door
+- **Holdout script (feed lines):** wave 35 s, lane A ("Here they come! Watch the gate!") · breather 10 s ("Breather! Reload and patch up!") · wave 35 s, A + B, 2 specials ("The tunnel too! Gate and tunnel!") · Brute 25 s, lane C ("A Brute at the roller door!") · breather 10 s ("Breather! One more push!") · final 35 s, A + B ("Last push! Gate and tunnel!")
+- **Flags:** horde · holdout 150 s · big (Big Hold On, teaching; lanes A gate, B tunnel, C roller door; mount: minigun) · opens: shuttle door
 
 **1.20 · `gather` · Chapter end (vehicle)**
-- **Where:** Aboard Shuttle No. 4. The bus interior is the end zone.
+- **Where:** Aboard Shuttle No. 4. The bus interior is the end zone. The escape trickle runs from all three lanes until everyone is inside.
 - **HUD:** `Everybody on the shuttle!`
 - **Radio:**
+  - Dot: "She's purring! Door's open. Everybody aboard, and don't stop for anything!"
   - Dot: "St. Marigold Hospital. There's a helicopter on the roof. Drive safe!"
   - Mochi: "I've never driven a bus."
   - Taro: "Then I'll drive. I've never driven one either, but I'm older."
@@ -315,7 +347,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 10 | Whiteboard in the depot maintenance bay | NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot's girl Wren by the kettle. SIGN IT. |
 | 11 | Birthday card on the depot table | Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.) |
 
-**Map designer notes:** Snoozle billboard at the 1.2 crosswalk as the first landmark. A slipper-and-pillow trail runs from the laundromat toward Tony's, and again along Lantern Canal. Lit windows appear only where someone was awake (a gamer bedroom, the diner). The garage is dark: lamps only mark the ramps. City Hall's fog machines should be visible from the viewpoint pier and keep emitting particles. Put a stopped 3:00 clock in Clocktower Corner. The towpath arch and Mallow Junction are dark stretches for the flashlight. Dot's Dispatch Tower is a pale column with a red beacon on the far bank of the river, seen from the promenade and the pier. The Guard's roadblock should be readable from the diner lot (fence, olive trucks, "ROAD CLOSED"), so the detour makes sense before Dot explains it. Leave a signed birthday card on the depot table next to the whiteboard.
+**Map designer notes:** Snoozle billboard at the 1.2 crosswalk as the first landmark. A slipper-and-pillow trail runs from the laundromat toward Tony's, and again along Lantern Canal. Lit windows appear only where someone was awake (a gamer bedroom, the diner). The garage is dark: lamps only mark the ramps. City Hall's fog machines should be visible from the viewpoint pier and keep emitting particles. Put a stopped 3:00 clock in Clocktower Corner. The towpath arch and Mallow Junction are dark stretches for the flashlight. Dot's Dispatch Tower is a pale column with a red beacon on the far bank of the river, seen from the promenade and the pier. The Guard's roadblock should be readable from the diner lot (fence, olive trucks, "ROAD CLOSED"), so the detour makes sense before Dot explains it. Leave a signed birthday card on the depot table next to the whiteboard. In the maintenance bay, each lane mouth is signed and lit (DEPOT GATE, FREIGHT SPUR, ROLLER DOOR), so the stage banners ("Gate and tunnel!") match what players see. Keep the gun's view north clear: nothing taller than the sandbags between the nest and the two gates. The roller door's lamp and red sign should be the one thing the gunner can't see, which is why somebody else watches it.
 
 ---
 
@@ -328,7 +360,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 **Intro card:**
 > 4:40 a.m. The shuttle got you to St. Marigold Hospital, mostly in one piece. Dot says a helicopter is waiting on the roof. Nori used to work nights here and swears the second floor always smells like soup. The beds are empty. Every one of them is neatly made.
 
-**Requirements check:** start safe room 2.1 · checkpoints 2.6, 2.10, 2.17 · crescendos 2.4, 2.8 · Big Hold On 2.18 (rocket pod) · collect 2.3 · Brute 2.11 · finale 2.19
+**Requirements check:** start safe room 2.1 · checkpoints 2.6, 2.10, 2.17 · crescendos 2.4, 2.8 · Big Hold On 2.18 (scavenge, 4 power cells; Fizzbang Pod; Brute from the police corridor) · collect 2.3 · Brute 2.11 · finale 2.19
 
 **2.1 · `use` · Start safe room**
 - **Where:** Triage station in the ambulance bay. Shuttle No. 4 is parked nose-first through the bay doors, and the triage radio sits on the nurse's desk. Optional: two fire-escape ladders up the bay's south wall lead onto the ER roof (storey 1), Larry's smoke-break ledge, a rifle perch over the bay with a note.
@@ -505,21 +537,32 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Nori: "Police clipboard. Last lift down to the tunnel left at 4:15. They left us something."
   - Pip: "A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever."
   - Dot: "The freight lift's at the bottom of the shaft, sweet peas. It's a long way up."
-  - Taro: "Rest a minute first. That dock will be the longest three minutes of the night."
-- **Flags:** opens: yard gate, dock barricade
+  - Taro: "Rest a minute first. That dock will be the longest few minutes of the night."
+- **Flags:** opens: yard gate, dock barricade (the police corridor, the finale's lane C)
 
 **2.18 · `use` · Big Hold On (finale)**
-- **Where:** West along the truck yard and in through a truck bay to the loading dock, where St. Marigold's overflow was evacuated: police vans, two ambulances, triage tents and broken sandbags. The police ran 61 awake people down the freight lift to the service tunnel and left on the last car at 4:15. Their **Fizzbang Pod** (rocket pod) is still bolted to its truck beside the lift button, facing the truck bays. The lift chimes the whole way up from the bottom of the shaft, and every sleeper in the Galleria comes to listen, out of the truck yard and in through the four truck bays, all inside the pod's swing (spawn zone: the truck yard). The corridors, cold storage, returns nook and catwalk behind the pod stay quiet. A catwalk along the dock's north wall (storey 1) is a rifle perch.
+- **Where:** West along the truck yard and north through bay 4 to the loading dock, where St. Marigold's overflow was evacuated: police vans, an ambulance, triage tents in the dead-end west end and low broken sandbags. The police ran 61 awake people down the freight lift to the service tunnel, left on the last car at 4:15, and ran the lift's power cells flat; the spares are stashed round the dock. The lift chimes the whole way up from the bottom of the shaft, and every sleeper in the Galleria comes to listen. This is the scavenge finale: the lift needs four power cells, and the timer stops at set points until another one has been picked up.
+  - **Lane A:** the east half of the truck yard, in through bays 3 and 4, straight at the pod. Its spawn zones are only the yard's far corners (by the police fence and by the yard gate), so it starts as far out as lane B. Live in every wave.
+  - **Lane B:** the west half of the yard (a police fence splits the yard), in through bays 1 and 2, then east along the whole length of the dock past the cell pockets. Opens with wave 2.
+  - **Lane C (flank):** the police corridor from the food court, whose barricade gave way at 2.17b. It comes out on the dock's north side, north-west of the nest and just outside the pod's arc. Brute and special pushes.
+  - **Gun:** the police's **Fizzbang Pod** (rocket pod) in a sandbag nest in the dock's south-east corner beside the lift, the wall at its back, facing south-west. Its ±80° takes in all four bays and the whole length of the dock; the police corridor's mouth and the compactor stay outside it.
+  - **Power cells:** cold storage (north-west), the returns nook under the catwalk, the west end of the catwalk (storey 1, up the west or mid-span ladder or the east stairs), and the compactor round the corner from the pod (south-east). Solid cover (vans, the ambulance, a car) runs along the north wall between the pocket mouths, where the runners go. Three of the four are up lane B's end of the dock, so whoever runs for them needs the pod covering them.
+  - **Timer stops:** at 10 s ("The lift needs power! Find a cell!"), 45 s ("The lift stalled! Second cell!"), 85 s ("Stalled again! Third cell!") and 125 s ("One last cell and we're up!"), each until that many cells in total have been picked up.
+  - **Supply stand:** the police supply desk by the lift button, four tiles from the nest: four medkits, three ammo piles, two firebombs and a rattle.
+  - **Escape:** when the timer runs out the lift gate opens next to the stand, with the trickle coming from all three lanes.
 - **HUD:** `Call the freight lift`
 - **Radio:**
   - Dot: "That lift chimes the whole way up. Every sleeper in the Galleria will come to listen."
+  - Dot: "And the police ran its cells flat, sweet pea. It needs four power cells to climb."
+  - Nori: "Spares: cold storage, the returns nook, the west end of the catwalk, and by the compactor."
   - Pip: "Dibs on the rocket pod!"
-  - Mochi: "Slowest lift in the world. Everybody face out!"
-  - Nori: "And Pip, do not hum along to the music."
-- **Flags:** horde · big · holdout 180 s · mounted gun: rocket pod · opens: lift gate
+  - Mochi: "The pod covers the bays and the dock. Runners, stay where it can see you!"
+  - Taro: "It can't swing round to the police corridor. That one's ours."
+- **Holdout script (feed lines):** wave 35 s, lane A ("Here they come! Bays 3 and 4!") · breather 10 s ("Quiet for a sec. Go get a cell!") · wave 35 s, A + B, 2 specials ("All four bays! Watch the police corridor!") · Brute 25 s, lane C ("Something big in the police corridor!") · breather 10 s ("Breathe. Pick each other up!") · final 35 s, A + B, 2 specials ("Every bay at once! Hold on!")
+- **Flags:** horde · big (Big Hold On, scavenge: 4 power cells; lanes A bays 3–4, B bays 1–2 and the dock, C police corridor; mount: rocket pod) · holdout 150 s plus cell stops · opens: lift gate
 
 **2.19 · `gather` · Chapter end**
-- **Where:** Inside the freight lift. It's the end safe room and descends to the service tunnel.
+- **Where:** Inside the freight lift. It's the end safe room and descends to the service tunnel. The escape trickle runs from all three lanes until everyone is inside.
 - **HUD:** `Everybody into the freight lift`
 - **Radio:**
   - Dot: "Tunnel runs under the river to the rail yard. I'm right here on the radio."
@@ -538,9 +581,9 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 7 | Thermos on Larry's ledge, ER roof (optional) | Best seat in the house. You can see the helipad AND the Galleria skylight. Back in 10, just resting my eyes. L. |
 | 8 | Customer service board, Plumley's ground floor | SWEET DREAMS NIGHT LATE OPENING till 3 a.m.! Free Hush Pillow Mist with every pillow, courtesy of Dreamwell. [pen:] Bob from Bedding dozed off on Bed 4 at 2:50. |
 | 9 | Usher's clipboard, Cineplex lobby | Midnight Marathon, Screen 2: 212 tickets. Everybody dozed off in part 2. I stayed up on pick-n-mix. At 3 they all stood up at once, humming. Benji |
-| 10 | MBPD clipboard, parking office | EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Pod bolted to the truck, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays. Sgt. Tuttle |
+| 10 | MBPD clipboard, parking office | EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Lift cells flat, spares stashed round the dock. Pod in the nest by the lift, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays, mind the corridor. Sgt. Tuttle |
 
-**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the west stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign. In Screen 2 only the exit signs are lit; the house is packed (double sleeper density). Keep the evacuation point's sandbags low and broken, and aim the rocket pod at the truck bays: the whole flood comes in through them.
+**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the west stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign. In Screen 2 only the exit signs are lit; the house is packed (double sleeper density). Keep the evacuation point's sandbags low and broken, and the middle of the dock clear for the pod, which sits in the south-east corner facing south-west over the bays and the dock. Light each bay from the yard side so the lanes read from the nest. The police corridor gets a red POLICE CORRIDOR sign and a lamp: it's the team's to watch, not the pod's. Each spare cell has a gold SPARE CELL label and a lamp in its pocket, and the lift wall says NEEDS 4 POWER CELLS.
 
 ---
 
@@ -553,7 +596,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 **Intro card:**
 > 5:20 a.m. No helicopter, but Dot knows trains. Old Bertha, a diesel locomotive older than Taro, sits dry on the dock siding, and the hill line runs straight out of town. Between you and her: a rail yard, a lot of fog, and the factory where the fog comes from. Someone else is on the radio now. Humming.
 
-**Requirements check:** start safe room 3.1 · checkpoints 3.4, 3.9, 3.15 · crescendos 3.3, 3.8 · collect 3.5, 3.14 · Brute 3.7 · horde run 3.15 · finale (Big Hold On, Thump Cannon) 3.17
+**Requirements check:** start safe room 3.1 · checkpoints 3.4, 3.9, 3.15 · crescendos 3.3, 3.8 · collect 3.5, 3.14 · Brute 3.7 · horde run 3.15 · finale (Big Hold On, restart: Bertha stalls twice; Thump Cannon; Brute from the back gate) 3.17 · escape 3.18
 
 **3.1 · `use` · Start safe room**
 - **Where:** Switchman's hut at the service tunnel mouth, with a wall radio and a lantern.
@@ -722,19 +765,30 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** none
 
 **3.17 · `use` · Finale: the Big Hold On**
-- **Where:** Bertha's cab. Pour the diesel and crank the engine, and hold for three minutes against the whole wharf. The Guard's escort gun, a **Thump Cannon** (mounted support gun), is bolted to the flatcar beside her facing east down a long clear lane of the apron, where the hordes pour in from the east only: down off the bridge, in at the road gate and out of the dock shed (spawn zones: the east apron and the bridge deck). Nothing comes from the west end behind the gun. Its shells splash, so the gunner wants them far away. The siding is an open apron with containers on both sides for flanking; the wharf stack (storey 1), one ladder at each end, is a perch over the crank, but the horde climbs both ladders and the Brute comes up too.
+- **Where:** The fuel valve beside Bertha's cab. Pour the diesel and crank the engine, and hold the dock siding while she warms up. This is the restart finale: Bertha stalls twice, at the start of wave 2 and at the start of the final, and the timer stops until someone has stood at the starting crank on her nose for 4 s ("Bertha stalled! Crank her at the nose!", then "She stalled again! Back to the crank!"). The crank faces the south-west back gate, so whoever restarts her has their back to the cannon's side.
+  - **Layout:** the apron is three parts. West: Bertha, the gun flatcar, the supply stand and the wharf stack. Middle (x 40–55): an open kill zone for the cannon. East: new container walls cut the apron into two 6-wide lanes that run straight at the cannon, with a two-high container wedge between them pointing at the kill zone. The lanes are lit at their mouths and far ends and dark between.
+  - **Lane A:** down off the drawbridge and west along the north container wall (spawn zones: the far half of the north lane, the apron by the bridge foot, and the bridge deck on storey 1). Live in every wave.
+  - **Lane B:** in at the road gate from Fish Dock Road and west along the south container wall (spawn zones: the far half of the south lane, the connector by the dock shed, and Fish Dock Road). Opens with wave 2. Both front lanes spawn only in their far halves, 60 m or more from the gun.
+  - **Lane C (flank):** the south-west gate behind Bertha (the mission lane), fed from the bonded yard behind the south fence, 60 m from the cannon and out of sight of the apron. Outside the cannon's arc. Brute and special pushes.
+  - **Gun:** the Guard's **Thump Cannon** on the flatcar beside Bertha, in a sandbag nest (Bertha to the north, bags to the south), facing east straight down both lanes. Its shells splash, so it wants them far away, and the lanes give it range.
+  - **Perch:** the wharf stack (storey 1) over Bertha. Both its ladders are at its west end, facing lane C, so the front-lane crowds have to come round, and the Brute still climbs.
+  - **Supply stand:** the Guard's, along the track by the cab (kept: the loot roll never thins it): four medkits, three ammo piles, two rattles and two firebombs. A little more ammo and a medkit at the edge of the kill zone.
+  - **Escape:** the cab door opens about 4 tiles from the valve, with the trickle coming from all three lanes.
 - **HUD:** `Fuel up and start Bertha`
 - **Radio:**
   - Dot: "Prime her, crank her, and hold on. Bertha takes her time and so should you."
-  - Pip: "Three minutes?! Dot, that's like a MONTH."
+  - Taro: "She'll stall on us, mind. Old girls do. When she coughs out, someone runs to the crank on her nose."
   - Nori: "That's the Guard's cannon on the flatcar. Somebody man it. Aim long, it splashes."
+  - Mochi: "They'll come off the bridge and in at the road gate. The back gate's ours to watch."
   - Pip: "I CALL THE CANNON!"
-- **Flags:** horde · **Big Hold On** · holdout 180 s (scripted: waves with breathers, a Brute midway, a flanking rush, then a long final push) · opens: cab door
+- **Holdout script (feed lines):** wave 35 s, lane A ("Here they come! Down off the bridge!") · breather 10 s ("Bertha coughs. That's good, right?") · wave 35 s, A + B, 2 specials ("The road gate too! Bridge and road!"; first stall) · Brute 25 s, lane C ("A Brute at the back gate! Behind Bertha!") · breather 10 s ("Bertha purrs. Breather! Patch up!") · final 35 s, A + B ("She's nearly up! Bridge and road, hold the line!"; second stall)
+- **Flags:** horde · big (Big Hold On, restart: 2 stalls at the crank; lanes A bridge, B road gate, C south-west gate; mount: cannon) · holdout 150 s plus crank stops · opens: cab door
 
 **3.18 · `gather` · Chapter end (vehicle)**
-- **Where:** Bertha's cab and the coupled flatcar.
+- **Where:** Bertha's cab and the coupled flatcar. The escape trickle runs from all three lanes until everyone is aboard.
 - **HUD:** `All aboard Bertha!`
 - **Radio:**
+  - Taro: "She's running! Everybody in the cab, now!"
   - Dot: "Hill line runs up to Pinecone Hollow. I'll meet you near there with the bus."
 - **Flags:** chapter end · closes: cab door
 
@@ -752,7 +806,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 8 | Requisition order on the sergeant's desk (Guard command post, upstairs) | 2:45 a.m. GUARD RAILHEAD. Loco No. 9 BERTHA taken for the hill line run. Escort gun on the flatcar beside her. Cab locked, key in the CP. Night watch: STAY AWAKE. |
 | 9 | Noticeboard in the Seafarers' Mission | Seafarers welcome! Tea all night, bunks free. Please do NOT ring the ship's bell after ten. It brings the whole wharf over. |
 
-**Map designer notes:** Twelve empty tanker cars on a siding labelled HX-9, with one bay left bare. Put a "DAYS SINCE INCIDENT: 0" sign on the Hush Works gate. Run a fog-leak trail from the tanks to the river. Pin sound-wave charts and a child's drawing ("To Wren, from Mum") in the lab. Make the tower's lit window visible across the water from the pier so the destination reads before the radio line plays. South of the river, Bertha and the Guard flatcar should be lit and in view from the bridge foot, so the team sees the cannon (and the reason for the detour) before the radio explains it. The Guard checkpoint on Fish Dock Road is see-through, so the railhead reads as the goal from the road. The mission's ship's bell is a quiet nod to the Morning Bell: bells bring the sleepers.
+**Map designer notes:** Twelve empty tanker cars on a siding labelled HX-9, with one bay left bare. Put a "DAYS SINCE INCIDENT: 0" sign on the Hush Works gate. Run a fog-leak trail from the tanks to the river. Pin sound-wave charts and a child's drawing ("To Wren, from Mum") in the lab. Make the tower's lit window visible across the water from the pier so the destination reads before the radio line plays. South of the river, Bertha and the Guard flatcar should be lit and in view from the bridge foot, so the team sees the cannon (and the reason for the detour) before the radio explains it. The Guard checkpoint on Fish Dock Road is see-through, so the railhead reads as the goal from the road. The mission's ship's bell is a quiet nod to the Morning Bell: bells bring the sleepers. On the apron, sign both lane mouths for the gunner (BRIDGE in teal, ROAD GATE in gold) and keep the two lanes clear of clutter, so the cannon looks straight down each. The crank on Bertha's nose gets a big gold CRANK label and its own lamp: it has to read from the cannon in two seconds when she stalls. Dock Shed 3, off the connector, keeps the chapter's best guns and is lit and signed from the bridge foot.
 
 ---
 
@@ -765,7 +819,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 **Intro card:**
 > 6:05 a.m. Bertha ran out of track at Pinecone Hollow. Dot is driving the No. 9 bus to the old bridge to meet the last convoy at sunrise. But the voice on the radio says the sleepers will follow you all the way out, unless someone rings the Morning Bell from the top of the hill.
 
-**Requirements check:** start safe room 4.1 · checkpoints 4.4, 4.8, 4.14 · crescendos 4.6, 4.11 · Big Hold On 4.15 · collects 4.3, 4.13 · Brute 4.5 · finale 4.15–4.16
+**Requirements check:** start safe room 4.1 · checkpoints 4.4, 4.8, 4.14 · crescendos 4.6, 4.11 · Big Hold On 4.15 (grand finale: three guns, two Brutes from the motor pool) · collects 4.3, 4.13 · Brute 4.5 · finale 4.15–4.16 (bridge run to the bus)
 
 **4.1 · `use` · Start safe room**
 - **Where:** Pinecone Hollow station waiting room, with the ticket-office radio inside. Bertha has stopped outside against a fallen pine across the track.
@@ -905,27 +959,36 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** checkpoint · closes: field post back door
 
 **4.14b · `use` · Safe-room exit**
-- **Where:** The field post generator. Fuelled, it powers the checkpoint and opens the front door onto the plaza.
+- **Where:** The field post generator. Fuelled, it powers the checkpoint, opens the front door onto the plaza, and rolls open the motor pool gate onto the service lane (the finale's lane C).
 - **HUD:** `Fuel the field post generator`
 - **Radio:**
   - Nori: "Cots, cold coffee, field orders. The soldiers left in a hurry."
   - Taro: "And left their big guns on the sandbags. Somebody hoped we'd come."
-- **Flags:** opens: field post front door to the checkpoint plaza
+- **Flags:** opens: field post front door to the checkpoint plaza, motor pool gate
 
 **4.15 · `use` · THE BIG HOLD ON (finale)**
-- **Where:** The boom-gate control at the near end of the old bridge, in the army checkpoint plaza. Raising the boom on generator power takes three minutes, and its motor calls every sleeper outside the Bell's range. Dot's No. 9 bus is visible on the far span the whole time. The soldiers left their mounted guns: a **Popcorn Gatling** (facing west over the plaza and the diner road) and a **Thump Cannon** (facing north over Bridge Park and the boom gate) in the sandbag nest by the boom control, and a **Fizzbang Pod** on the watchtower roof (storey 1, ladders on two faces) facing north over Bridge Park. The horde comes two ways (spawn zones): out of Bridge Park (north: the Pod and the Cannon) and up the diner road (west: the Gatling). The field post and the motor pool behind the nest stay quiet. Cover is army trucks and low sandbags, imperfect on purpose, and every approach can be walked both ways.
+- **Where:** The boom-gate control box at the foot of the old bridge's ramp, in the army checkpoint plaza. Raising the boom on generator power takes two and a half minutes, and its motor calls every sleeper outside the Bell's range. Dot's No. 9 bus is visible on the far span the whole time. This is the grand finale: three guns, two Brute stages, then a run across the bridge to the bus.
+  - **Lane A:** down the river path from round the bend under the pines (spawn zone), over the weir landing and through Bridge Park, from the north. The weir itself is washed out mid-river. Live in every wave.
+  - **Lane B:** up the diner road from the far west (spawn zone), into the plaza from the west. Opens with wave 2.
+  - **Lane C (flank):** from Bridge Road up the service lane, through the motor pool gate (opened at 4.14b) and the motor pool, into the plaza from the south-east. Outside every gun's arc. Both Brutes and the special pushes come this way. The far bank's river road is also lane C, but it only joins up once the boom is raised, so it feeds the escape.
+  - **Guns:** the soldiers left three. The **Fizzbang Pod** on the watchtower roof (storey 1) in the plaza's north-west corner faces north over Bridge Park (lane A); the tower has ladders on its east and south faces. The **Popcorn Gatling** in the sandbag nest faces west down the diner road (lane B). The **Thump Cannon** on the nest's south side, an army truck at its back, faces north-west, so it can swing onto either front lane. Nothing covers the motor pool: that's the team's.
+  - **Supply stand:** by the boom lever: four medkits, two ammo piles, a firebomb and a rattle. Round the plaza: a rifle, an auto shotgun and a launcher, and more ammo. Cover is army trucks, a supply tent and low sandbags, never a full wall.
+  - **Escape:** the boom on the deck rises and the bus door opens. The run is about 25 m up the ramp and along the deck (storey 1) to the No. 9's door, with sandbags at the midpoint of the span. The far bank's river road pours up the far-bank ramp and round both sides of the bus, so the run meets sleepers head-on.
 - **HUD:** `Raise the bridge boom gate`
 - **Radio:**
   - Dot: "I can see you! Get that boom gate up and get on my bus!"
   - Wren: "The far bank's out of range. They're still coming. Hold them!"
+  - Taro: "Park to the north, diner road to the west. And somebody mind the motor pool behind us."
   - Pip: "Turret section! Gatling, cannon, rocket pod. Best level ever!"
-- **Holdout script (feed lines):** wave 36 s ("Here they come! Man the guns!") · breather 8 s · specials 26 s · wave from two sides 34 s ("Second wave! Watch the park and the road!") · breather 6 s · Brute 26 s ("A Brute! Swing the cannon round!") · final 44 s ("The boom gate's nearly up! Hold on!")
-- **Flags:** Big Hold On (`big`) · horde · holdout 180 s · opens: boom gate, bus door
+- **Holdout script (feed lines):** wave 30 s, lane A ("Here they come! Out of Bridge Park!") · breather 8 s ("Quick breather! Restock at the boom gate.") · wave 30 s, A + B, 2 specials ("Park AND diner road! Watch the motor pool!") · Brute 22 s, lane C ("A Brute in the motor pool! Turn round!") · Brute 22 s, lane C ("Another Brute! Motor pool again!") · breather 8 s ("Last breather! Patch up!") · final 30 s, A + B ("The boom gate's nearly up! Hold on!"). The front lanes keep trickling through both Brute stages.
+- **Flags:** Big Hold On (`big`, grand finale: 3 guns, 2 Brutes; lanes A Bridge Park, B diner road, C motor pool and far bank) · horde · holdout 150 s · opens: boom gate, bus door
 
 **4.16 · `gather` · Campaign end (vehicle)**
-- **Where:** Aboard Dot's No. 9 bus on the bridge.
+- **Where:** Aboard Dot's No. 9 bus on the bridge (storey 1). The escape trickle runs from every lane, the far bank included, until everyone is aboard.
 - **HUD:** `Everybody on Dot's bus!`
 - **Radio:**
+  - Dot: "Boom's up! Run for it, sweet peas! They're coming over the far bank too!"
+  - Wren: "I can see the bridge from up here! Sandbags halfway: stop, shoot, then run!"
   - Dot: "Wren, honey. Come down. There's a seat."
   - Wren: "Somebody has to stay up and keep it ringing, Mum. Lowells are good at staying up."
   - Dot: "Then I'll keep the radio on. Every night, sweet pea. Every night."
@@ -946,7 +1009,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 9 | Sawmill office whiteboard, Pinecone Lumber Co. | MON: Dreamwell order, 400 bed frames. TUE: Dreamwell order, 400 more. WED: who is buying all these beds?? |
 | 10 | Field orders on the desk, army field post | Hold the bridge until the convoy is clear. 0430: convoy pulled back across the river. Guns stay on the sandbags for whoever comes next. Keep the generator fed. Sgt. Okafor |
 
-**Map designer notes:** Snoozle billboards here are graffitied "WAKE UP" (the station green, the logging camp, the campground, the far bank). The Bell's chime should read visually as soft gold rings expanding from the mast during 4.11. After 4.11 the downhill road is a quiet stretch of sleeping props; the river flats are crowded again because the chime doesn't reach them. The rockslide and the jackknifed convoy truck are both visible dead ends, each signposted to its detour. Pell's limo sits on the verge just before the bridge, on the plaza side of the truck, so players find it during or after the finale. The No. 9 bus on the far side of the bridge should be visible from the boom gate, so the goal is on screen during the Big Hold On.
+**Map designer notes:** Snoozle billboards here are graffitied "WAKE UP" (the station green, the logging camp, the campground, the far bank). The Bell's chime should read visually as soft gold rings expanding from the mast during 4.11. After 4.11 the downhill road is a quiet stretch of sleeping props; the river flats are crowded again because the chime doesn't reach them. The rockslide and the jackknifed convoy truck are both visible dead ends, each signposted to its detour. Pell's limo sits on the verge just before the bridge, on the plaza side of the truck, so players find it during or after the finale. The No. 9 bus on the far side of the bridge should be visible from the boom gate, so the goal is on screen during the Big Hold On. In the plaza, label the nest (ARMY NEST), the supplies and the diner road, and keep the motor pool lit and signed (MOTOR POOL in olive) so the flank reads when the banner says "Turn round!". The washed-out weir is signed (OLD WEIR, WASHED OUT) so nobody tries it as a way over. The midpoint sandbags on the deck are the gauntlet's one stop; keep them low and on both sides of the span.
 
 ---
 
