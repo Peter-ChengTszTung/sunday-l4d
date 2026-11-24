@@ -445,8 +445,8 @@ export function build() {
   // ------------------------------------------------------------------
   b.carve(62, 58, 98, 72, F.ASPHALT);
   b.walls(62, 73, 98, 73, WALL.FENCE, 3.2);
-  b.carve(77, 73, 82, 73, F.ASPHALT);
-  const depotGate = b.door(77, 73, 82, 73, 'fence', 'DEPOT GATE');
+  b.carve(70, 73, 75, 73, F.ASPHALT);
+  const depotGate = b.door(70, 73, 75, 73, 'fence', 'DEPOT GATE');
   b.fill(84, 65, 88, 71); b.carve(85, 66, 87, 70, F.INTERIOR); b.carve(84, 67, 84, 68, F.INTERIOR);
   const gateSwitch = b.obj('lever', 87, 69, 'Flip the depot gate switch');
   b.label('GATE', 86, 66.5, 14, GOLD);
@@ -455,62 +455,106 @@ export function build() {
   b.label('EVAC STAGING', 90, 66.5, 18, GOLD, WEST);
   // The signal box's depot-side door comes out of the embankment on the east side of the square.
   b.lamp(98.4, 60.6); b.arrow(96, 62, WEST);
-  b.prop('barrier', 70, 70, 3, 1); b.prop('crate', 96, 70); b.prop('crate', 63, 70);
-  b.label('TRANSIT DEPOT', 80, 70.5, 34, TEAL);
-  for (const [x, z] of [[64, 59], [80, 58.6], [96, 66], [76, 72.4], [83.5, 72.4], [70, 66]]) b.lamp(x, z);
-  b.arrow(80, 63, S); b.arrow(83, 67.5, E);
+  b.prop('barrier', 80, 70, 3, 1); b.prop('crate', 96, 70); b.prop('crate', 63, 70);
+  b.label('TRANSIT DEPOT', 74.5, 70.5, 34, TEAL);
+  for (const [x, z] of [[64, 59], [80, 58.6], [96, 66], [71, 72.4], [78.5, 72.4], [66, 66]]) b.lamp(x, z);
+  b.arrow(72.5, 69, S); b.arrow(83, 67.5, E);
 
   // ------------------------------------------------------------------
   // 13. Depot yard and maintenance bay (finale: the Big Hold On), Shuttle No. 4
   // ------------------------------------------------------------------
-  // One open bay from the fence to the back wall. During the Big Hold On the flood comes one way only:
-  // out of Depot Square through the depot gate (north), straight down the barrel of the Guard's Popcorn
-  // Gatling on its sandbags north of the ignition. The freight spur tunnel (north-east), the bay roller
-  // door (west) and the bus wash (south-west) stay shut until the shuttle starts.
+  // One open bay from the fence to the back wall, three ways in (the Big Hold On's lanes: see the
+  // ignition step). x59 to x110 across, z down:
+  //
+  //     x59       x69       x79       x89       x99       x109
+  //     |         |         |         |         |         |
+  //  73 ###########hhhhhh###################################
+  //  74 ###.....................................l...........
+  //  75 ###....c......................s.........l...........
+  //  76 ###...........................s.........l...........
+  //  77 ###.TT........................s.........l...........
+  //  78 ###.TT........................s.........##.........#
+  //  79 ###.TTsssssssssssss...........s.........##.........#
+  //  80 ###.TT................................o.##....wwww.#
+  //  81 ###.TT.c................................##....wwww.#
+  //  82 ###.TT..................................############
+  //  83 ###.......................***...........############
+  //  84 ..j........###########dd##**.G..........############
+  //  85 ..j....s...#             #***...........############
+  //  86 ..j....s...#             O@**...........############
+  //  87 ..j....s...#             #**BBBBBBBBBB..############
+  //  88 ###o.......###############..BBBBBBBBBB..############
+  //  89 ###.....................................############
+  //  90 ###.==.........sss......................############
+  //  91 ###..*.......c.............c............############
+  //  92 ###......====....................=====..############
+  //
+  //   h depot gate (lane A, Depot Square)      l freight spur gate (lane B, Mallow Junction; the cutting
+  //   j bay roller door (lane C, the east lane)  and wagon w just inside)  d Shuttle No. 4's door
+  //   G Popcorn Gatling (faces north; its gunner stands behind it)  O ignition  @ the stand
+  //   * supply stand  s low sandbags  T Guard truck  B the dead shuttle, parked behind the nest
+  //
+  // Lanes A and B both come into the Gatling's arc (the gate about 55 degrees west of its facing, the
+  // tunnel about 50 east), with 28-39 m of open floor in front of it. The long sandbag line makes the
+  // gate crowd come round its east end into the gun's face. Lane C, the roller door in the west wall,
+  // is hidden from the gun by the shuttle body and comes round either side of it: that one is the
+  // team's. The bus wash that used to open off the south-west corner is bricked up for good.
   b.carve(62, 74, 98, 92, F.CONCRETE);
-  // Shuttle No. 4: a walk-in body in the middle of the bay, ignition at the driver's end.
+  // Shuttle No. 4: a walk-in body along the bay, ignition at the driver's (east) end, door just behind it.
   b.fill(70, 84, 84, 88); b.walls(70, 84, 84, 88, WALL.BUILDING, 3.2);
   b.carve(71, 85, 83, 87, F.SAFE);
-  b.carve(75, 84, 76, 84, F.CONCRETE);
-  const shuttleDoor = b.door(75, 84, 76, 84, 'shutter', 'SHUTTLE No.4');
+  b.carve(81, 84, 82, 84, F.CONCRETE);
+  const shuttleDoor = b.door(81, 84, 82, 84, 'shutter', 'SHUTTLE No.4');
   b.carve(84, 86, 84, 86, F.CONCRETE);
   const ignition = b.obj('terminal', 84, 86, 'Crank the shuttle ignition');
   b.label('SHUTTLE No. 4', 77, 82.5, 22, GOLD); b.label('ST. MARIGOLD', 77, 86, 14, CREAM);
-  // Street-side roller door onto the east lane.
+  // Lane C: the street-side roller door onto the east lane, with a sandbag line just inside it.
   b.carve(59, 84, 60, 87, F.ASPHALT);
   const bayDoor = b.door(61, 84, 61, 87, 'shutter', 'BAY ROLLER DOOR');
-  // Bus wash: a lane from the bay's south-west corner out to the east lane, behind a gate.
-  b.carve(63, 93, 66, 93, F.CONCRETE); b.carve(59, 94, 66, 97, F.CONCRETE);
-  const busWash = b.door(59, 94, 59, 97, 'fence', 'BUS WASH GATE');
-  b.prop('barrel', 62, 97); b.prop('pallet', 61, 94);
-  b.label('BUS WASH', 64.5, 95.5, 12, TEAL, N);
-  // Freight spur tunnel: through the embankment to Mallow Junction.
+  b.prop('barrier', 66, 85, 1, 3);
+  b.label('ROLLER DOOR', 63.5, 85.5, 12, RED, WEST);
+  b.lamp(62.6, 83.4);
+  // Lane B: the freight spur tunnel through the embankment to Mallow Junction.
   b.carve(99, 74, 117, 77, F.INTERIOR);
   const spurGate = b.door(99, 74, 99, 77, 'fence', 'FREIGHT SPUR GATE');
-  b.prop('crate', 106, 74); b.prop('barrel', 112, 77);
-  // Cover: a dead shuttle east of the stand, crates and sandbag lines that stop nothing for long.
-  b.prop('bus', 89, 81, 2, 10, { color: 0x5ff2e0 });                  // a dead shuttle for cover
-  b.prop('counter', 92, 92, 5, 1, { color: 0x8a8a99 }); b.prop('counter', 68, 92, 4, 1, { color: 0x8a8a99 });
-  for (const [x, z] of [[66, 81], [79, 80], [94, 85], [86, 91], [72, 91], [70, 76], [96, 83]]) b.prop('crate', x, z);
-  b.prop('barrier', 82, 78, 3, 1); b.prop('barrier', 89, 77, 1, 3); b.prop('barrier', 66, 86, 1, 3); b.prop('barrier', 74, 90, 3, 1);
-  b.prop('barrel', 97, 80); b.prop('barrel', 62, 88);
+  b.prop('crate', 112, 74); b.prop('barrel', 115, 77);
+  // Just inside the gate the spur widens into a loading cutting with a wagon parked in it: lane B's
+  // crowd gathers there out of sight of the stand.
+  b.carve(101, 78, 109, 81, F.INTERIOR);
+  b.prop('container', 105, 80, 4, 2, { color: 0x6a3a78 });
+  b.label('FREIGHT SPUR', 95.5, 79, 12, GOLD, 0);
+  // Lane A: the depot gate (section 12), in the bay's north-west corner.
+  b.label('DEPOT GATE', 72.5, 75.4, 14, GOLD, 0);
+  // Two low sandbag lines split the north half. One runs from the Guard truck to the middle of the bay,
+  // so the gate crowd has to come round its east end, into the gun's face, and the flank's way round
+  // the shuttle (lane C) runs under it on the other side; the other parts the gate funnel from the
+  // tunnel funnel. Both are low: the gun fires over them, and the team shoots over the first.
+  b.prop('barrier', 65, 79, 13, 1); b.prop('barrier', 89, 75, 1, 5);
+  // The Guard's nest: Popcorn Gatling on its sandbags at the shuttle's east end, facing north, the dead
+  // shuttle parked behind it. The supply stand is between the nest and the ignition.
+  b.mount('minigun', 88, 84, '-z');
+  b.prop('bus', 87, 87, 10, 2, { color: 0x5ff2e0 });
+  b.label('POPCORN GATLING', 88.5, 82.4, 10, GOLD, 0);
+  b.note(90, 85, 'Guard duty log', 'MALLOW BAY GUARD, POST 3, TRANSIT DEPOT. 3:10 Evac staging up. Siren wired to the shuttle bay. Gatling on the sandbags. 3:20 Sarge says rest your eyes, long night. 3:22 Everybody is resting their eyes. 3:2');
+  // Supply stand for the prepare phase (within 6 tiles of the stand, so the loot roll never thins it):
+  // a medkit for each of four, ammo, a launcher, throwables and armour. The holdout adds its own cache.
+  for (const [x, z] of [[85, 84], [86, 84], [85, 85], [86, 85]]) b.pick('medkit', x, z);
+  for (const [x, z] of [[87, 85], [87, 86]]) b.pick('ammo', x, z);
+  b.pick('launcher', 85, 83); b.pick('firebomb', 86, 83); b.pick('rattle', 87, 83); b.pick('armor', 86, 86);
+  // Cover that stops nothing for long: the Guard truck, crates and sandbags round the flank.
   b.prop('truck', 63, 77, 2, 6, { color: 0x6b7f4a });                 // a Guard truck nobody woke up to drive
-  // The Guard's nest: Popcorn Gatling on the sandbags, facing the gate.
-  b.mount('minigun', 86, 79, '-z');
-  b.label('POPCORN GATLING', 86.5, 81.6, 10, GOLD, 0);
-  b.note(88, 80, 'Guard duty log', 'MALLOW BAY GUARD, POST 3, TRANSIT DEPOT. 3:10 Evac staging up. Siren wired to the shuttle bay. Gatling on the sandbags. 3:20 Sarge says rest your eyes, long night. 3:22 Everybody is resting their eyes. 3:2');
+  for (const [x, z] of [[66, 81], [66, 75], [86, 91], [72, 91]]) b.prop('crate', x, z);
+  b.prop('barrier', 74, 90, 3, 1); b.prop('barrel', 97, 80); b.prop('barrel', 62, 88);
+  b.prop('counter', 92, 92, 5, 1, { color: 0x8a8a99 }); b.prop('counter', 68, 92, 4, 1, { color: 0x8a8a99 });
+  b.pick('ammo', 64, 91);                                            // for whoever covers the roller door
   b.prop('desk', 63, 90, 2, 1);
   b.note(65, 90, 'Whiteboard', 'NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot\'s girl Wren by the kettle. SIGN IT.');
   b.note(63, 89, 'Birthday card', 'Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.)');
-  // Before the Big Hold On: ammo at each corner of the stand, meds, a launcher and throwables.
-  b.pick('medkit', 96, 90); b.pick('medkit', 97, 90); b.pick('ammo', 94, 75); b.pick('ammo', 94, 74); b.pick('ammo', 64, 75); b.pick('ammo', 64, 74); b.pick('ammo', 86, 90); b.pick('ammo', 86, 89);
-  b.pick('firebomb', 87, 89); b.pick('rattle', 87, 90);
-  b.pick('launcher', 88, 84); b.pick('ammo', 88, 85); b.pick('firebomb', 88, 86); b.pick('armor', 87, 84);
-  b.label('MAINTENANCE BAY', 80, 80.3, 24, CREAM);
-  for (const [x, z] of [[68, 82], [86, 82.6], [68, 90], [92, 88], [80, 76], [96, 76], [64, 95.5]]) b.lamp(x, z);
-  b.arrow(80, 75.5, S); b.arrow(85.5, 77, S);
+  b.label('MAINTENANCE BAY', 80, 81.3, 24, CREAM);
+  for (const [x, z] of [[68, 82], [87, 82.6], [68, 90], [93, 90.6], [72.5, 76.6], [83, 77], [96, 77.6]]) b.lamp(x, z);
+  b.arrow(75, 76.5, E); b.arrow(81, 77.5, E); b.arrow(85.5, 80, S);
   // Finale arena: the ignition holdout brings its own crowd, so no sleepers wait in the bay.
-  b.density(59, 74, 98, 97, 0);
+  b.density(59, 74, 98, 92, 0);
 
   // ------------------------------------------------------------------
   // 14. Kettle Lane and the Butterwick Night Market (the way round the roadblock)
@@ -860,22 +904,42 @@ export function build() {
     ],
   });
   b.use(gateSwitch, {
-    objective: 'Open the depot gate', opens: [depotGate],
+    // The switch runs the whole yard: the gate, the spur gate and the roller door all roll up, so the
+    // finale's three lanes are open before anyone cranks the ignition.
+    objective: 'Open the depot gate', opens: [depotGate, spurGate, bayDoor],
     radio: [
       ['Dot', 'Gate switch is in Gerald\'s booth. Sorry, Gerald.'],
       ['Taro', 'Gerald and I shared a thermos most nights. Sleep well, big fella.'],
-      ['Dot', 'The rest of the yard is locked tight. Anything that wants you comes through that gate.'],
+      ['Dot', 'That switch runs the whole yard, sweet pea. The gate, the freight tunnel and the bay roller door. Three ways in.'],
     ],
   });
   b.use(ignition, {
-    objective: 'Start the hospital shuttle', horde: true, hold: 180, big: true, opens: [shuttleDoor, bayDoor, busWash, spurGate], at: [85.5, 86.5],
-    // The siren pulls the town into Depot Square, and from there through the gate, in front of the Gatling.
-    lanes: { A: [{ x0: 62, z0: 58, x1: 98, z1: 72 }] },
+    objective: 'Start the hospital shuttle', horde: true, hold: 150, big: true, opens: [shuttleDoor], at: [85.5, 86.5],
+    // The siren pulls the town in three ways. A: out of Depot Square through the gate. B: Mallow Junction,
+    // down the freight spur tunnel. C (the flank, Brute and special pushes): the east lane, through the
+    // roller door behind the shuttle, out of the Gatling's arc. Spawn rects sit well back from each
+    // entrance (the server keeps them 30 m from the gun and out of sight anyway).
+    lanes: {
+      A: [{ x0: 62, z0: 58, x1: 98, z1: 66 }, { x0: 99, z0: 61, x1: 105, z1: 63 }],
+      B: [{ x0: 106, z0: 74, x1: 117, z1: 81 }, { x0: 118, z0: 66, x1: 122, z1: 86 }],
+      C: [{ x0: 54, z0: 60, x1: 58, z1: 98 }],
+    },
+    // Teaching finale: the gate alone, then gate and tunnel with a special push, a Brute from the flank,
+    // and a final no heavier than wave 2. Breathers bring the fallen back.
+    holdScript: [
+      { kind: 'wave', secs: 35, lanes: ['A'], msg: 'Here they come! Watch the gate!' },
+      { kind: 'breather', secs: 10, msg: 'Breather! Reload and patch up!' },
+      { kind: 'wave', secs: 35, lanes: ['A', 'B'], specials: 2, msg: 'The tunnel too! Gate and tunnel!' },
+      { kind: 'brute', secs: 25, msg: 'A Brute at the roller door!' },
+      { kind: 'breather', secs: 10, msg: 'Breather! One more push!' },
+      { kind: 'final', secs: 35, lanes: ['A', 'B'], msg: 'Last push! Gate and tunnel!' },
+    ],
     radio: [
-      ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company. Three minutes.'],
+      ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company. Two and a half minutes.'],
       ['Dot', 'And the Guard wired their evac siren to that bay. Every sleeper in town will come.'],
-      ['Pip', 'There\'s a Guard gun on those sandbags. Popcorn Gatling. I named it. It\'s named.'],
-      ['Mochi', 'Somebody on the popcorn! Everybody else, face out!'],
+      ['Pip', 'There\'s a Guard gun on the sandbags by the ignition. Popcorn Gatling. I named it. It\'s named.'],
+      ['Mochi', 'Somebody on the popcorn! It sees the gate and the tunnel. Everybody else, watch the roller door!'],
+      ['Dot', 'The Guard left supplies by the nest. Stock up before you crank her, sweet pea.'],
       ['Pip', 'Why do all the vehicles have moods?'],
       ['Dot', 'Because they\'re old, sweet pea. Like me.'],
     ],
@@ -883,6 +947,7 @@ export function build() {
   b.gather({ x0: 71, z0: 85, x1: 83, z1: 87 }, {
     objective: 'Everybody on the shuttle!',
     radio: [
+      ['Dot', 'She\'s purring! Door\'s open. Everybody aboard, and don\'t stop for anything!'],
       ['Dot', 'St. Marigold Hospital. There\'s a helicopter on the roof. Drive safe!'],
       ['Mochi', 'I\'ve never driven a bus.'],
       ['Taro', 'Then I\'ll drive. I\'ve never driven one either, but I\'m older.'],
