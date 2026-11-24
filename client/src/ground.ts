@@ -12,6 +12,8 @@ import { t } from './i18n';
 const T = TILE;
 const PX = 32; // ground texture pixels per tile (6 cm texels)
 const WATER_Y = -0.24;
+/** How far (m) water that reaches the map edge carries on past it, out into the fog. */
+const WATER_RUN = 160;
 const FLOOR_BASE: Record<number, number> = {
   [F.ASPHALT]: 0x5a5d84, [F.SIDEWALK]: 0x9a97bd, [F.GRASS]: 0x5aae7a, [F.INTERIOR]: 0x9d8fa5, [F.SAFE]: 0xe6b67a,
   [F.DIRT]: 0xa47e5e, [F.CONCRETE]: 0x8b8a9c, [F.TILES]: 0xc9d3dc, [F.WOOD]: 0xb07f52, [F.WATER]: 0x3f78b8,
@@ -266,8 +268,11 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
       geo.pos.push(x0, 0, z0, x0, 0, z1, x1, 0, z1, x1, 0, z0); geo.nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
       geo.uv.push(0, 0, 0, 1, 1, 1, 1, 0); geo.idx.push(0, 1, 2, 0, 2, 3);
     } else {
-      const shore = (x: number, z: number) => { // 1 when this grid corner touches dry land or a wall
-        for (const [ox, oz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) if (floorOf(x + ox, z + oz) !== F.WATER) return 1;
+      const shore = (x: number, z: number) => { // 1 when this grid corner touches dry land or a wall (past the map edge counts as more water)
+        for (const [ox, oz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+          const tx = x + ox, tz = z + oz;
+          if (tx >= 0 && tz >= 0 && tx < W && tz < H && floorOf(tx, tz) !== F.WATER) return 1;
+        }
         return 0;
       };
       for (let z = cz0; z < cz1; z++) for (let x = cx0; x < cx1; x++) {
@@ -279,6 +284,19 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
           water.pos.push(ax, WATER_Y, az, ax, WATER_Y, bz, bx, WATER_Y, bz, bx, WATER_Y, az);
           for (const [cx, cz] of [[x, z], [x, z + 1], [x + 1, z + 1], [x + 1, z]]) { const k = shore(cx, cz); water.col.push(k, k, k); }
           water.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+          // At the map edge the water runs on out into the fog (a river or quay does not just stop).
+          for (const [ox, oz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const nx = x + ox, nz = z + oz;
+            if (nx >= 0 && nz >= 0 && nx < W && nz < H) continue;
+            const e = WATER_RUN, b2 = water.pos.length / 3;
+            // The edge's two corners, then the same pushed `e` metres outward.
+            const [p0, p1] = ox ? [[ox > 0 ? bx : ax, az], [ox > 0 ? bx : ax, bz]] : [[ax, oz > 0 ? bz : az], [bx, oz > 0 ? bz : az]];
+            water.pos.push(p0[0], WATER_Y, p0[1], p1[0], WATER_Y, p1[1], p1[0] + ox * e, WATER_Y, p1[1] + oz * e, p0[0] + ox * e, WATER_Y, p0[1] + oz * e);
+            const k0 = ox ? shore(ox > 0 ? x + 1 : x, z) : shore(x, oz > 0 ? z + 1 : z), k1 = ox ? shore(ox > 0 ? x + 1 : x, z + 1) : shore(x + 1, oz > 0 ? z + 1 : z);
+            water.col.push(k0, k0, k0, k1, k1, k1, k1, k1, k1, k0, k0, k0);
+            // Wind both ways round: which face is up depends on the side.
+            water.idx.push(b2, b2 + 1, b2 + 2, b2, b2 + 2, b2 + 3, b2, b2 + 2, b2 + 1, b2, b2 + 3, b2 + 2);
+          }
           continue;
         }
         const b = geo.pos.length / 3, u0 = (x - cx0) / cw, u1 = (x + 1 - cx0) / cw, v0 = (z - cz0) / chh, v1 = (z + 1 - cz0) / chh;

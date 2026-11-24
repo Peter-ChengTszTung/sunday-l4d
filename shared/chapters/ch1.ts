@@ -577,6 +577,11 @@ export function build() {
   b.carve(100, 7, 117, 9, F.INTERIOR);
   b.prop('barrel', 106, 9); b.prop('crate', 112, 7);
   b.lamp(118.6, 7.3);
+  // The railway over it: a storey-1 deck across the embankment, so from the canal the line reads as a
+  // bridge over the water and the towpath (not a lone ceiling beam between two banks). Nobody walks it.
+  b.level(1);
+  b.carve(100, 0, 117, 12, F.CONCRETE);
+  b.level(0);
   // Gumdrop Street, east to the river.
   b.carve(118, 7, 221, 8, F.CONCRETE); b.carve(118, 9, 221, 14, F.ASPHALT); b.carve(118, 15, 211, 16, F.SIDEWALK);
   car(125, 10, E, 2, 1); car(160, 13, WEST, 2, 1); b.prop('van', 172, 9, 3, 1, { color: 0xe8e3f0 }); car(185, 11, E, 2, 1); car(198, 13, WEST, 2, 1);
