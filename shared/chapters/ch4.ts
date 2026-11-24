@@ -93,10 +93,11 @@ export function build() {
 
   // The Mallow River along the east edge (solid but see-through: long sightlines across it).
   b.carve(159, 0, 171, H - 1, F.WATER);
-  // The river comes out of a rock gorge and goes back into one: rock across both map-edge rows, so the
-  // water never just stops at the edge of the world (and the renderer does not run it on past it).
-  b.fill(159, 0, 171, 1); b.walls(159, 0, 171, 1, WALL.ROCK, 9);
-  b.fill(159, H - 2, 171, H - 1); b.walls(159, H - 2, 171, H - 1, WALL.ROCK, 9);
+  // The river comes out of the woods and goes back into them: the banks' forest closes across both
+  // map-edge rows, so the water never just stops at the edge of the world (and the renderer does not
+  // run it on past it).
+  b.fill(159, 0, 171, 1); b.walls(159, 0, 171, 1, WALL.HEDGE, 8);
+  b.fill(159, H - 2, 171, H - 1); b.walls(159, H - 2, 171, H - 1, WALL.HEDGE, 8);
 
   /** A pair of rails between two points, painted as steel lines either side of the centre. */
   const rail = (x0: number, z0: number, x1: number, z1: number) => {
