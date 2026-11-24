@@ -944,47 +944,85 @@ export function build() {
   b.label('GENERATOR', 147.6, 186.5, 8, GOLD, E);
   b.lamp(143, 186); b.lamp(139, 183);
   b.label('ARMY FIELD POST', 143, 193.6, 10, OLIVE, S);
-  // The motor pool: a fenced bay east of the post, open to the plaza only (the south-east approach).
+  // The motor pool: a fenced bay east of the post, open to the plaza. Its back gate (on the post's
+  // power: the generator opens it) lets onto a service lane down to Bridge Road. That is lane C of
+  // the Big Hold On, the flank behind the guns: both Brutes come up it.
   b.carve(152, 179, 158, 190, F.ASPHALT);
+  b.carve(153, 191, 156, 191, F.ASPHALT);
+  const poolGate = b.door(153, 191, 156, 191, 'fence', 'MOTOR POOL GATE');
+  b.carve(152, 192, 157, 197, F.DIRT); b.carve(149, 194, 151, 197, F.DIRT);   // service lane, west into Bridge Road
   b.prop('car', 153, 182, 1, 2, { color: ARMY }); b.prop('truck', 156, 183, 2, 5, { color: ARMY }); b.prop('barrel', 152, 189); b.prop('crate', 158, 190);
+  b.prop('pallet', 156, 195); b.prop('barrel', 152, 192);
   b.pick('ammo', 154, 189);
-  b.label('MOTOR POOL', 155, 180.4, 10, OLIVE, S); b.lamp(152.6, 186);
+  b.label('MOTOR POOL', 155, 180.4, 10, OLIVE, S); b.label('SERVICE LANE', 154.5, 194.6, 9, CREAM, 0);
+  b.lamp(152.6, 186); b.lamp(157.4, 190.4);
 
   // ------------------------------------------------------------------
-  // 14. The old bridge: the army checkpoint plaza, THE BIG HOLD ON. The soldiers left their guns on
-  //     the sandbags: a Popcorn Gatling and a Thump Cannon in the nest by the boom control, a
-  //     Fizzbang Pod on the watchtower roof (storey 1). The horde comes two ways (the step's spawn
-  //     zones): out of Bridge Park (north: the Pod and the Cannon) and up the diner road (west: the
-  //     Gatling). The post and the motor pool behind stay quiet. Cover is trucks and low sandbags.
+  // 14. The old bridge: the army checkpoint plaza, THE BIG HOLD ON (grand finale + gauntlet). The
+  //     soldiers left three guns on the sandbags. Three lanes (the step's `lanes`):
+  //       A  down the river path, over the weir landing and through Bridge Park (north): the Pod on
+  //          the watchtower and the Cannon;
+  //       B  up the diner road (west): the Gatling and the Cannon;
+  //       C  the flank, up the service lane from Bridge Road and through the motor pool (south-east):
+  //          outside every arc, the team's job. Both Brutes and the special pushes come this way.
+  //     The Thump Cannon sits on the nest's south side facing north-west, so it swings onto A or B.
+  //     The supply stand is by the boom lever. Cover is trucks and low sandbags, never a full wall.
+  //     Then the gauntlet: boom up, ~30 m up the ramp and along the deck to the No. 9 while the far
+  //     bank's river road (also lane C: only reachable once the boom is up) pours up the far ramp.
+  //
+  //   Schematic (not to scale):
+  //          x132      x142      x152  x159         x172
+  //   z132   ....AAAAAA..::                        |rr|   A lane A spawns (round the river path bend)
+  //   z140               ::        ~~ river ~~     |rr|   : river path, a long straight into the arcs
+  //   z148               LL  ~~~ weir ~X~~~        |rr|   L weir landing; r far bank road (escape)
+  //   z152    .......BRIDGE PARK.....              |rr|   | riverside treeline
+  //   z164   [P] ttt     $$k///9 s[No.9]bb///rr           P Pod (tower, storey 1) faces -z
+  //   z168   [ ]   ]G<    S ///9 s[No.9]bb///rr           G Gatling faces -x; ] low sandbags
+  //   BBBB.......                                         B lane B spawns (diner road, far west)
+  //   z174   tt     K   tent                              K Cannon faces -x-z (north-west)
+  //   z176   tt    ]tt     motor                          $ stand, k boom lever, 9 boom / bus door
+  //   z180   FIELD POST   |pool|                          s midpoint sandbags on the deck (storey 1)
+  //   z191                 ==  MOTOR POOL GATE
+  //   z196   CCCCCC.<<<<<<<  service lane                 C lane C spawns (Bridge Road)
   // ------------------------------------------------------------------
   b.carve(133, 164, 158, 178, F.ASPHALT);
   b.paint(133, 177, 158, 178, F.SIDEWALK);
   b.carve(134, 150, 155, 163, F.GRASS);                                        // Bridge Park (north entry)
   b.carve(154, 148, 158, 157, F.DIRT);                                         // weir landing
+  b.carve(154, 132, 158, 147, F.DIRT); b.carve(140, 132, 153, 137, F.DIRT);    // river path, bending west under the pines
   b.carve(159, 150, 171, 151, F.CONCRETE);                                     // the old weir
   b.carve(164, 150, 166, 151, F.WATER);                                        // ...washed out mid-river: the bridge is the only way over
-  b.carve(172, 118, 178, 178, F.DIRT);                                         // far bank river road
+  b.carve(173, 118, 178, 178, F.DIRT); b.carve(172, 161, 172, 178, F.DIRT); b.carve(172, 150, 172, 151, F.DIRT);   // far bank river road, behind a riverside treeline (gap: the weir's far end)
   b.label('OLD WEIR', 161.5, 149.4, 10, SKY, E); b.label('WASHED OUT', 167.5, 152.6, 9, RED, E); b.label('BRIDGE PARK', 144, 152, 12, MINT, 0);
-  // Park: picnic benches, pines (cover; the far bank shambles in from here).
+  b.label('RIVER PATH', 156, 143, 10, CREAM, N);
+  // River path: picnic litter and a fallen pine (lane A's spawn ground, out of sight round the bend).
+  b.prop('bench', 144, 135, 2, 1); b.prop('rock', 149, 133); b.prop('pine', 141, 137); b.prop('barrel', 157, 139);
+  b.lamp(155, 146.4);
+  // Park: picnic benches, pines (cover; lane A shambles in from the weir landing).
   for (const [x, z] of [[138, 154], [146, 157], [140, 160]]) b.prop('bench', x, z, 2, 1);
   for (const [x, z] of [[135, 151], [150, 152], [152, 160], [143, 151], [136, 162], [147, 161]]) b.prop(hash2(x, z) < 0.5 ? 'pine' : 'tree', x, z);
   b.pick('ammo', 148, 155);
   // Army checkpoint: trucks, sandbag lines, the nest round the boom gate control.
   b.prop('truck', 139, 164, 5, 2, { color: ARMY }); b.prop('truck', 134, 176, 5, 2, { color: ARMY });
+  b.prop('truck', 149, 176, 4, 2, { color: ARMY });                            // the Cannon's back
   b.prop('container', 155, 173, 3, 2, { color: 0x7a8a52 });                    // supply tent
-  b.prop('barrier', 145, 166, 1, 5); b.prop('barrier', 147, 173, 3, 1); b.prop('barrier', 153, 167, 1, 2);   // the nest
-  b.prop('barrier', 138, 169, 1, 3); b.prop('barrier', 149, 176, 4, 1); b.prop('crate', 137, 167); b.prop('crate', 144, 159);
+  b.prop('barrier', 145, 166, 1, 5); b.prop('barrier', 153, 167, 1, 2); b.prop('barrier', 145, 176, 2, 1);   // the nest
+  b.prop('barrier', 138, 169, 1, 3); b.prop('crate', 137, 167); b.prop('crate', 144, 159); b.prop('barrier', 141, 173, 2, 1);
   b.prop('barrel', 157, 176);
   const boomLever = b.obj('lever', 153, 164, 'Raise the army boom gate');   // the control box at the foot of the bridge ramp
-  b.mount('minigun', 147, 168, '-x');                                         // Popcorn Gatling: the plaza and the diner road
-  b.mount('cannon', 151, 171, '-z');                                          // Thump Cannon: Bridge Park and the boom gate
-  b.pick('ammo', 149, 166); b.pick('ammo', 150, 166); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173); b.pick('ammo', 154, 176);
-  b.pick('medkit', 141, 174); b.pick('medkit', 152, 169); b.pick('rifle', 137, 170); b.pick('autoshotgun', 136, 170); b.pick('launcher', 144, 172);
-  b.pick('rattle', 143, 167); b.pick('firebomb', 154, 170);      // for the Big Hold On
+  b.mount('minigun', 147, 168, '-x');                                         // Popcorn Gatling: the diner road (lane B)
+  b.mount('cannon', 147, 174, '-x-z');                                        // Thump Cannon: swings from the diner road to Bridge Park
+  // The supply stand by the boom lever: ammo, a medkit per survivor, something to throw.
+  b.pick('ammo', 151, 165); b.pick('ammo', 152, 165);
+  for (const [x, z] of [[149, 165], [150, 165], [149, 166], [150, 166]]) b.pick('medkit', x, z);
+  b.pick('firebomb', 151, 166); b.pick('rattle', 152, 166);
+  b.pick('ammo', 136, 172); b.pick('ammo', 154, 176);
+  b.pick('rifle', 137, 170); b.pick('autoshotgun', 136, 170); b.pick('launcher', 144, 172);
   b.label('ARMY CHECKPOINT', 143, 174.6, 14, OLIVE, 0); b.label('CONVOY ASSEMBLY', 143, 176.2, 9, CREAM, 0);
-  b.label('ARMY NEST', 149.5, 165.6, 9, OLIVE, 0);
-  for (const [x, z] of [[138, 164.4], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [150, 177.6], [134, 156], [154, 152], [147, 171]]) b.lamp(x, z);
-  b.arrow(143, 177.6, N); b.arrow(151.5, 174.6, N);
+  b.label('ARMY NEST', 147.5, 171.4, 9, OLIVE, 0); b.label('SUPPLIES', 150.5, 167.4, 8, CREAM, 0);
+  b.label('DINER ROAD', 130, 174, 10, PEACH, E);
+  for (const [x, z] of [[138, 164.4], [144, 164.4], [152, 166], [157.6, 172], [138, 177.6], [153.6, 177.6], [134, 156], [154, 152], [147, 171]]) b.lamp(x, z);
+  b.arrow(143, 177.6, N); b.arrow(151.5, 174.6, N); b.arrow(154.4, 168, E);
   // The watchtower: a sandbagged block in the plaza's north-west corner, a ladder on its east and
   // south faces (so it is never a one-way cheese spot), the Fizzbang Pod on its roof over Bridge Park.
   b.fill(133, 164, 136, 167); b.walls(133, 164, 136, 167, WALL.BUILDING, STOREY);
@@ -993,36 +1031,40 @@ export function build() {
   b.level(1);
   b.carve(133, 164, 136, 167, F.CONCRETE);
   b.prop('barrier', 133, 164, 1, 1); b.prop('crate', 136, 164);
-  b.mount('rockets', 134, 165, '-z');                                          // Fizzbang Pod: Bridge Park
+  b.mount('rockets', 134, 165, '-z');                                          // Fizzbang Pod: Bridge Park (lane A)
   b.pick('rifle', 133, 167); b.pick('ammo', 135, 167); b.pick('ammo', 133, 166);
   b.label('WATCHTOWER', 135.5, 166.4, 8, OLIVE, 0);
   b.lamp(133.4, 165.5);
   b.level(0);
   // The old bridge: a deck one storey over the river (railings both sides), a ramp up from the plaza
   // and one down to the far bank's river road. The army boom gate bars the deck at its west end;
-  // Dot's No. 9 is parked mid-span, nose to the far bank.
+  // sandbags halfway along are the gauntlet's one stop; Dot's No. 9 is parked on the far span, its
+  // door facing home, so the far bank's sleepers come round both sides of it, head-on.
   b.label('MALLOW RIVER', 165, 158, 14, SKY, E);
   b.stairs(155, 164, 158, 171, '+x');                                          // plaza ramp, 8 wide
   b.stairs(172, 164, 175, 171, '-x');                                          // far-bank ramp
   b.label('OLD BRIDGE', 156.5, 167.5, 12, PEACH, E);
   b.level(1);
   b.carve(159, 164, 171, 171, F.ASPHALT);
-  for (let x = 162; x <= 170; x += 4) b.label('— —', x, 165, 14, '#f2e6c0', E);
+  for (const x of [166, 170]) b.label('— —', x, 165, 14, '#f2e6c0', E);
   const boomGate = b.door(160, 164, 160, 171, 'boom', 'ARMY BOOM GATE');
   b.label('BOOM GATE', 159.5, 167.5, 9, GOLD, E);
-  b.fill(162, 166, 168, 169); b.walls(162, 166, 168, 169, WALL.BUILDING, 3.1);
-  b.carve(163, 167, 167, 168, F.SAFE);
-  b.carve(162, 167, 162, 168, F.ASPHALT);
-  const busDoor = b.door(162, 167, 162, 168, 'shutter', 'No. 9');
-  b.prop('bus', 169, 166, 2, 4, { color: 0xffc94a });                         // the No. 9's nose, pointing home
-  b.label('No. 9', 165, 165.4, 14, GOLD, E); b.label('MALLOW BAY TRANSIT', 165, 170.6, 9, CREAM, E);
-  b.lamp(159.2, 164.2); b.lamp(159.2, 171.8); b.lamp(171.8, 164.2); b.lamp(171.8, 171.8);
+  b.prop('barrier', 162, 164, 1, 2); b.prop('barrier', 162, 170, 1, 2);       // the midpoint sandbags
+  b.fill(164, 166, 168, 169); b.walls(164, 166, 168, 169, WALL.BUILDING, 3.1);
+  b.carve(165, 167, 167, 168, F.SAFE);
+  b.carve(164, 167, 164, 168, F.ASPHALT);
+  const busDoor = b.door(164, 167, 164, 168, 'shutter', 'No. 9');
+  b.prop('bus', 169, 166, 2, 4, { color: 0xffc94a });                         // the No. 9's nose, pointing to the far bank
+  b.label('No. 9', 166.5, 165.4, 14, GOLD, E); b.label('MALLOW BAY TRANSIT', 166.5, 170.6, 9, CREAM, E);
+  b.arrow(161.5, 167.5, E);
+  b.lamp(159.2, 164.2); b.lamp(159.2, 171.8); b.lamp(162.5, 167.5); b.lamp(171.8, 164.2); b.lamp(171.8, 171.8);
   b.level(0);
-  // Far bank: river road under the pines, a last Snoozle board.
-  for (const z of [124, 133, 141, 155, 162, 175]) b.prop('pine', z % 2 ? 178 : 172, z);
-  b.prop('pine', 177, 147); b.prop('rock', 173, 128); b.prop('bush', 177, 168);
+  // Far bank: river road under the pines behind a riverside treeline, a last Snoozle board. It
+  // feeds the far ramp: the gauntlet's head-on push.
+  for (const z of [124, 133, 141, 155, 162, 175]) b.prop('pine', z % 2 ? 178 : 173, z);
+  b.prop('pine', 177, 147); b.prop('rock', 174, 128); b.prop('bush', 177, 168);
   billboard(177, 156, 1, 5, 175.4, 158.5, WEST);
-  b.label('RIVER ROAD', 175, 138, 12, CREAM, N);
+  b.label('RIVER ROAD', 175.5, 138, 12, CREAM, N);
   b.pick('ammo', 175, 120);
   b.lamp(175, 151); b.lamp(175, 172);
 
@@ -1158,34 +1200,45 @@ export function build() {
     ],
   });
   b.use(postGen, {
-    objective: 'Fuel the field post generator', opens: [postExit],
+    objective: 'Fuel the field post generator', opens: [postExit, poolGate],
     radio: [
       ['Nori', 'Cots, cold coffee, field orders. The soldiers left in a hurry.'],
       ['Taro', 'And left their big guns on the sandbags. Somebody hoped we\'d come.'],
     ],
   });
   b.use(boomLever, {
-    objective: 'Raise the bridge boom gate', horde: true, hold: 180, big: true, at: [149.5, 169.5], opens: [boomGate, busDoor],
-    // Two ways in: Bridge Park (north) and the diner road (west), where the guns face.
-    lanes: { A: [{ x0: 134, z0: 150, x1: 158, z1: 162 }, { x0: 84, z0: 164, x1: 118, z1: 192 }] },
+    objective: 'Raise the bridge boom gate', horde: true, hold: 150, big: true, at: [151.5, 167.5], opens: [boomGate, busDoor],
+    // A: the river path and the weir landing (into Bridge Park, the Pod and the Cannon). B: the diner
+    // road, far west (the Gatling and the Cannon). C: the flank, Bridge Road up the service lane and
+    // through the motor pool, outside every arc; and the far bank's river road, which only joins up
+    // once the boom is raised, so it feeds the run to the bus (the escape trickles from every lane).
+    lanes: {
+      A: [{ x0: 140, z0: 132, x1: 149, z1: 137 }],
+      B: [{ x0: 101, z0: 164, x1: 118, z1: 177 }],
+      C: [{ x0: 138, z0: 196, x1: 148, z1: 205 }, { x0: 173, z0: 120, x1: 178, z1: 160 }],
+    },
     radio: [
       ['Dot', 'I can see you! Get that boom gate up and get on my bus!'],
       ['Wren', 'The far bank\'s out of range. They\'re still coming. Hold them!'],
+      ['Taro', 'Park to the north, diner road to the west. And somebody mind the motor pool behind us.'],
       ['Pip', 'Turret section! Gatling, cannon, rocket pod. Best level ever!'],
     ],
+    // Wave, breather, two lanes and a special push, two Brutes up the flank, breather, final.
     holdScript: [
-      { kind: 'wave', secs: 36, msg: 'Here they come! Man the guns!' },
-      { kind: 'breather', secs: 8 },
-      { kind: 'specials', secs: 26 },
-      { kind: 'wave', secs: 34, flank: true, msg: 'Second wave! Watch the park and the road!' },
-      { kind: 'breather', secs: 6 },
-      { kind: 'brute', secs: 26, msg: 'A Brute! Swing the cannon round!' },
-      { kind: 'final', secs: 44, msg: 'The boom gate\'s nearly up! Hold on!' },
+      { kind: 'wave', secs: 30, lanes: ['A'], msg: 'Here they come! Out of Bridge Park!' },
+      { kind: 'breather', secs: 8, lanes: ['A', 'B'], msg: 'Quick breather! Restock at the boom gate.' },
+      { kind: 'wave', secs: 30, lanes: ['A', 'B'], specials: 2, msg: 'Park AND diner road! Watch the motor pool!' },
+      { kind: 'brute', secs: 22, lanes: ['A', 'B'], msg: 'A Brute in the motor pool! Turn round!' },
+      { kind: 'brute', secs: 22, lanes: ['A', 'B'], msg: 'Another Brute! Motor pool again!' },
+      { kind: 'breather', secs: 8, lanes: ['A', 'B'], msg: 'Last breather! Patch up!' },
+      { kind: 'final', secs: 30, lanes: ['A', 'B'], msg: 'The boom gate\'s nearly up! Hold on!' },
     ],
   });
-  b.gather({ x0: 163, z0: 167, x1: 167, z1: 168, lv: 1 }, {
+  b.gather({ x0: 165, z0: 167, x1: 167, z1: 168, lv: 1 }, {
     objective: 'Everybody on Dot\'s bus!', closes: [busDoor],
     radio: [
+      ['Dot', 'Boom\'s up! Run for it, sweet peas! They\'re coming over the far bank too!'],
+      ['Wren', 'I can see the bridge from up here! Sandbags halfway: stop, shoot, then run!'],
       ['Dot', 'Wren, honey. Come down. There\'s a seat.'],
       ['Wren', 'Somebody has to stay up and keep it ringing, Mum. Lowells are good at staying up.'],
       ['Dot', 'Then I\'ll keep the radio on. Every night, sweet pea. Every night.'],

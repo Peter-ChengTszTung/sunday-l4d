@@ -253,4 +253,18 @@ export default {
   "GENERATOR": "發電機",
   "MOTOR POOL": "車輛調度場",
   "ARMY NEST": "軍方火力點",
+  // The Big Hold On v2: lanes, stage calls, the bridge run.
+  "Park to the north, diner road to the west. And somebody mind the motor pool behind us.": "北邊是公園，西邊是餐館那條路。還有，誰去顧一下我們背後的車輛調度場。",
+  "Here they come! Out of Bridge Park!": "他們來了！從橋畔公園出來了！",
+  "Quick breather! Restock at the boom gate.": "喘口氣！去柵欄旁補給！",
+  "Park AND diner road! Watch the motor pool!": "公園跟餐館那條路一起來！小心車輛調度場！",
+  "A Brute in the motor pool! Turn round!": "巨漢從車輛調度場過來了！轉身！",
+  "Another Brute! Motor pool again!": "又一隻巨漢！又是車輛調度場！",
+  "Last breather! Patch up!": "最後一次喘息！快包紮！",
+  "Boom's up! Run for it, sweet peas! They're coming over the far bank too!": "柵欄升起來了！快跑，小豌豆們！對岸那邊也有東西衝過來了！",
+  "I can see the bridge from up here! Sandbags halfway: stop, shoot, then run!": "我從這上面看得到橋！半路有沙包：停下來、開槍，然後再跑！",
+  "MOTOR POOL GATE": "車輛調度場後門",
+  "SERVICE LANE": "勤務通道",
+  "RIVER PATH": "河濱小徑",
+  "DINER ROAD": "餐館路",
 } satisfies Record<string, string>;
