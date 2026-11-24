@@ -8,10 +8,17 @@
 //   square → Library (checkpoint) → Library Row alleys (fuse sweep: laundry storeroom upstairs,
 //   fire escape by ladder; optional rooftops by ladder) → Cherry Street tram stop (crescendo 2,
 //   footbridge perch) → rail underpass →
-//   Clocktower Corner → Kettle Corner Diner (checkpoint) → Depot Square (Gerald) →
-//   depot maintenance bay (finale) → Shuttle No. 4.
-// Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
-// Storeys: 0 street, 1 garage level 2 / rooftops / fire escape / storeroom / footbridge, 2 garage roof.
+//   Clocktower Corner → Kettle Corner Diner (checkpoint) → the Guard has fenced Depot Square off
+//   from the diner, so the long way round: Kettle Lane and the Butterwick Night Market → Lantern
+//   Canal east, through the towpath arch under the railway → Gumdrop Street and the Snoozle Sleep
+//   Shop → the river promenade → Night Ferry Terminal (alarmed freight stairs) → Wharf Halt and the
+//   freight bridge west over the Library Row alleys (storey 1) → Mallow Junction yard → signal box
+//   (checkpoint) → Depot Square (Gerald) → depot maintenance bay (finale: the Big Hold On, with the
+//   Guard's Popcorn Gatling) → Shuttle No. 4.
+// Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z). Label rot is the way
+// a reader faces: 0 north, N (PI) south, E east, WEST west.
+// Storeys: 0 street, 1 garage level 2 / rooftops / fire escape / storeroom / footbridge / Wharf Halt
+// and the freight bridge, 2 garage roof.
 import { LevelBuilder, F, WALL, type Theme } from '../level';
 
 export const META = { id: 'ch1', title: 'Last Stop', subtitle: 'Downtown Mallow Bay' };
@@ -35,7 +42,7 @@ const THEME: Theme = {
 const INTRO = '3:00 a.m. A sweet lavender fog rolled through Mallow Bay, and everyone asleep got out of bed and kept walking. You four were awake. Lucky you. Now the radio is crackling: a night dispatcher called Dot says there\'s a way out of town, and she\'ll talk you there. First, you have to get out of the laundromat.';
 
 export function build() {
-  const b = new LevelBuilder(176, 180, 3);
+  const b = new LevelBuilder(236, 180, 3);
   let ci = 0;
   /** Abandoned car (1x2, facing north unless rotated). */
   const car = (x: number, z: number, rot = N, w = 1, d = 2) => b.prop('car', x, z, w, d, { color: CAR[ci++ % CAR.length], rot });
@@ -312,7 +319,7 @@ export function build() {
   b.prop('pallet', 174, 68); b.prop('crate', 174, 76);
   b.item('fuse', 'fuse', 174, 73, 'fuse');
   b.level(0);
-  // Optional: the Library Row rooftops (storey 1), a ladder up from each alley. Sniper perch over
+  // Optional: the Library Row rooftops (storey 1), a ladder up from each alley. A perch over
   // Library Row, Wash Alley and the cut-through, with a rifle and the pigeon keeper's log.
   b.ladder(146, 114, '+x'); b.ladder(168, 102, '-x');
   b.label('LADDER', 145, 114.5, 9, GOLD, E); b.label('LADDER', 169, 102.5, 9, GOLD, WEST);
@@ -423,8 +430,15 @@ export function build() {
   b.carve(64, 47, 65, 47, F.ASPHALT);
   const dinerDoor = b.door(64, 47, 65, 47, 'shutter', 'DINER BACK DOOR');
   b.carve(62, 48, 72, 57, F.ASPHALT);
-  b.prop('dumpster', 70, 48, 2, 1); b.prop('crate', 62, 53);
-  b.lamp(67, 52); b.arrow(66, 54, S);
+  b.prop('dumpster', 70, 48, 2, 1); b.prop('crate', 72, 54);
+  b.lamp(67, 52);
+  // The Mallow Bay Guard's roadblock: Depot Square is right there, behind a fence and two trucks.
+  // The only way out of the lot is the gap west into Kettle Lane.
+  b.fill(62, 57, 72, 57); b.walls(62, 57, 72, 57, WALL.FENCE, 3.2);
+  b.prop('barrier', 63, 56, 4, 1); b.prop('barrier', 68, 56, 4, 1);
+  b.label('ROAD CLOSED', 67.5, 55, 18, RED, N); b.label('MALLOW BAY GUARD', 67.5, 53.6, 11, CREAM, N);
+  b.carve(59, 50, 61, 53, F.SIDEWALK);
+  b.arrow(64, 51.5, WEST);
 
   // ------------------------------------------------------------------
   // 12. Depot Square, Gerald's guard booth and the depot gate
@@ -437,17 +451,24 @@ export function build() {
   const gateSwitch = b.obj('lever', 87, 69, 'Flip the depot gate switch');
   b.label('GATE', 86, 66.5, 14, GOLD);
   car(66, 62, 0.4); b.prop('van', 72, 66, 3, 1, { color: 0xe8e3f0 }); b.prop('container', 92, 59, 2, 5); b.prop('barrier', 76, 61, 3, 1);
+  b.prop('truck', 65, 58, 7, 2, { color: 0x6b7f4a });                 // the Guard's trucks, parked against their own fence
+  b.label('EVAC STAGING', 90, 66.5, 18, GOLD, WEST);
+  // The signal box's depot-side door comes out of the embankment on the east side of the square.
+  b.lamp(98.4, 60.6); b.arrow(96, 62, WEST);
   b.prop('barrier', 70, 70, 3, 1); b.prop('crate', 96, 70); b.prop('crate', 63, 70);
   b.label('TRANSIT DEPOT', 80, 70.5, 34, TEAL);
   for (const [x, z] of [[64, 59], [80, 58.6], [96, 66], [76, 72.4], [83.5, 72.4], [70, 66]]) b.lamp(x, z);
   b.arrow(80, 63, S); b.arrow(83, 67.5, E);
 
   // ------------------------------------------------------------------
-  // 13. Depot yard and maintenance bay (finale), Shuttle No. 4
+  // 13. Depot yard and maintenance bay (finale: the Big Hold On), Shuttle No. 4
   // ------------------------------------------------------------------
-  b.carve(62, 74, 98, 77, F.CONCRETE);
-  b.carve(64, 78, 71, 78, F.CONCRETE); b.carve(86, 78, 93, 78, F.CONCRETE); b.carve(96, 78, 98, 78, F.CONCRETE);
-  b.carve(62, 79, 98, 92, F.CONCRETE);
+  // One open bay from the fence to the back wall, so a flood has room to come at the team from every
+  // side. Four ways in once the gate switch is thrown: the depot gate (north, from Depot Square), the
+  // freight spur tunnel (north-east, from Mallow Junction), the bay roller door (west, from the east
+  // lane) and the bus wash (south-west, from the east lane). The Guard's Popcorn Gatling sits on its
+  // sandbags just north of the ignition, facing the gate; the west and south-west are for the guns.
+  b.carve(62, 74, 98, 92, F.CONCRETE);
   // Shuttle No. 4: a walk-in body in the middle of the bay, ignition at the driver's end.
   b.fill(70, 84, 84, 88); b.walls(70, 84, 84, 88, WALL.BUILDING, 3.2);
   b.carve(71, 85, 83, 87, F.SAFE);
@@ -456,23 +477,216 @@ export function build() {
   b.carve(84, 86, 84, 86, F.CONCRETE);
   const ignition = b.obj('terminal', 84, 86, 'Crank the shuttle ignition');
   b.label('SHUTTLE No. 4', 77, 82.5, 22, GOLD); b.label('ST. MARIGOLD', 77, 86, 14, CREAM);
-  // Street-side roller door (opens onto the east lane at the end).
+  // Street-side roller door onto the east lane.
   b.carve(59, 84, 60, 87, F.ASPHALT);
   const bayDoor = b.door(61, 84, 61, 87, 'shutter', 'BAY ROLLER DOOR');
+  // Bus wash: a lane from the bay's south-west corner out to the east lane, behind a gate.
+  b.carve(63, 93, 66, 93, F.CONCRETE); b.carve(59, 94, 66, 97, F.CONCRETE);
+  const busWash = b.door(59, 94, 59, 97, 'fence', 'BUS WASH GATE');
+  b.prop('barrel', 62, 97); b.prop('pallet', 61, 94);
+  b.label('BUS WASH', 64.5, 95.5, 12, TEAL, N);
+  // Freight spur tunnel: through the embankment to Mallow Junction.
+  b.carve(99, 74, 117, 77, F.INTERIOR);
+  const spurGate = b.door(99, 74, 99, 77, 'fence', 'FREIGHT SPUR GATE');
+  b.prop('crate', 106, 74); b.prop('barrel', 112, 77);
+  // Cover: a dead shuttle east of the stand, crates and sandbag lines that stop nothing for long.
   b.prop('bus', 89, 81, 2, 10, { color: 0x5ff2e0 });                  // a dead shuttle for cover
-  b.prop('counter', 64, 92, 5, 1, { color: 0x8a8a99 }); b.prop('counter', 92, 92, 5, 1, { color: 0x8a8a99 });
-  for (const [x, z] of [[66, 81], [79, 80], [94, 85], [86, 91], [72, 91]]) b.prop('crate', x, z);
+  b.prop('counter', 92, 92, 5, 1, { color: 0x8a8a99 }); b.prop('counter', 68, 92, 4, 1, { color: 0x8a8a99 });
+  for (const [x, z] of [[66, 81], [79, 80], [94, 85], [86, 91], [72, 91], [70, 76], [96, 83]]) b.prop('crate', x, z);
+  b.prop('barrier', 82, 78, 3, 1); b.prop('barrier', 89, 77, 1, 3); b.prop('barrier', 66, 86, 1, 3); b.prop('barrier', 74, 90, 3, 1);
   b.prop('barrel', 97, 80); b.prop('barrel', 62, 88);
+  b.prop('truck', 63, 77, 2, 6, { color: 0x6b7f4a });                 // a Guard truck nobody woke up to drive
+  // The Guard's nest: Popcorn Gatling on the sandbags, facing the gate.
+  b.mount('minigun', 86, 79, '-z');
+  b.label('POPCORN GATLING', 86.5, 81.6, 10, GOLD, 0);
+  b.note(88, 80, 'Guard duty log', 'MALLOW BAY GUARD, POST 3, TRANSIT DEPOT. 3:10 Evac staging up. Siren wired to the shuttle bay. Gatling on the sandbags. 3:20 Sarge says rest your eyes, long night. 3:22 Everybody is resting their eyes. 3:2');
   b.prop('desk', 63, 90, 2, 1);
   b.note(65, 90, 'Whiteboard', 'NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot\'s girl Wren by the kettle. SIGN IT.');
   b.note(63, 89, 'Birthday card', 'Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.)');
+  // Before the Big Hold On: ammo at each corner of the stand, meds, a launcher and throwables.
   b.pick('medkit', 96, 90); b.pick('medkit', 97, 90); b.pick('ammo', 94, 75); b.pick('ammo', 94, 74); b.pick('ammo', 64, 75); b.pick('ammo', 64, 74); b.pick('ammo', 86, 90); b.pick('ammo', 86, 89);
-  b.pick('firebomb', 87, 89); b.pick('rattle', 87, 90);         // before the ignition holdout
+  b.pick('firebomb', 87, 89); b.pick('rattle', 87, 90);
+  b.pick('launcher', 88, 84); b.pick('ammo', 88, 85); b.pick('firebomb', 88, 86); b.pick('armor', 87, 84);
   b.label('MAINTENANCE BAY', 80, 80.3, 24, CREAM);
-  for (const [x, z] of [[68, 82], [86, 82], [68, 90], [92, 88], [80, 76]]) b.lamp(x, z);
-  b.arrow(80, 75.5, S); b.arrow(88, 79.5, S);
+  for (const [x, z] of [[68, 82], [86, 82.6], [68, 90], [92, 88], [80, 76], [96, 76], [64, 95.5]]) b.lamp(x, z);
+  b.arrow(80, 75.5, S); b.arrow(85.5, 77, S);
   // Finale arena: the ignition holdout brings its own crowd, so no sleepers wait in the bay.
-  b.density(62, 74, 98, 92, 0);
+  b.density(59, 74, 98, 97, 0);
+
+  // ------------------------------------------------------------------
+  // 14. Kettle Lane and the Butterwick Night Market (the way round the roadblock)
+  // ------------------------------------------------------------------
+  // West out of the diner lot along Kettle Lane, then a serpentine between the market's stall rows
+  // (tight, shotgun range) and out of its north-west corner to the canal. The office is a side pocket.
+  const STALL = [0xff8fab, 0x63e6be, 0xffd43b, 0x9775fa, 0x4dabf7, 0xff922b];
+  let si = 0;
+  /** A solid row of market stalls from x0 to x1 on row z. */
+  const stalls = (x0: number, x1: number, z: number) => {
+    for (let x = x0; x <= x1; x += 3) b.prop('counter', x, z, Math.min(3, x1 - x + 1), 1, { color: STALL[si++ % STALL.length] });
+  };
+  b.carve(34, 49, 58, 54, F.ASPHALT); b.paint(34, 49, 58, 49, F.SIDEWALK); b.paint(34, 54, 58, 54, F.SIDEWALK);
+  b.prop('van', 46, 52, 3, 1, { color: 0xff8fab });                  // a crepe van, hatch still open
+  b.prop('counter', 52, 49, 3, 1, { color: 0x63e6be }); b.prop('crate', 41, 54); b.prop('dumpster', 36, 54, 2, 1);
+  b.pick('ammo', 56, 54);
+  b.label('KETTLE LANE', 52, 51.5, 18, CREAM, WEST);
+  b.lamp(57, 49.4); b.lamp(44, 54.4); b.lamp(37, 49.4);
+  b.arrow(55, 51.5, WEST); b.arrow(42, 51.5, WEST); b.arrow(36.5, 49.5, N);
+  // The market yard: three rows of stalls make four lanes, walked east, west, east, west.
+  b.carve(34, 24, 57, 46, F.CONCRETE); b.carve(34, 47, 38, 48, F.CONCRETE);
+  stalls(34, 52, 43); stalls(39, 57, 37); stalls(34, 52, 32);
+  b.prop('crate', 44, 40); b.prop('barrel', 50, 35); b.prop('crate', 40, 27); b.prop('pallet', 47, 45);
+  b.pick('medkit', 35, 40); b.pick('ammo', 56, 35);
+  b.label('BUTTERWICK NIGHT MARKET', 46, 45.3, 16, PINK, E);
+  for (const [x, z] of [[46, 44.4], [48, 40], [44, 34.6], [45, 27]]) b.lamp(x, z);
+  b.arrow(44, 45, E); b.arrow(55, 43.5, N); b.arrow(47, 40, WEST); b.arrow(36.5, 37.5, N);
+  b.arrow(45, 34.5, E); b.arrow(55, 32.5, N); b.arrow(46, 29, WEST); b.arrow(36.5, 25, N);
+  // Market office (optional): the takings, a hand cannon and the manager's chalkboard.
+  b.fill(51, 24, 57, 28); b.carve(52, 24, 57, 27, F.INTERIOR); b.carve(54, 28, 55, 28, F.INTERIOR);
+  b.prop('desk', 55, 24, 2, 1); b.prop('shelf', 57, 24, 1, 3);
+  b.pick('deagle', 52, 24); b.pick('ammo', 53, 24); b.pick('firebomb', 52, 27);
+  b.note(56, 26, 'Market office chalkboard', 'SWEET DREAMS NIGHT! Stalls shut at 2:45 so everyone is tucked up by 3. Free Snoozle sleep mask with every jar of honey. Lights OFF, Bert.');
+  b.label('MARKET OFFICE', 54.5, 30, 10, CREAM, 0);
+  b.lamp(54.5, 25.5);
+  // Lantern Alley, out to the canal.
+  b.carve(35, 17, 38, 23, F.SIDEWALK);
+  b.lamp(38.4, 20);
+
+  // ------------------------------------------------------------------
+  // 15. Lantern Canal, the towpath arch and Gumdrop Street
+  // ------------------------------------------------------------------
+  // A long, straight canal street under strings of lanterns (rifle range), with an optional north
+  // towpath over two footbridges. The canal runs east under the railway (a dark three-wide arch, the
+  // chokepoint) and on along Gumdrop Street to the river.
+  b.carve(34, 1, 99, 2, F.SIDEWALK);                                 // north towpath
+  b.carve(34, 3, 221, 6, F.WATER);                                   // the canal, all the way to the river
+  b.carve(34, 7, 99, 8, F.CONCRETE); b.carve(34, 9, 99, 14, F.ASPHALT); b.carve(34, 15, 99, 16, F.SIDEWALK);
+  b.carve(58, 3, 60, 6, F.WOOD); b.carve(84, 3, 86, 6, F.WOOD);     // footbridges
+  b.prop('container', 40, 4, 8, 2, { color: 0xc8324b }); b.prop('container', 66, 3, 7, 2, { color: 0x2f5f78 }); b.prop('container', 91, 4, 6, 2, { color: 0xffd43b });   // moored barges
+  car(45, 10, E, 2, 1); car(55, 13, WEST, 2, 1); b.prop('van', 63, 10, 3, 1, { color: 0x9775fa }); car(73, 12, E, 2, 1); car(81, 9, WEST, 2, 1); car(93, 13, E, 2, 1);
+  b.prop('bench', 50, 7, 2, 1); b.prop('bench', 77, 7, 2, 1); b.prop('dumpster', 70, 16, 2, 1);
+  b.pick('ammo', 66, 16); b.pick('rifle', 72, 1); b.pick('ammo', 73, 1); b.pick('medkit', 40, 1);   // the towpath pays for the detour
+  b.label('LANTERN CANAL', 58, 11.5, 30, PINK, E);
+  b.label('CANAL ARCH', 95.5, 8, 14, CREAM, E);
+  for (const x of [40, 52, 64, 76, 88, 98]) b.lamp(x, 15.6);
+  for (const x of [46, 70, 94]) b.lamp(x, 7.3);
+  b.lamp(62, 1.3); b.lamp(82, 1.3);
+  b.arrow(36.5, 16, N); b.arrow(42, 12, E); b.arrow(68, 12, E); b.arrow(96, 9, E);
+  for (let x = 44; x <= 92; x += 16) zz(x, 15.5, WEST);
+  b.density(34, 7, 99, 16, 1.5);
+  // The arch under the railway: no lamps inside.
+  b.carve(100, 7, 117, 9, F.INTERIOR);
+  b.prop('barrel', 106, 9); b.prop('crate', 112, 7);
+  b.lamp(118.6, 7.3);
+  // Gumdrop Street, east to the river.
+  b.carve(118, 7, 221, 8, F.CONCRETE); b.carve(118, 9, 221, 14, F.ASPHALT); b.carve(118, 15, 211, 16, F.SIDEWALK);
+  car(125, 10, E, 2, 1); car(160, 13, WEST, 2, 1); b.prop('van', 172, 9, 3, 1, { color: 0xe8e3f0 }); car(185, 11, E, 2, 1); car(198, 13, WEST, 2, 1);
+  b.prop('container', 165, 4, 7, 2, { color: 0x63e6be }); b.prop('container', 194, 3, 6, 2, { color: 0x8a4a78 });
+  b.label('GUMDROP ST', 125, 12, 26, CREAM, E);
+  for (const x of [124, 156, 168, 180, 192, 204]) b.lamp(x, 15.6);
+  b.arrow(160, 12, E); b.arrow(190, 12, E); b.arrow(208, 12, E);
+  b.density(118, 7, 211, 16, 1.2);
+  // Snoozle Sleep Shop: a Dreamwell truck has jack-knifed across the street, so the way on is in one
+  // door and out of the other.
+  b.carve(130, 18, 152, 21, F.TILES); b.carve(132, 17, 133, 17, F.TILES); b.carve(149, 17, 150, 17, F.TILES);
+  b.prop('truck', 140, 8, 2, 7, { color: 0xb784e0 }); b.prop('crate', 140, 7, 2, 1); b.prop('barrier', 140, 15, 2, 2);
+  b.prop('shelf', 131, 21, 6, 1, { color: 0xffc9de }); b.prop('shelf', 140, 21, 6, 1, { color: 0xffc9de }); b.prop('counter', 147, 20, 1, 2, { color: 0xb784e0 });
+  b.pick('ammo', 135, 20); b.pick('medkit', 143, 20); b.pick('firebomb', 151, 21);
+  b.note(146, 18, 'Staff memo', 'SWEET DREAMS NIGHT PROMO: every customer gets a free spritz from the Hush tester! New tester stock came in a crate marked HX-9. Same thing, only stronger. Mgmt.');
+  b.label('SNOOZLE SLEEP SHOP', 141, 19, 14, PINK, E); b.label('DREAMWELL', 137.5, 11.5, 16, LAV, E);
+  b.lamp(136, 19.5); b.lamp(146, 19.5);
+  b.arrow(132.5, 15.5, S); b.arrow(138, 19, E); b.arrow(149.5, 16.5, N);
+
+  // ------------------------------------------------------------------
+  // 16. The river: Bayfront Promenade, Night Ferry Terminal, Wharf Halt and the freight bridge
+  // ------------------------------------------------------------------
+  // South along the river (Dot's tower blinks on the far bank), into the ferry terminal, whose alarmed
+  // switch opens the freight stairs. Up to Wharf Halt (storey 1) with the horde behind, then west over
+  // the freight bridge above Wash Alley and Library Row: one long elevated sightline.
+  b.carve(222, 0, 231, 100, F.WATER);                                // the river
+  b.carve(212, 15, 221, 61, F.SIDEWALK); b.paint(219, 17, 221, 61, F.WOOD);
+  b.carve(233, 34, 234, 35, F.CONCRETE); b.prop('pillar', 233, 34, 2, 2, { color: 0xe8e3f0 });   // Dispatch Tower, far bank
+  b.carve(233, 36, 233, 36, F.CONCRETE); b.prop('beacon', 233, 36);
+  for (const [x, z] of [[213, 20], [213, 37], [213, 54]]) b.prop('tree', x, z);
+  b.prop('bench', 217, 24, 1, 2); b.prop('bench', 217, 46, 1, 2); b.prop('dumpster', 212, 44, 1, 2);
+  b.label('BAYFRONT PROMENADE', 216.5, 27, 18, CREAM, N);
+  for (const z of [22, 32, 42, 52, 60]) b.lamp(220.6, z);
+  b.arrow(215.5, 15, S); b.arrow(216, 34, S); b.arrow(216, 50, S);
+  b.density(212, 17, 221, 61, 1.3);
+  // Pier (optional): out over the water, the best view of the tower.
+  b.carve(222, 38, 229, 40, F.WOOD);
+  b.pick('ammo', 229, 39); b.pick('rattle', 229, 38);
+  b.label('DISPATCH TOWER', 226, 39, 12, RED, E);
+  b.lamp(228.5, 40.6);
+  // Saltwater taffy shop (optional).
+  b.carve(203, 26, 210, 33, F.TILES); b.carve(211, 29, 211, 31, F.TILES);
+  b.prop('counter', 204, 27, 1, 5, { color: 0xff8fab }); b.prop('shelf', 210, 26, 1, 2);
+  b.pick('medkit', 206, 32); b.pick('armor', 207, 27); b.pick('cocoa', 209, 33);
+  b.label('SALTWATER TAFFY', 207, 30, 12, PINK, WEST);
+  b.lamp(207, 29.5);
+  // Night Ferry Terminal: doors off the promenade, the ticket office (and its switch) at the far end.
+  b.carve(196, 64, 221, 75, F.TILES); b.carve(213, 62, 218, 63, F.TILES);
+  b.prop('counter', 199, 64, 1, 6, { color: 0x2f5f78 });            // ticket windows; the office is behind them
+  for (const x of [203, 208, 213]) for (const z of [67, 71]) b.prop('bench', x, z, 3, 1);
+  b.prop('bus', 222, 64, 2, 10, { color: 0xe8e3f0 });               // the Night Ferry, moored for the night
+  const ferrySwitch = b.obj('terminal', 196, 65, 'Open the freight stairs (ALARMED!)');
+  b.note(197, 68, "Ferry master's note", 'Last sailing 11:40. Moored her and turned in early for Sweet Dreams Night. The freight stairs switch is in the ticket office. It\'s alarmed, so DON\'T. Hal');
+  b.pick('medkit', 205, 74); b.pick('medkit', 206, 74); b.pick('ammo', 197, 75); b.pick('ammo', 198, 75); b.pick('firebomb', 199, 75);   // before the alarm
+  b.label('NIGHT FERRY TERMINAL', 215.5, 65.5, 16, TEAL, N); b.label('NO SAILINGS', 219.5, 70, 12, RED, E);
+  for (const [x, z] of [[215.5, 61.4], [205, 69.5], [214, 69.5], [197.5, 66.5]]) b.lamp(x, z);
+  b.arrow(215.5, 63, S); b.arrow(211, 69.5, WEST); b.arrow(201, 72, WEST);
+  // Behind the terminal: the siding yard and the stairs up to Wharf Halt.
+  b.carve(195, 71, 195, 73, F.CONCRETE);
+  const freightStairs = b.door(195, 71, 195, 73, 'shutter', 'FREIGHT STAIRS');
+  b.carve(183, 64, 194, 75, F.CONCRETE);
+  b.fill(185, 72, 185, 75); b.fill(188, 72, 188, 75);
+  b.stairs(186, 72, 187, 75, '+z');
+  b.prop('container', 190, 65, 4, 2, { color: 0x354a7a }); b.prop('crate', 183, 64); b.prop('barrel', 184, 69);
+  b.label('UP TO WHARF HALT', 186.5, 70.6, 10, GOLD, N);
+  b.lamp(186.5, 70.4);
+  b.arrow(192, 72, WEST); b.arrow(186.5, 69.6, S);
+  b.level(1);
+  b.carve(183, 76, 192, 86, F.CONCRETE);                             // Wharf Halt
+  b.carve(141, 84, 182, 86, F.CONCRETE);                             // the freight bridge
+  b.prop('container', 190, 77, 2, 7, { color: 0x8a4a78 });          // a stalled wagon
+  b.prop('bench', 183, 78, 1, 2); b.prop('crate', 165, 84); b.prop('crate', 152, 86);
+  b.pick('ammo', 184, 81); b.pick('ammo', 171, 86);
+  b.label('WHARF HALT', 187, 80, 18, CREAM, N); b.label('FREIGHT LINE', 176, 85, 14, GOLD, WEST);
+  for (const [x, z] of [[187, 77.4], [185, 86.4], [172, 83.6], [158, 86.4], [146, 83.6]]) b.lamp(x, z);
+  b.arrow(186.5, 78, S); b.arrow(186, 85, WEST); b.arrow(178, 85, WEST); b.arrow(160, 85, WEST); b.arrow(145, 85, WEST);
+  b.density(141, 76, 192, 86, 0.5);                                 // the alarm horde fills it
+  b.level(0);
+
+  // ------------------------------------------------------------------
+  // 17. Mallow Junction freight yard and the signal box (checkpoint)
+  // ------------------------------------------------------------------
+  // Down off the bridge into a dark yard. A stalled freight train splits it: south down the east
+  // side, round the tail, north up the west side to the signal box built into the embankment.
+  b.carve(118, 57, 132, 103, F.CONCRETE); b.carve(133, 57, 140, 69, F.CONCRETE); b.carve(133, 81, 140, 103, F.CONCRETE);
+  b.fill(136, 83, 140, 83); b.fill(136, 87, 140, 87);
+  b.stairs(136, 84, 140, 86, '+x');                                  // down from the freight bridge
+  for (const [z, d, k] of [[57, 8, 0], [65, 8, 1], [73, 8, 0], [81, 8, 1], [89, 7, 0]] as const)
+    b.prop(k ? 'tank' : 'container', 129, z, 2, d, { color: k ? 0x8a8a99 : [0xc8324b, 0x2a7470, 0x6a3a78][z % 3] });
+  b.prop('container', 123, 66, 2, 7, { color: 0x354a7a }); b.prop('tank', 123, 76, 2, 6, { color: 0x8a8a99 }); b.prop('container', 123, 85, 2, 6, { color: 0x8a4a78 });
+  b.prop('crate', 134, 92); b.prop('pallet', 137, 98); b.prop('crate', 119, 96); b.prop('barrel', 127, 70);
+  // Yard office corner (optional): north of the noodle bar's back wall.
+  b.prop('desk', 136, 58, 2, 1); b.pick('medkit', 139, 58); b.pick('ammo', 139, 59); b.pick('machete', 134, 58);
+  b.label('MALLOW JUNCTION', 125, 100, 20, CREAM, WEST);
+  for (const [x, z] of [[134.6, 88.6], [133, 100], [121, 100], [120.5, 79], [137, 60]]) b.lamp(x, z);
+  b.arrow(134, 89, S); b.arrow(133, 97, S); b.arrow(127, 100, WEST); b.arrow(120.5, 92, N); b.arrow(120.5, 72, N); b.arrow(119.5, 63, WEST);
+  // Signal box safe room: entry from the yard, a door out to Depot Square through the embankment.
+  b.carve(107, 58, 116, 66, F.SAFE);
+  const boxEntry = b.door(117, 61, 117, 62, 'shutter', 'SAFE ROOM');
+  b.carve(99, 61, 105, 63, F.CONCRETE);
+  const boxDoor = b.door(106, 61, 106, 63, 'shutter', 'SIGNAL BOX DOOR');
+  const boxLever = b.obj('lever', 107, 65, 'Open the depot-side door');
+  b.prop('counter', 109, 58, 6, 1, { color: 0x8a8a99 });            // the old lever frame
+  for (const x of [108, 109, 110, 111]) b.pick('medkit', x, 66);
+  b.pick('ammo', 114, 66); b.pick('ammo', 115, 66); b.pick('ammo', 116, 66);
+  b.pick('rifle', 109, 60); b.pick('autoshotgun', 110, 60); b.pick('shotgun', 111, 60); b.pick('smg', 112, 60); b.pick('launcher', 113, 60);
+  b.pick('deagle', 114, 60); b.pick('armor', 115, 59); b.pick('firebomb', 116, 59); b.pick('rattle', 116, 60);
+  b.label('SAFE ROOM', 111.5, 62.6, 22, RED); b.label('SIGNAL BOX', 111.5, 64.4, 12, CREAM);
+  b.label('SIGNAL BOX', 120, 61.5, 14, GOLD, WEST);
+  b.lamp(111.5, 62); b.lamp(118.4, 60.4);
 
   // ------------------------------------------------------------------
   // Quest
@@ -571,7 +785,66 @@ export function build() {
     objective: 'Open the safe room door', opens: [dinerDoor],
     radio: [
       ['Taro', 'Pie\'s finished. The back door lever is by the shelves.'],
-      ['Mochi', 'Last leg, team. The depot\'s right behind this place!'],
+      ['Mochi', 'The depot\'s right behind this place. Easy delivery!'],
+    ],
+  });
+  b.reach({ x0: 35, z0: 17, x1: 38, z1: 23 }, {
+    objective: 'Cut through the night market',
+    radio: [
+      ['Dot', 'Hold up, sweet pea. The Guard fenced Depot Square off at ten past three.'],
+      ['Dot', 'You\'ll have to go round. Through the night market, then along the canal.'],
+      ['Pip', 'The scenic route. Love a scenic route.'],
+      ['Mochi', 'Long delivery. Still a delivery!'],
+    ],
+  });
+  b.reach({ x0: 118, z0: 7, x1: 123, z1: 16 }, {
+    objective: 'Follow the canal under the railway',
+    radio: [
+      ['Nori', 'The lanterns are still lit. Someone strung these up for Sweet Dreams Night.'],
+      ['Taro', 'My Hana loved this canal. We fed the ducks here at midnight, once upon a time.'],
+      ['Pip', 'Ducks are fine. Ducks are always fine.'],
+      ['Dot', 'Towpath goes under the railway. It\'s dark in that arch. Torches on.'],
+    ],
+  });
+  b.reach({ x0: 212, z0: 30, x1: 221, z1: 42 }, {
+    objective: 'Head down to the river',
+    radio: [
+      ['Dot', 'Down to the river. Look across. See a red light blinking? That\'s my tower.'],
+      ['Mochi', 'Hi, Dot! We\'re waving!'],
+      ['Dot', 'I\'m waving back. You can\'t see it, but I am.'],
+    ],
+  });
+  b.use(ferrySwitch, {
+    objective: 'Open the freight stairs', opens: [freightStairs],
+    radio: [
+      ['Dot', 'The freight line runs right over Library Row to the junction behind the depot.'],
+      ['Dot', 'Stairs up are behind the ferry terminal. Hal keeps the switch in the ticket office.'],
+      ['Nori', 'The sign says "ALARMED. STAFF ONLY."'],
+      ['Pip', 'We\'re staff now. Night shift.'],
+    ],
+  });
+  b.reach({ x0: 131, z0: 80, x1: 135, z1: 90 }, {
+    objective: 'Cross the freight bridge', horde: true, opens: [boxEntry],
+    radio: [
+      ['Taro', 'There\'s the alarm. Up the stairs, everyone, and don\'t stop on the bridge.'],
+      ['Pip', 'Bridge fight! Best kind of fight!'],
+      ['Dot', 'West over the alleys, then down into Mallow Junction. Go, go!'],
+    ],
+  });
+  b.gather({ x0: 107, z0: 58, x1: 116, z1: 66 }, {
+    objective: 'Get to the signal box', checkpoint: true, closes: [boxEntry],
+    radio: [
+      ['Dot', 'There\'s a signal box built into the embankment. Thick walls, red door.'],
+      ['Nori', 'Red door. Safe room. I love a red door.'],
+      ['Taro', 'Round the tail of the train, then up the far side. Mind your feet.'],
+    ],
+  });
+  b.use(boxLever, {
+    objective: 'Open the safe room door', opens: [boxDoor],
+    radio: [
+      ['Dot', 'That door comes out on Depot Square. On the right side of the Guard\'s fence.'],
+      ['Taro', 'Last leg, then. For real this time.'],
+      ['Mochi', 'Last drop of the night!'],
     ],
   });
   b.reach({ x0: 74, z0: 62, x1: 90, z1: 72 }, {
@@ -582,16 +855,20 @@ export function build() {
     ],
   });
   b.use(gateSwitch, {
-    objective: 'Open the depot gate', opens: [depotGate],
+    objective: 'Open the depot gate', opens: [depotGate, bayDoor, busWash, spurGate],
     radio: [
       ['Dot', 'Gate switch is in Gerald\'s booth. Sorry, Gerald.'],
       ['Taro', 'Gerald and I shared a thermos most nights. Sleep well, big fella.'],
+      ['Dot', 'That switch opens every door in the yard. The shuttle will want a clear road.'],
     ],
   });
   b.use(ignition, {
-    objective: 'Start the hospital shuttle', horde: true, hold: 75, opens: [bayDoor, shuttleDoor],
+    objective: 'Start the hospital shuttle', horde: true, hold: 180, big: true, opens: [shuttleDoor], at: [85.5, 86.5],
     radio: [
-      ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company a while.'],
+      ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company. Three minutes.'],
+      ['Dot', 'And the Guard wired their evac siren to that bay. Every sleeper in town will come.'],
+      ['Pip', 'There\'s a Guard gun on those sandbags. Popcorn Gatling. I named it. It\'s named.'],
+      ['Mochi', 'Somebody on the popcorn! Everybody else, face out!'],
       ['Pip', 'Why do all the vehicles have moods?'],
       ['Dot', 'Because they\'re old, sweet pea. Like me.'],
     ],
