@@ -34,7 +34,7 @@
 // Plumley's ground floor [0] → escalator up to Home & Bedding [0→1] → escalator up to the Cineplex
 // [1→2] → dark Screen 2, fire-exit corridor, footbridge → car park roof, down the ramps [2→1→0] →
 // parking office (checkpoint) → truck yard → loading dock evacuation point (the Big Hold On: the
-// police's rocket pod, the freight lift chiming all the way up) → freight lift.
+// police's rocket pod, four power cells to scavenge while the lift chimes all the way up) → freight lift.
 //
 // Optional ladder routes: ambulance bay → ER roof (two ladders; loot, Larry's thermos note),
 // dock catwalk (ladder + stairs; a rifle perch over the finale).
@@ -371,66 +371,93 @@ export function build() {
   // ------------------------------------------------------------------
   // St. Marigold sent its awake patients and staff here by ambulance at 3:30; the police ran them down
   // the freight lift to the service tunnel and the rail yard, then left on the last car at 4:15. They
-  // barricaded the corridor from the food court and left their rocket pod, bolted to its truck. The
-  // team comes in from the truck yard (from the car park, through the parking office).
+  // barricaded the corridor from the food court, left their rocket pod in a sandbag nest by the lift and
+  // ran the lift's power cells flat; the spares are stashed round the dock. The team comes in from the
+  // truck yard (from the car park, through the parking office). The Big Hold On is a scavenge finale
+  // (L4D2 Dead Center): the timer stops at each quarter until another cell is picked up.
+  // Lanes: A = bays 3-4 from the east yard, B = bays 1-2 from the west yard then the length of the dock,
+  // C = the police corridor from the food court (the flank: specials and the Brute; outside the pod's arc).
   b.carve(104, 80, 154, 96, F.CONCRETE);
-  // Truck bays in the south wall: the shutters are up and the yard is full of sleepers.
+  //
+  //   x 104       114       124       134       144       154       164
+  //  72 |c . cold storage . .|                 |C C|                       c = power cell
+  //  77 |=|.|=|..|=| R R R R c (returns)        |C C|  (catwalk overhead, storey 1: cell at its west end)
+  //  80 H . . . . . . . . . . . . . H . . . . . . . . . . . . . . . .///    H = ladders, /// = stairs up
+  //  84 .    van     amb        car    POLICE CORRIDOR (C) . . . van  dd O|LIFT|  d = supply desk, O = button
+  //  88 .  ~sb~      ~sb~       ~sb~      ~sb~           ~sb~ nn  *  f    |      * = stand, f = lift gate
+  //  91 .  tents                                               G ##    |      G = Fizzbang Pod, facing SW
+  //  95 .  BAY 1         BAY 2        BAY 3    BAY 4            . . c  (compactor)
+  //  97 ####BBBB######BBBB##########BBBB####BBBB######################
+  //  99 . lane B (west yard)  .|. lane A (centre yard) . . . . . . lane A (SE yard) . <gate
+  //     (the police fence splits the yard at x 131)
+  //
+  // Truck bays in the south wall: the shutters are up and the yard is full of sleepers. A police fence
+  // splits the yard in two, so the west half feeds bays 1 and 2 (lane B: in, then the length of the
+  // dock past the cells) and the east half bays 3 and 4 (lane A: straight at the pod).
   b.carve(104, 99, 163, 106, F.ASPHALT);
   b.walls(103, 97, 164, 107, WALL.FENCE, 3.2);
-  for (const x0 of [110, 124, 138, 150]) {
+  b.fill(131, 99, 131, 106); b.walls(131, 99, 131, 106, WALL.FENCE, 3.2);
+  b.label('POLICE LINE', 133, 103, 9, RED, E);
+  for (const [x0, n] of [[110, 1], [126, 2], [136, 3], [144, 4]] as const) {
     b.carve(x0, 97, x0 + 3, 98, F.CONCRETE);
-    b.label('BAY', x0 + 2, 95.4, 12, GOLD);
+    b.label(`BAY ${n}`, x0 + 2, 95.4, 12, GOLD);
+    b.lamp(x0 + 2, 99.6);                                                // each bay lit from the yard side: the lanes read from the pod
   }
-  b.prop('truck', 106, 100, 8, 2, { color: 0xf0e2b6 }); b.prop('truck', 130, 102, 8, 2, { color: 0xffb3d1 }); b.prop('truck', 152, 104, 8, 2, { color: 0xfff1a8 });
-  b.prop('container', 118, 104, 6, 2, { color: 0x8fb4c6 }); b.prop('container', 144, 103, 2, 4, { color: 0xd3a7bf });
-  for (const [x, z] of [[122, 100], [150, 105], [160, 104], [140, 100]]) b.prop('pallet', x, z);
-  // Back-of-house pockets around the dock: more ways in for the finale horde.
-  b.carve(106, 72, 121, 76, F.TILES);                                     // cold storage
+  b.prop('truck', 105, 104, 8, 2, { color: 0xf0e2b6 }); b.prop('container', 118, 104, 6, 2, { color: 0x8fb4c6 });
+  b.prop('pallet', 124, 101); b.prop('pallet', 138, 105); b.prop('car', 150, 100, 2, 1, { color: 0x3a5fd0 });
+  // Back-of-house pockets round the dock, dead ends now: the spare power cells were stashed in them.
+  b.carve(106, 72, 121, 76, F.TILES);                                     // cold storage (NW)
   b.carve(110, 77, 112, 79, F.TILES); b.carve(117, 77, 118, 79, F.TILES);
   b.prop('shelf', 107, 72, 6, 1, { color: 0xd8efe8 }); b.prop('shelf', 114, 72, 6, 1, { color: 0xd8efe8 }); b.prop('crate', 120, 75);
   b.label('COLD STORAGE', 114, 74.5, 14, SKY);
-  b.carve(156, 94, 163, 96, F.CONCRETE); b.carve(155, 94, 155, 96, F.CONCRETE);   // compactor
-  b.prop('dumpster', 161, 94, 2, 2); b.label('COMPACTOR', 158, 95.5, 10, CREAM);
-  // Dock floor cover: pallets, crate stacks, a dead mall van.
-  for (const [x, z] of [[112, 84], [126, 87], [118, 92], [134, 90], [146, 88], [108, 94]]) b.prop('crate', x, z, 2, 1);
-  for (const [x, z] of [[116, 88], [130, 84], [140, 93], [123, 95]]) b.prop('pallet', x, z, 2, 1);
-  b.prop('car', 136, 83, 2, 1, { color: 0xffd43b }); b.prop('van', 144, 92, 1, 3, { color: 0xe6c3d3, rot: N });
-  b.prop('container', 110, 88, 1, 4, { color: 0x7aa59c });
-  // The evacuation point: police vans, two ambulances, triage tents and sandbags round the pod. The
-  // sandbags are low and broken (cover, never a wall): the flood can reach the stand from every side.
-  b.prop('van', 147, 82, 3, 1, { color: 0x3a5fd0 }); b.prop('van', 118, 82, 3, 1, { color: 0xf4f4f4 }); b.prop('van', 122, 90, 1, 3, { color: 0xf4f4f4, rot: N });
-  b.prop('container', 113, 94, 4, 2, { color: 0xe8f0ee }); b.prop('container', 132, 93, 4, 2, { color: 0xe8f0ee });   // triage tents
-  b.prop('truck', 146, 85, 3, 2, { color: 0x3a5fd0 });                                  // the pod's truck; the pod stands beside it
-  for (const [x, z, w] of [[148, 91, 2], [153, 91, 2], [138, 88, 3], [144, 89, 1]] as const) b.prop('barrier', x, z, w, 1, { color: 0xc9b38a });
-  b.label('MBPD EVACUATION POINT', 128, 90.4, 18, LEMON); b.label('ST. MARIGOLD OVERFLOW', 115, 92.6, 10, MINT);
-  b.label('FACE THE BAYS', 151, 93.5, 12, RED, N); b.label('FIZZBANG POD: MBPD', 151, 87.2, 9, SKY, N);
-  b.pick('ammo', 105, 81); b.pick('ammo', 153, 88); b.pick('medkit', 152, 94); b.pick('ammo', 128, 95); b.pick('medkit', 153, 94);
-  b.pick('rattle', 153, 87);                                    // by the lift button, for the long finale
-  // The police's leftovers at the stand: more ammo and fire for a flood (before it, not after).
-  b.pick('ammo', 149, 88); b.pick('ammo', 154, 90); b.pick('firebomb', 150, 86); b.pick('firebomb', 154, 92); b.pick('medkit', 148, 84);
-  b.label('BAYSIDE GALLERIA DELIVERIES', 128, 86.5, 20, CREAM);
-  for (const [x, z] of [[108, 84], [120, 82], [134, 86], [146, 84], [114, 92], [128, 92], [142, 94], [152, 90], [112, 104], [136, 104], [158, 104], [114, 76]]) b.lamp(x, z);
-  // Way in from the yard gate: west along the yard, north through bay 4 to the lift button.
-  b.arrow(160, 100.5, WEST); b.arrow(151.5, 99.5, N); b.arrow(152, 95, N);
-  b.label('YARD GATE', 162, 102.6, 10, CREAM, WEST);
-  // Dock catwalk access: a ladder at the west end, stairs at the east end (catwalk is storey 1).
-  b.ladder(108, 80, '-z'); b.ladder(130, 80, '-z');                     // west end and mid-span
-  // Returns nook under the catwalk: a hidden pocket the finale horde boils out of, close to the mid-span ladder.
+  b.carve(155, 94, 163, 96, F.CONCRETE);                                  // compactor (SE), round the corner from the pod
+  b.prop('dumpster', 160, 94, 2, 1); b.label('COMPACTOR', 158, 95.8, 10, CREAM);
+  // Returns nook under the catwalk, by the mid-span ladder.
   b.carve(120, 77, 127, 78, F.CONCRETE); b.carve(120, 79, 121, 79, F.CONCRETE);
-  b.prop('pallet', 124, 77, 2, 1); b.prop('crate', 127, 78);
+  b.prop('pallet', 123, 77, 2, 1);
   b.label('RETURNS', 120.5, 80.6, 10, CREAM);
+  // The power cells (the catwalk's is with storey 1): the near one first, the far ones up the long lane B.
+  b.item('part', 'cell', 106, 75, 'power cell'); b.label('SPARE CELL', 107, 76.4, 8, GOLD);
+  b.item('part', 'cell', 127, 78, 'power cell'); b.label('SPARE CELL', 126, 77.2, 8, GOLD);
+  b.item('part', 'cell', 162, 95, 'power cell'); b.label('SPARE CELL', 162, 96.6, 8, GOLD);
+  // Dock floor. Solid cover (vans, the ambulance, a car) stands along the north wall between the
+  // pocket mouths, where the runners go; the middle stays clear for the pod, with only low broken
+  // sandbags (see-through cover, never a wall) and the triage tents tucked in the dead-end west end.
+  b.prop('van', 113, 81, 3, 1, { color: 0x3a5fd0 }); b.prop('van', 124, 81, 3, 1, { color: 0xf4f4f4 }); b.prop('car', 134, 81, 2, 1, { color: 0xffd43b });
+  b.prop('van', 145, 81, 3, 1, { color: 0x3a5fd0 });
+  b.prop('container', 104, 89, 2, 4, { color: 0xe8f0ee }); b.prop('container', 104, 94, 2, 2, { color: 0xe8f0ee });   // triage tents
+  for (const [x, z] of [[110, 88], [119, 91], [127, 86], [134, 92], [141, 87]] as const) b.prop('barrier', x, z, 2, 1, { color: 0xc9b38a });
+  b.label('MBPD EVACUATION POINT', 128, 90, 18, LEMON); b.label('ST. MARIGOLD OVERFLOW', 107, 92, 9, MINT, E);
+  b.label('BAYSIDE GALLERIA DELIVERIES', 124, 84.5, 16, CREAM);
+  b.label('POLICE CORRIDOR', 141.5, 81.6, 10, RED);
+  b.pick('ammo', 105, 81); b.pick('ammo', 128, 95);
+  for (const [x, z] of [[108, 84], [118, 87], [128, 93], [138, 85], [146, 90], [113, 95], [141, 82], [114, 76], [109, 74], [124, 79], [159, 95], [118, 102], [140, 104], [157, 102]]) b.lamp(x, z);
+  // Way in from the yard gate: west along the yard, north through bay 4 to the lift button.
+  b.arrow(160, 100.5, WEST); b.arrow(145.5, 99.5, N); b.arrow(148, 93, 3 * Math.PI / 4);
+  b.label('YARD GATE', 162, 102.6, 10, CREAM, WEST);
+  // Dock catwalk access: a ladder at the west end and mid-span, stairs at the east end (catwalk is storey 1).
+  b.ladder(108, 80, '-z'); b.ladder(130, 80, '-z');
   b.stairs(151, 80, 153, 81, '-x'); b.prop('barrier', 151, 82, 3, 1);
   b.label('CATWALK', 108.5, 81.6, 10, CREAM); b.label('CATWALK', 130.5, 81.6, 10, CREAM); b.label('CATWALK', 152, 83.4, 10, CREAM);
-  // Freight lift (end safe room) behind its gate.
+  // Freight lift (end safe room) behind its gate. The police ran its cells flat: it needs four.
   b.carve(156, 84, 163, 92, F.SAFE);
   const liftButton = b.obj('terminal', 154, 85, 'Call the freight lift');
-  // The Fizzbang Pod faces the truck bays. The lift's chime draws the flood out of the truck yard and
-  // in through the four bays (the step's spawn zone), all inside the 80 degrees either way the gunner
-  // can swing; the corridors, returns nook and catwalk behind it stay quiet.
-  b.mount('rockets', 151, 89, '+z');
   const liftGate = b.door(155, 86, 155, 89, 'fence', 'FREIGHT LIFT');
   b.label('FREIGHT LIFT', 160, 87, 18, GOLD); b.label('TO SERVICE TUNNEL', 160, 89.5, 11, CREAM);
+  b.label('NEEDS 4 POWER CELLS', 160, 91.4, 9, RED);
   b.lamp(160, 88);
+  // The stand by the button: the police's supply desk (stocked for the wait, before it, not after).
+  b.prop('desk', 149, 84, 2, 1, { color: 0x3a5fd0 }); b.label('MBPD SUPPLIES', 150, 83.2, 8, SKY);
+  for (const x of [149, 150, 151, 152]) b.pick('medkit', x, 85);
+  b.pick('ammo', 151, 84); b.pick('ammo', 152, 84); b.pick('ammo', 152, 86);
+  b.pick('firebomb', 149, 86); b.pick('rattle', 150, 86); b.pick('firebomb', 151, 86);
+  b.lamp(150.5, 86.5);
+  // The Fizzbang Pod's nest in the dock's south-east corner beside the lift: the wall at its back, broken
+  // sandbags on its flanks, facing south-west. Its 80 degrees either way take in bays 1-4 and the whole
+  // length of the dock; the police corridor's mouth (lane C, north-west) stays just outside it.
+  b.mount('rockets', 153, 91, '-x+z');
+  b.prop('barrier', 151, 88, 2, 1, { color: 0xc9b38a }); b.prop('barrier', 154, 92, 1, 2, { color: 0xc9b38a });
+  b.label('FIZZBANG POD: MBPD', 151, 90, 8, SKY, N); b.label('FACE THE BAYS', 149.5, 93.6, 11, RED);
 
   // ------------------------------------------------------------------
   // 9b. Staff corridor and Plumley's ground floor: Cosmetics & Perfume, Shoes & Handbags
@@ -509,7 +536,7 @@ export function build() {
   b.carve(164, 100, 165, 101, F.CONCRETE);                                // the gate through the yard fence
   b.prop('counter', 173, 98, 1, 3, { color: 0x9aa6b8 }); b.prop('terminal', 175, 98); b.prop('desk', 174, 104, 2, 1);
   const officeLever = b.obj('lever', 167, 98, 'Open the yard gate');
-  b.note(173, 101, 'MBPD clipboard', 'EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Pod bolted to the truck, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays. Sgt. Tuttle');
+  b.note(173, 101, 'MBPD clipboard', 'EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Lift cells flat, spares stashed round the dock. Pod in the nest by the lift, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays, mind the corridor. Sgt. Tuttle');
   for (const x of [168, 169, 170, 171]) b.pick('medkit', x, 105);
   b.pick('ammo', 172, 105); b.pick('ammo', 173, 105); b.pick('ammo', 175, 102);
   b.pick('rifle', 175, 100); b.pick('autoshotgun', 175, 101); b.pick('shotgun', 168, 103); b.pick('smg', 169, 103); b.pick('launcher', 170, 103);
@@ -671,6 +698,8 @@ export function build() {
   b.pick('rifle', 124, 78); b.pick('ammo', 125, 78); b.pick('medkit', 136, 78); b.pick('ammo', 148, 81);
   b.label('CATWALK', 128, 78, 12, CREAM, E);
   b.lamp(110, 78); b.lamp(128, 78); b.lamp(147, 80);
+  // The fourth power cell, at the catwalk's west end (up the west ladder): the furthest run, in full view of the pod.
+  b.item('part', 'cell', 106, 77, 'power cell'); b.label('SPARE CELL', 106.5, 79.2, 8, GOLD);
 
   // ------------------------------------------------------------------
   // 13b. Plumley's first floor: Home & Bedding and the Sweet Dreams Night sale
@@ -1126,18 +1155,42 @@ export function build() {
       ['Nori', 'Police clipboard. Last lift down to the tunnel left at 4:15. They left us something.'],
       ['Pip', 'A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever.'],
       ['Dot', 'The freight lift\'s at the bottom of the shaft, sweet peas. It\'s a long way up.'],
-      ['Taro', 'Rest a minute first. That dock will be the longest three minutes of the night.'],
+      ['Taro', 'Rest a minute first. That dock will be the longest few minutes of the night.'],
     ],
   });
   b.use(liftButton, {
-    // The stand is the open tile beside the button (the button itself is solid), by the rocket pod.
-    objective: 'Call the freight lift', horde: true, hold: 180, big: true, opens: [liftGate], at: [153.5, 86.5],
-    lanes: { A: [{ x0: 104, z0: 99, x1: 163, z1: 106 }] },                     // the truck yard: in through the bays
+    // The stand is the open tile beside the button (the button itself is solid), at the supply desk,
+    // four tiles from the pod's nest. Scavenge finale: the lift needs four power cells, and the timer
+    // stops at each quarter until one more has been picked up (the stage script keeps running).
+    objective: 'Call the freight lift', horde: true, hold: 150, big: true, opens: [liftGate], at: [153.5, 86.5], group: 'cell',
+    lanes: {
+      // East yard: bays 3 and 4. Only its far corners, by the police fence and by the yard gate, so lane A
+      // starts as far down its path as lane B does (spawns take the nearest hidden cell of the live lanes).
+      A: [{ x0: 132, z0: 104, x1: 134, z1: 106 }, { x0: 160, z0: 105, x1: 163, z1: 106 }, { x0: 162, z0: 104, x1: 163, z1: 104 }],
+      B: [{ x0: 104, z0: 99, x1: 130, z1: 106 }],                                           // west yard: bays 1 and 2, then the dock
+      C: [{ x0: 128, z0: 58, x1: 156, z1: 68 }],                                            // food court: the police corridor
+    },
+    holdScript: [
+      { kind: 'wave', secs: 35, lanes: ['A'], msg: 'Here they come! Bays 3 and 4!' },
+      { kind: 'breather', secs: 10, msg: 'Quiet for a sec. Go get a cell!' },
+      { kind: 'wave', secs: 35, lanes: ['A', 'B'], specials: 2, msg: 'All four bays! Watch the police corridor!' },
+      { kind: 'brute', secs: 25, msg: 'Something big in the police corridor!' },
+      { kind: 'breather', secs: 10, msg: 'Breathe. Pick each other up!' },
+      { kind: 'final', secs: 35, lanes: ['A', 'B'], specials: 2, msg: 'Every bay at once! Hold on!' },
+    ],
+    gates: [
+      { at: 10, items: 1, msg: 'The lift needs power! Find a cell!' },
+      { at: 45, items: 2, msg: 'The lift stalled! Second cell!' },
+      { at: 85, items: 3, msg: 'Stalled again! Third cell!' },
+      { at: 125, items: 4, msg: 'One last cell and we\'re up!' },
+    ],
     radio: [
       ['Dot', 'That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.'],
+      ['Dot', 'And the police ran its cells flat, sweet pea. It needs four power cells to climb.'],
+      ['Nori', 'Spares: cold storage, the returns nook, the west end of the catwalk, and by the compactor.'],
       ['Pip', 'Dibs on the rocket pod!'],
-      ['Mochi', 'Slowest lift in the world. Everybody face out!'],
-      ['Nori', 'And Pip, do not hum along to the music.'],
+      ['Mochi', 'The pod covers the bays and the dock. Runners, stay where it can see you!'],
+      ['Taro', 'It can\'t swing round to the police corridor. That one\'s ours.'],
     ],
   });
   b.gather({ x0: 156, z0: 84, x1: 163, z1: 92 }, {
