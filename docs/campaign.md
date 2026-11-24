@@ -79,13 +79,13 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 ### Chapter 1: Last Stop
 
 **Subtitle:** Downtown Mallow Bay
-**Setting:** Downtown street grid. 24-hour laundromat, Marshmallow Avenue (four lanes), Tony's Pizza, Pell Plaza Parking, City Hall Square, public library, the Library Row back alleys, Cherry Street heritage tram stop, rail underpass, Clocktower Corner, Kettle Corner Diner, Transit Depot. Three storeys: the street (storey 0); the garage's level 2, the Lather Laundry storeroom, a fire-escape landing, the Library Row rooftops and the tram footbridge (storey 1); the garage roof deck (storey 2). The garage is the big climb: ground deck, a ramp to level 2, a ramp to the roof deck and its viewpoint pier, then a stair tower back down to the square.
-**Mood:** 3:20 a.m. in rain. Wet indigo asphalt, pink and teal neon, ankle-deep lavender fog pooling in gutters.
+**Setting:** Downtown street grid on the west bank of the river. 24-hour laundromat, Marshmallow Avenue (four lanes), Tony's Pizza, Pell Plaza Parking, City Hall Square, public library, the Library Row back alleys, Cherry Street heritage tram stop, rail underpass, Clocktower Corner, Kettle Corner Diner, then the long way round to the depot: Kettle Lane and the Butterwick Night Market, Lantern Canal and its towpath arch under the railway, Gumdrop Street and the Snoozle Sleep Shop, the Bayfront Promenade on the river (Dot's Dispatch Tower blinks on the far bank), the Night Ferry Terminal, Wharf Halt and the freight bridge, Mallow Junction freight yard and its signal box, and finally the Transit Depot, where the Mallow Bay Guard set up an evacuation post and fell asleep at it. Three storeys: the street (storey 0); the garage's level 2, the Lather Laundry storeroom, a fire-escape landing, the Library Row rooftops, the tram footbridge, Wharf Halt and the freight bridge over the alleys (storey 1); the garage roof deck (storey 2). The garage is the big climb: ground deck, a ramp to level 2, a ramp to the roof deck and its viewpoint pier, then a stair tower back down to the square.
+**Mood:** 3:20 a.m. in rain. Wet indigo asphalt, pink and teal neon, ankle-deep lavender fog pooling in gutters. Strings of festival lanterns along the canal.
 
 **Intro card:**
 > 3:00 a.m. A sweet lavender fog rolled through Mallow Bay, and everyone asleep got out of bed and kept walking. You four were awake. Lucky you. Now the radio is crackling: a night dispatcher called Dot says there's a way out of town, and she'll talk you there. First, you have to get out of the laundromat.
 
-**Requirements check:** start safe room 1.1 · checkpoints 1.6, 1.10 · crescendos 1.4, 1.8, 1.13 · collect 1.7 · Brute 1.11 · finale 1.14
+**Requirements check:** start safe room 1.1 · checkpoints 1.6, 1.10, 1.16 · crescendos 1.4, 1.8, 1.15 · collect 1.7 · Brute 1.17 · Big Hold On (finale) 1.19
 
 **1.1 · `use` · Start safe room**
 - **Where:** Suds & Bubbles 24h Laundromat. A row of dryers, a folding table with a CB radio, and a front roller shutter onto Marshmallow Avenue.
@@ -150,7 +150,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** opens: library back door
 
 **1.7 · `collect` (4 fuses) · Sweep**
-- **Where:** The back alleys of Library Row: Library Row, Wash Alley, the middle cut-through and the south cross alley. One fuse is up the back stairs of Lather Laundry in the dark storeroom (storey 1), one on a dumpster lid in the south cross alley, one at the junction box on Wash Alley, and one on the fire-escape landing over Wash Alley (storey 1), reached by two drop ladders. Optional: a ladder up from Library Row and another from Wash Alley lead onto the Library Row rooftops (storey 1), a sniper perch over all three alleys with a rifle and the pigeon keeper's log.
+- **Where:** The back alleys of Library Row: Library Row, Wash Alley, the middle cut-through and the south cross alley. One fuse is up the back stairs of Lather Laundry in the dark storeroom (storey 1), one on a dumpster lid in the south cross alley, one at the junction box on Wash Alley, and one on the fire-escape landing over Wash Alley (storey 1), reached by two drop ladders. Optional: a ladder up from Library Row and another from Wash Alley lead onto the Library Row rooftops (storey 1), a perch over all three alleys with a rifle and the pigeon keeper's log.
 - **HUD:** `Find fuses for the old tram`
 - **Radio:**
   - Dot: "The heritage tram on Cherry Street runs on fuses. Check the alley junction boxes."
@@ -163,7 +163,8 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Where:** Cherry Street tram stop. A cream-and-cherry heritage tram sits across the junction, blocking the underpass. The control box is on the platform. Powering it up rings the tram's bell non-stop while it creeps clear. A footbridge over Cherry Street (storey 1) is the perch for the fight, with stairs up from the platform and a ladder from the north kerb, so the horde climbs at both ends.
 - **HUD:** `Power up the heritage tram`
 - **Radio:**
-  - Dot: "Fuses in, pull the lever, then get up on that footbridge. Bell rings till she's clear."
+  - Dot: "Fuses in, pull the lever. The line powers the underpass gate too."
+  - Dot: "Tram bell rings till she's warmed up. Get up on that footbridge."
   - Taro: "Ah. A dinner bell."
   - Mochi: "We ARE dinner. Everybody face out!"
 - **Flags:** horde · holdout 90 s · opens: underpass (tram rolls clear)
@@ -191,35 +192,105 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **HUD:** `Open the safe room door`
 - **Radio:**
   - Taro: "Pie's finished. The back door lever is by the shelves."
-  - Mochi: "Last leg, team. The depot's right behind this place!"
+  - Mochi: "The depot's right behind this place. Easy delivery!"
 - **Flags:** opens: diner back door
 
-**1.11 · `reach` · Brute**
-- **Where:** Depot Square, an open lot in front of the Transit Depot fence with a guard booth by the gate. The Brute is **Gerald**, the depot's night gatekeeper, in a huge hi-vis vest.
+**1.11 · `reach` · The long way round**
+- **Where:** The diner's back lot ends at a Mallow Bay Guard roadblock: a chain-link fence, jersey barriers and two olive trucks, with Depot Square right there on the other side. The only way out is a gap west into Kettle Lane, then the Butterwick Night Market: three solid rows of shuttered stalls make a serpentine of four lanes (tight, shotgun range) under paper lanterns. Optional: the market office in the north-east corner has a Desert Eagle, a firebomb and the manager's chalkboard. Out through Lantern Alley at the market's north-west corner.
+- **HUD:** `Cut through the night market`
+- **Radio:**
+  - Dot: "Hold up, sweet pea. The Guard fenced Depot Square off at ten past three."
+  - Dot: "You'll have to go round. Through the night market, then along the canal."
+  - Pip: "The scenic route. Love a scenic route."
+  - Mochi: "Long delivery. Still a delivery!"
+- **Flags:** none
+
+**1.12 · `reach` · Canal**
+- **Where:** Lantern Canal: a long, straight canal street east under strings of festival lanterns, barges moored along the water (rifle range). Optional: two footbridges cross to the north towpath, which has a rifle, ammo and a medkit. At the railway embankment the street ends and the towpath ducks through a dark, three-wide arch under the tracks (no lamps, the chokepoint), coming out on Gumdrop Street.
+- **HUD:** `Follow the canal under the railway`
+- **Radio:**
+  - Nori: "The lanterns are still lit. Someone strung these up for Sweet Dreams Night."
+  - Taro: "My Hana loved this canal. We fed the ducks here at midnight, once upon a time."
+  - Pip: "Ducks are fine. Ducks are always fine."
+  - Dot: "Towpath goes under the railway. It's dark in that arch. Torches on."
+- **Flags:** none
+
+**1.13 · `reach` · River**
+- **Where:** East along Gumdrop Street. A Dreamwell delivery truck has jack-knifed across it, so the way on is in one door of the Snoozle Sleep Shop and out of the other (pink shelves of Snoozle plushies, a staff memo about HX-9 testers). Then south onto the Bayfront Promenade along the river. Across the water Dot's Dispatch Tower blinks red. Optional: a pier out over the river (the best view of the tower) and a saltwater taffy shop.
+- **HUD:** `Head down to the river`
+- **Radio:**
+  - Dot: "Down to the river. Look across. See a red light blinking? That's my tower."
+  - Mochi: "Hi, Dot! We're waving!"
+  - Dot: "I'm waving back. You can't see it, but I am."
+- **Flags:** none
+
+**1.14 · `use` · Freight stairs**
+- **Where:** The Night Ferry Terminal at the south end of the promenade: benches, a moored ferry, "NO SAILINGS". The switch for the freight stairs shutter is behind the ticket windows. It's alarmed. Medkits, ammo and a firebomb by the shutter.
+- **HUD:** `Open the freight stairs`
+- **Radio:**
+  - Dot: "The freight line runs right over Library Row to the junction behind the depot."
+  - Dot: "Stairs up are behind the ferry terminal. Hal keeps the switch in the ticket office."
+  - Nori: "The sign says "ALARMED. STAFF ONLY.""
+  - Pip: "We're staff now. Night shift."
+- **Flags:** opens: freight stairs shutter
+
+**1.15 · `reach` · Crescendo 3 (running fight)**
+- **Where:** The alarm brings a horde. Through the siding yard behind the terminal, up the stairs to Wharf Halt (storey 1) with a stalled wagon on the platform, then west along the freight bridge, a three-wide deck high over Wash Alley and Library Row (one long elevated sightline back over the chapter's own alleys). Stairs at its west end drop into Mallow Junction freight yard.
+- **HUD:** `Cross the freight bridge`
+- **Radio:**
+  - Taro: "There's the alarm. Up the stairs, everyone, and don't stop on the bridge."
+  - Pip: "Bridge fight! Best kind of fight!"
+  - Dot: "West over the alleys, then down into Mallow Junction. Go, go!"
+- **Flags:** horde · opens: signal-box safe-room door
+
+**1.16 · `gather` · Checkpoint safe room**
+- **Where:** Mallow Junction is dark. A stalled freight train splits the yard: south down its east side, round its tail, north up the west side between tank cars. Optional: the yard office corner north of the stairs. The signal box is built into the railway embankment, red door on the yard side; the old lever frame is still inside.
+- **HUD:** `Get to the signal box`
+- **Radio:**
+  - Dot: "There's a signal box built into the embankment. Thick walls, red door."
+  - Nori: "Red door. Safe room. I love a red door."
+  - Taro: "Round the tail of the train, then up the far side. Mind your feet."
+- **Flags:** checkpoint · closes: signal-box safe-room door
+
+**1.16b · `use` · Safe-room exit**
+- **Where:** The lever by the signal box's depot-side door, which opens on a short passage through the embankment to Depot Square.
+- **HUD:** `Open the safe room door`
+- **Radio:**
+  - Dot: "That door comes out on Depot Square. On the right side of the Guard's fence."
+  - Taro: "Last leg, then. For real this time."
+  - Mochi: "Last drop of the night!"
+- **Flags:** opens: signal box door
+
+**1.17 · `reach` · Brute**
+- **Where:** Depot Square, an open lot in front of the Transit Depot fence with a guard booth by the gate, the Guard's trucks and "EVAC STAGING" painted on the asphalt. The Brute is **Gerald**, the depot's night gatekeeper, in a huge hi-vis vest.
 - **HUD:** `Reach the Transit Depot`
 - **Radio:**
   - Dot: "Oh no. That's Gerald from the night gate. Gerald, honey, you've let yourself go."
   - Mochi: "BIG one! Spread out and keep shooting!"
 - **Flags:** brute
 
-**1.12 · `use` · Gate**
-- **Where:** The gate switch inside Gerald's guard booth.
+**1.18 · `use` · Gate**
+- **Where:** The gate switch inside Gerald's guard booth. It opens every way into the depot yard.
 - **HUD:** `Open the depot gate`
 - **Radio:**
   - Dot: "Gate switch is in Gerald's booth. Sorry, Gerald."
   - Taro: "Gerald and I shared a thermos most nights. Sleep well, big fella."
-- **Flags:** opens: depot gate
+  - Dot: "That switch opens every door in the yard. The shuttle will want a clear road."
+- **Flags:** opens: depot gate, bay roller door, bus wash gate, freight spur gate
 
-**1.13 · `use` · Crescendo 3 (finale)**
-- **Where:** Depot maintenance bay. Hospital Shuttle No. 4 sits on the floor, and its ignition is at the driver's seat. The bay roller door faces the street.
+**1.19 · `use` · Big Hold On (finale)**
+- **Where:** The depot maintenance bay, one open yard from the fence to the back wall. Hospital Shuttle No. 4 sits in the middle and its ignition is at the driver's end. The Guard wired their evacuation siren to the bay, so cranking the shuttle sets it off and every sleeper downtown comes to hush it. Four ways in: the depot gate (north, from Depot Square), the freight spur tunnel (north-east, from Mallow Junction), the bay roller door (west) and the bus wash (south-west), both from the east lane. The Guard's **Popcorn Gatling** (a mounted minigun) sits on sandbags just north of the ignition, facing the gate and the tunnel; the west and south-west are for everyone else's guns. Cover is a dead shuttle, crates, sandbag lines and a Guard truck. A launcher, armor, firebombs, a rattle and ammo at each corner of the stand.
 - **HUD:** `Start the hospital shuttle`
 - **Radio:**
-  - Dot: "Shuttle No. 4's battery is moody. Crank her and keep her company a while."
+  - Dot: "Shuttle No. 4's battery is moody. Crank her and keep her company. Three minutes."
+  - Dot: "And the Guard wired their evac siren to that bay. Every sleeper in town will come."
+  - Pip: "There's a Guard gun on those sandbags. Popcorn Gatling. I named it. It's named."
+  - Mochi: "Somebody on the popcorn! Everybody else, face out!"
   - Pip: "Why do all the vehicles have moods?"
   - Dot: "Because they're old, sweet pea. Like me."
-- **Flags:** horde · holdout 75 s · opens: bay roller door, shuttle door
+- **Flags:** horde · holdout 180 s · big (Big Hold On; mount: minigun) · opens: shuttle door
 
-**1.14 · `gather` · Chapter end (vehicle)**
+**1.20 · `gather` · Chapter end (vehicle)**
 - **Where:** Aboard Shuttle No. 4. The bus interior is the end zone.
 - **HUD:** `Everybody on the shuttle!`
 - **Radio:**
@@ -237,26 +308,30 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 3 | Library returns desk, sticky note | Anyone who dozed off in the reading room got up at 3 and walked out. The ones still reading are fine. Note to self: overdue fines are not tonight's problem. |
 | 4 | Clipboard by fog machine #12, City Hall steps | Fog units calibrated to Dreamwell spec. Dr. W. Lowell requested postponement: "HX-9 not ready." Request denied. G. Pell. Proceed 3:00 a.m. |
 | 5 | Pigeon loft logbook, Library Row rooftops (optional) | 3:04 a.m. The whole block came out in pyjamas, eyes shut, slippers on. Walked right under the loft. Not one of them looked up. Birds are fine. |
-| 6 | Whiteboard in the depot maintenance bay | NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot's girl Wren by the kettle. SIGN IT. |
-| 7 | Birthday card on the depot table | Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.) |
+| 6 | Market office chalkboard, Butterwick Night Market (optional) | SWEET DREAMS NIGHT! Stalls shut at 2:45 so everyone is tucked up by 3. Free Snoozle sleep mask with every jar of honey. Lights OFF, Bert. |
+| 7 | Staff memo, Snoozle Sleep Shop | SWEET DREAMS NIGHT PROMO: every customer gets a free spritz from the Hush tester! New tester stock came in a crate marked HX-9. Same thing, only stronger. Mgmt. |
+| 8 | Ferry master's note, Night Ferry Terminal ticket office | Last sailing 11:40. Moored her and turned in early for Sweet Dreams Night. The freight stairs switch is in the ticket office. It's alarmed, so DON'T. Hal |
+| 9 | Guard duty log by the Gatling nest, depot yard | MALLOW BAY GUARD, POST 3, TRANSIT DEPOT. 3:10 Evac staging up. Siren wired to the shuttle bay. Gatling on the sandbags. 3:20 Sarge says rest your eyes, long night. 3:22 Everybody is resting their eyes. 3:2 |
+| 10 | Whiteboard in the depot maintenance bay | NIGHT ROTA: Dispatch, Dot. Gate, Gerald. Shuttle 4 battery is moody, warm her up! Birthday card for Dot's girl Wren by the kettle. SIGN IT. |
+| 11 | Birthday card on the depot table | Happy birthday, Wren! Love from your mum and the whole night shift. (Signed: Dot, Gerald, and a very smudged thermos ring.) |
 
-**Map designer notes:** Snoozle billboard at the 1.2 crosswalk as the first landmark. A slipper-and-pillow trail runs from the laundromat toward Tony's. Lit windows appear only where someone was awake (a gamer bedroom, the diner). The garage is dark: lamps only mark the ramps. City Hall's fog machines should be visible from the viewpoint pier and keep emitting particles. Put a stopped 3:00 clock in Clocktower Corner. Leave a signed birthday card on the depot table next to the whiteboard.
+**Map designer notes:** Snoozle billboard at the 1.2 crosswalk as the first landmark. A slipper-and-pillow trail runs from the laundromat toward Tony's, and again along Lantern Canal. Lit windows appear only where someone was awake (a gamer bedroom, the diner). The garage is dark: lamps only mark the ramps. City Hall's fog machines should be visible from the viewpoint pier and keep emitting particles. Put a stopped 3:00 clock in Clocktower Corner. The towpath arch and Mallow Junction are dark stretches for the flashlight. Dot's Dispatch Tower is a pale column with a red beacon on the far bank of the river, seen from the promenade and the pier. The Guard's roadblock should be readable from the diner lot (fence, olive trucks, "ROAD CLOSED"), so the detour makes sense before Dot explains it. Leave a signed birthday card on the depot table next to the whiteboard.
 
 ---
 
 ### Chapter 2: Visiting Hours
 
 **Subtitle:** St. Marigold Hospital & Bayside Galleria
-**Setting:** An interior complex on four real storeys. Ground (storey 0): triage and the ambulance bay, ER, waiting room, main lobby, gift shop, pharmacy, the staff corridor and staff rooms, the staff elevator lobby and fire stairs; across the bay inlet, the Galleria's arcade, security office, food court atrium and loading dock. Floor 2 (storey 1): the hospital wards, day room and soup kitchen, the lower roofs over the ER and lobby, Bun Bun Toys and its stockroom, the mezzanine ring over the food court, and the dock catwalk. Floor 3 (storey 2): the Dreamwell Sleep Clinic, the skybridge terrace on the east wing's roof, the glass skybridge, and the Galleria upper concourse with its old ballroom. Roof (storey 3): the helipad, with roof-access huts where the stair cores come up.
+**Setting:** An interior complex on four real storeys. Ground (storey 0): triage and the ambulance bay, ER, waiting room, main lobby, gift shop, pharmacy, the staff corridor and staff rooms, the staff elevator lobby and fire stairs; across the bay inlet, the Galleria's arcade, security office, food court atrium, the loading dock (the police evacuation point) and truck yard, Plumley's department store ground floor, and the ground deck of Galleria Parking with its parking office. Floor 2 (storey 1): the hospital wards, day room and soup kitchen, the lower roofs over the ER and lobby, Bun Bun Toys and its stockroom, the mezzanine ring over the food court, the dock catwalk, Plumley's Home & Bedding floor, and the car park's level 1. Floor 3 (storey 2): the Dreamwell Sleep Clinic, the skybridge terrace on the east wing's roof, the glass skybridge, the Galleria upper concourse with its old ballroom, the Galleria Cineplex (over Plumley's), and the open car park roof. Roof (storey 3): the helipad, with roof-access huts where the stair cores come up.
 **Mood:** 4:40 a.m. Flickering mint-and-white fluorescents and red emergency strips. The mall is dim pastel pink and lemon, with dark shopfronts.
 
 **Intro card:**
 > 4:40 a.m. The shuttle got you to St. Marigold Hospital, mostly in one piece. Dot says a helicopter is waiting on the roof. Nori used to work nights here and swears the second floor always smells like soup. The beds are empty. Every one of them is neatly made.
 
-**Requirements check:** start safe room 2.1 · checkpoints 2.6, 2.10 · crescendos 2.4, 2.8, 2.13 · collect 2.3 · Brute 2.11 · finale 2.14
+**Requirements check:** start safe room 2.1 · checkpoints 2.6, 2.10, 2.17 · crescendos 2.4, 2.8 · Big Hold On 2.18 (rocket pod) · collect 2.3 · Brute 2.11 · finale 2.19
 
 **2.1 · `use` · Start safe room**
-- **Where:** Triage station in the ambulance bay. Shuttle No. 4 is parked nose-first through the bay doors, and the triage radio sits on the nurse's desk. Optional: two fire-escape ladders up the bay's south wall lead onto the ER roof (storey 1), Larry's smoke-break ledge, a sniper perch over the bay with a note.
+- **Where:** Triage station in the ambulance bay. Shuttle No. 4 is parked nose-first through the bay doors, and the triage radio sits on the nurse's desk. Optional: two fire-escape ladders up the bay's south wall lead onto the ER roof (storey 1), Larry's smoke-break ledge, a rifle perch over the bay with a note.
 - **HUD:** `Radio Dot from triage`
 - **Radio:**
   - Dot: "You made it! Helicopter's on the roof. Pilot says he'll wait. Ish."
@@ -326,7 +401,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** opens: roof-access doors B, C, D, E and the Floor 2 fire exit
 
 **2.8 · `use` · Crescendo 2**
-- **Where:** The skybridge terrace, one floor down (storey 2) on the roof of the east wing, reached from the helipad by an outside flight of stairs or a ladder against the tower wall. Shutter control panel at the hospital end of the skybridge, with a long glass corridor on the far side. The horde boils up the roof-access huts from Floor 2 and the ladders from the lobby roof. HVAC units, a container and crates make imperfect cover, and a sniper and launcher wait here for the long roof sightlines.
+- **Where:** The skybridge terrace, one floor down (storey 2) on the roof of the east wing, reached from the helipad by an outside flight of stairs or a ladder against the tower wall. Shutter control panel at the hospital end of the skybridge, with a long glass corridor on the far side. The horde boils up the roof-access huts from Floor 2 and the ladders from the lobby roof. HVAC units, a container and crates make imperfect cover, and a rifle and launcher wait here for the long roof sightlines.
 - **HUD:** `Raise the skybridge shutter`
 - **Radio:**
   - Dot: "The skybridge leaves from the terrace one floor down. Panel's by the shutter."
@@ -370,23 +445,80 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** brute
 
 **2.12 · `use` · Power**
-- **Where:** Mall security office, through the glowing Star Arcade (under the toy store). Breaker panel on the back wall.
+- **Where:** Mall security office, through the glowing Star Arcade (under the toy store). Breaker panel on the back wall. The power raises the fire shutter in Security's east wall, which came down when the power went.
 - **HUD:** `Restore power in Security`
 - **Radio:**
   - Dot: "The loading dock lift needs power. Breakers are in Security, past the arcade."
   - Pip: "Past the ARCADE?"
   - Nori: "No."
-- **Flags:** opens: loading-dock corridor door
+- **Flags:** opens: Security's east fire shutter (to Plumley's)
 
-**2.13 · `use` · Crescendo 3 (finale)**
-- **Where:** Loading dock, at the freight lift call button. The dock is wide and open, with truck bays that sleepers pour through. A catwalk along its north wall (storey 1), up a ladder at the west end or stairs at the east end, is a sniper perch over the finale.
+**2.13 · `reach` · Round the back**
+- **Where:** The police have barricaded the dock corridor from the inside, so the team goes round. A staff corridor under Bun Bun Toys leads into Plumley's, the Galleria's old department store. Its ground floor is two halls split by a perfume wall: east through the cosmetics and perfume counters (tight, shotgun range), round the end of the wall, back west through shoes and handbags (a fitting-room pocket with armour) to the escalator up.
+- **HUD:** `Go round through Plumley's`
+- **Radio:**
+  - Dot: "Lights are on! Oh. Sweet peas, the police barricaded the dock. It's an evacuation point."
+  - Dot: "Go round: through Plumley's, over the car park, in from the truck yard."
+  - Mochi: "The scenic route. Customers love the scenic route."
+  - Pip: "Perfume counters. Every sleeper in here smells AMAZING."
+- **Flags:** none
+
+**2.14 · `reach` · Home & Bedding**
+- **Where:** Plumley's first floor (storey 1): north past rows of neatly made show beds (Bed 4 is where Bob from Bedding dozed off), east along linens and pillows, south through Dreamwell's "Sweet Dreams Night Sale" corner of Hush displays and nap pods, then the escalator up to the Galleria Cineplex lobby (storey 2).
+- **HUD:** `Head up to the Cineplex`
+- **Radio:**
+  - Pip: "A whole floor of beds. Nobody touch the beds. This is SO a trap."
+  - Nori: "'Sweet Dreams Night Sale.' Free Hush with every pillow. They planned this."
+  - Dot: "The cinema's up top. Its fire exit crosses to the car park roof."
+- **Flags:** none
+
+**2.15 · `reach` · Midnight Marathon**
+- **Where:** The Cineplex lobby (candy bar, popcorn, a Midnight Marathon poster), then the dark Screen 2, packed with the marathon audience who turned in their seats: in at the back corner, along the cross aisle by flashlight, out by the screen. A long, tight fire-exit corridor runs down the east side to a footbridge onto the car park roof. Optional: Screen 1 ("SOLD OUT") off the lobby, with an auto shotgun.
+- **HUD:** `Cut through to the car park roof`
+- **Radio:**
+  - Taro: "A midnight marathon. Three Snoozle films. I'd have dozed off in the first one."
+  - Mochi: "Looks like everybody did."
+  - Nori: "Fire exit's past the screen. Flashlights on, and step quietly."
+- **Flags:** none
+
+**2.16 · `reach` · Down the car park**
+- **Where:** Galleria Parking, three decks. The open roof (storey 2) has long sightlines (a rifle by the footbridge) and one of Dreamwell's "Sweet Dreams Night" fog trailers, empty. The ramps sit at alternate corners, so each deck is crossed corner to corner: roof north-east to south-west, level 1 (dark, St. Marigold's ambulances jammed nose to tail in the evacuation queue) back to the north-east, down to the ground deck.
+- **HUD:** `Get down through the car park`
+- **Radio:**
+  - Pip: "Is that a FOG MACHINE? On the roof? Who puts a fog machine on a roof?"
+  - Nori: "Dreamwell does. 'Sweet Dreams Night, Unit 7.' Empty now."
+  - Dot: "St. Marigold sent its ambulances up those ramps. The police office is at the bottom."
+- **Flags:** opens: parking office door
+
+**2.17 · `gather` · Checkpoint safe room**
+- **Where:** Across the ground deck to the parking office in its south-west corner, which the police used as their desk. Its back door is the yard gate.
+- **HUD:** `Hole up in the parking office`
+- **Radio:**
+  - Dot: "Parking office, ground floor, south-west corner. Get in and get that door shut."
+  - Taro: "Ambulances nose to tail, doors open. They got out on foot. I hope."
+- **Flags:** checkpoint · closes: parking office door
+
+**2.17b · `use` · Safe-room exit**
+- **Where:** The yard-gate lever in the parking office. Opening it also lets the police barricade on the food-court side of the dock give way, one more lane for the horde.
+- **HUD:** `Open the yard gate`
+- **Radio:**
+  - Nori: "Police clipboard. Last lift down to the tunnel left at 4:15. They left us something."
+  - Pip: "A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever."
+  - Dot: "The freight lift's at the bottom of the shaft, sweet peas. It's a long way up."
+  - Taro: "Rest a minute first. That dock will be the longest three minutes of the night."
+- **Flags:** opens: yard gate, dock barricade
+
+**2.18 · `use` · Big Hold On (finale)**
+- **Where:** West along the truck yard and in through a truck bay to the loading dock, where St. Marigold's overflow was evacuated: police vans, two ambulances, triage tents and broken sandbags. The police ran 61 awake people down the freight lift to the service tunnel and left on the last car at 4:15. Their **Fizzbang Pod** (rocket pod) is still bolted to its truck beside the lift button, facing the truck bays. The lift chimes the whole way up from the bottom of the shaft, and every sleeper in the Galleria comes to listen: through the four truck bays from the yard and the car park, down the food-court corridor, out of cold storage, the returns nook and the compactor, and up the catwalk ladders. A catwalk along the dock's north wall (storey 1) is a rifle perch.
 - **HUD:** `Call the freight lift`
 - **Radio:**
+  - Dot: "That lift chimes the whole way up. Every sleeper in the Galleria will come to listen."
+  - Pip: "Dibs on the rocket pod!"
   - Mochi: "Slowest lift in the world. Everybody face out!"
   - Nori: "And Pip, do not hum along to the music."
-- **Flags:** horde · holdout 90 s · opens: lift gate
+- **Flags:** horde · big · holdout 180 s · mounted gun: rocket pod · opens: lift gate
 
-**2.14 · `gather` · Chapter end**
+**2.19 · `gather` · Chapter end**
 - **Where:** Inside the freight lift. It's the end safe room and descends to the service tunnel.
 - **HUD:** `Everybody into the freight lift`
 - **Radio:**
@@ -404,21 +536,24 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 5 | Taped to the stairwell door in the observation room | LARRY. Do NOT nap in the chopper. We have talked about this. Mgmt |
 | 6 | Dream Shop window poster, with a scrawl in pen | COMING SOON: Hush HX-9 Pillow Mist! Dreamwell, because Mallow Bay deserves to rest. [scrawled:] the one Wren said NO to |
 | 7 | Thermos on Larry's ledge, ER roof (optional) | Best seat in the house. You can see the helipad AND the Galleria skylight. Back in 10, just resting my eyes. L. |
+| 8 | Customer service board, Plumley's ground floor | SWEET DREAMS NIGHT LATE OPENING till 3 a.m.! Free Hush Pillow Mist with every pillow, courtesy of Dreamwell. [pen:] Bob from Bedding dozed off on Bed 4 at 2:50. |
+| 9 | Usher's clipboard, Cineplex lobby | Midnight Marathon, Screen 2: 212 tickets. Everybody dozed off in part 2. I stayed up on pick-n-mix. At 3 they all stood up at once, humming. Benji |
+| 10 | MBPD clipboard, parking office | EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Pod bolted to the truck, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays. Sgt. Tuttle |
 
-**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the west stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign.
+**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the west stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign. In Screen 2 only the exit signs are lit; the house is packed (double sleeper density). Keep the evacuation point's sandbags low and broken so the flood reaches the stand from every side, and aim the rocket pod at the truck bays, where most of it comes in.
 
 ---
 
 ### Chapter 3: Night Freight
 
 **Subtitle:** Mallow Bay Rail Yard & Docks
-**Setting:** Industrial waterfront on three storeys. Switchman's hut at the tunnel mouth, a switching yard with signal gantries, a water tower, the yardmaster's office, a container maze and crane yard. Then the Dreamwell Hush Works plant (tank farm, lavender tanks, mixing floor, second-floor labs, break room), the loading yard, a pier walkway, the drawbridge control tower, and the dock siding where Bertha waits. Storey 1 holds the yardmaster's office (a cabin on stilts, front stairs up and back stairs down), the 2F labs and break room over the mixing floor (up the main or back stairs, with a fire escape down to the loading yard), and ladder perches: the boxcar roofs in the stopped freight train, the water-tower deck, two container stack tops, the tank-farm valve catwalk and the wharf stack at the siding. The control tower is stacked: hall (storey 0), switchgear (storey 1), control room (storey 2).
-**Mood:** 5:20 a.m. Sodium-orange lamps, rust-red and teal containers, black water, thick lavender fog rolling off the river.
+**Setting:** Industrial waterfront on three storeys. Switchman's hut at the tunnel mouth, a switching yard with signal gantries, a water tower, the yardmaster's office, a container maze and crane yard. Then the Dreamwell Hush Works plant (tank farm, lavender tanks, mixing floor, second-floor labs, break room), the loading yard, a pier walkway and the drawbridge control tower. South of the river: the dock siding where Bertha waits (requisitioned by the National Guard, with their gun flatcar beside her), Fish Dock Road, the fish market and its quay, the Guard railhead with its command post, the old steam depot (flooded turntable, roundhouse, coal stage) and the Seafarers' Mission. Storey 1 holds the yardmaster's office (a cabin on stilts, front stairs up and back stairs down), the 2F labs and break room over the mixing floor (up the main or back stairs, with a fire escape down to the loading yard), the sergeant's office over the Guard command post, and perches: the boxcar roofs in the stopped freight train, the water-tower deck, two container stack tops, the tank-farm valve catwalk, the wharf stack at the siding and the coal stage. The control tower is stacked: hall (storey 0), switchgear (storey 1), control room (storey 2).
+**Mood:** 5:20 a.m. Sodium-orange lamps, rust-red and teal containers, black water, thick lavender fog rolling off the river. South of the river, Guard olive drab and coal black.
 
 **Intro card:**
 > 5:20 a.m. No helicopter, but Dot knows trains. Old Bertha, a diesel locomotive older than Taro, sits dry on the dock siding, and the hill line runs straight out of town. Between you and her: a rail yard, a lot of fog, and the factory where the fog comes from. Someone else is on the radio now. Humming.
 
-**Requirements check:** start safe room 3.1 · checkpoints 3.4, 3.9 · crescendos 3.3, 3.8, 3.13 · collect 3.5 · Brute 3.7 · finale 3.14
+**Requirements check:** start safe room 3.1 · checkpoints 3.4, 3.9, 3.15 · crescendos 3.3, 3.8 · collect 3.5, 3.14 · Brute 3.7 · horde run 3.15 · finale (Big Hold On, Thump Cannon) 3.17
 
 **3.1 · `use` · Start safe room**
 - **Where:** Switchman's hut at the service tunnel mouth, with a wall radio and a lantern.
@@ -439,7 +574,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** none
 
 **3.3 · `use` · Crescendo 1**
-- **Where:** The big hill-line switch lever at the foot of the water tower, in the exposed middle of the yard. The tower's pump house carries a deck round the tank (storey 1), up two ladders: a perch over the arena with a sniper, though the sleepers climb both ladders too.
+- **Where:** The big hill-line switch lever at the foot of the water tower, in the exposed middle of the yard. The tower's pump house carries a deck round the tank (storey 1), up two ladders: a perch over the arena with a rifle, though the sleepers climb both ladders too.
 - **HUD:** `Throw the hill line switch`
 - **Radio:**
   - Dot: "The hill line's switched off. Big lever by the water tower. It's a noisy one."
@@ -474,7 +609,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** opens: terminal gate to Dock Road
 
 **3.6 · `reach` · Approach**
-- **Where:** North up Dock Road to the Dreamwell Hush Works gate. Giant lavender tanks carry the Snoozle logo, and fog leaks from the valves. Optional: a valve catwalk on stilts between the two tank rows (storey 1), a ladder at each end, is a sniper perch over the tank farm.
+- **Where:** North up Dock Road to the Dreamwell Hush Works gate. Giant lavender tanks carry the Snoozle logo, and fog leaks from the valves. Optional: a valve catwalk on stilts between the two tank rows (storey 1), a ladder at each end, is a rifle perch over the tank farm.
 - **HUD:** `Head to the Dreamwell Hush Works`
 - **Radio:**
   - Taro: "So this is where the fog comes from. Smells like my grandma's sock drawer."
@@ -532,24 +667,71 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Voice: "Once you're across, I'll see your lights from the hill. Hurry."
 - **Flags:** opens: drawbridge track barrier
 
-**3.12 · `reach` · Find Bertha**
-- **Where:** Back down the tower and over the drawbridge to the dock siding. Bertha is a stubby chibi diesel locomotive in cream and cherry red, with a flatcar coupled behind her.
-- **HUD:** `Get to Bertha on the dock siding`
+**3.12 · `reach` · Over the river**
+- **Where:** Back down the tower, over the drawbridge onto the dock siding apron. Bertha sits at the west end, a stubby chibi diesel in cream and cherry red, but she has company: a Guard flatcar with a big gun on it, "REQUISITIONED: MALLOW BAY GUARD" stencilled by her cab door, and the cab padlocked. The arrows lead the other way, south through a gap in the apron fence onto Fish Dock Road, to the fish market's west doors. The road beyond is closed by a Guard checkpoint (sandbags and trucks, see-through but not passable).
+- **HUD:** `Head south down Fish Dock Road`
 - **Radio:**
   - Taro: "Bridge is down. Back downstairs, everyone."
-  - Dot: "There she is. Bertha! Hello, old girl."
+  - Mochi: "There's Bertha, end of the siding! ...Why is there a cannon parked next to her?"
+  - Nori: "Army stencils on everything. The Guard took her, and they padlocked her cab."
+  - Dot: "Guard railhead's south, past the fish market. Their sergeant keeps the keys, sweet pea."
+- **Flags:** none
+
+**3.13 · `reach` · Fish market**
+- **Where:** A long dark market hall (tight interior, shotgun ground) split into three bays by walls with one gap each at alternate ends, so the route zig-zags: south through the wet fish stalls, north across the auction floor (the board stopped mid-bid), south-east through the packing room, then out onto the quay, the first long sightline in a while, with trawlers moored in the basin. The Piggyback hides under the stalls. Optional: the ice house, a cold dark room off the packing room, holds a Desert Eagle and an auto shotgun.
+- **HUD:** `Cut through the fish market`
+- **Radio:**
+  - Pip: "A fish market. In the dark. Full of sleepers. Cool cool cool."
+  - Taro: "Mind the stalls. The little ones in onesies like to hide underneath."
+  - Mochi: "In the west door, out by the quay. Like a delivery with extra steps."
+- **Flags:** none
+
+**3.14 · `collect` (1 key) · Guard railhead**
+- **Where:** South off the quay into the National Guard's railhead: their evacuation train still stands on two sidings (army trucks on flatcars, olive boxcars, gaps to slip through), with tents, a gun rack and a field kitchen between. The command post is in the far south-east corner, sandbagged, with a siren on the roof. Bertha's cab key is on the sergeant's desk upstairs (storey 1), beside the requisition order.
+- **HUD:** `Find the key to Bertha's cab`
+- **Radio:**
+  - Dot: "That's the Guard railhead. Command post's the cabin with the siren on the roof."
+  - Pip: "Fetch quest! The key's upstairs. It's always upstairs."
+  - Nori: "Nobody touch the siren."
+- **Flags:** opens: Seafarers' Mission door
+
+**3.15 · `gather` · Checkpoint safe room (horde run)**
+- **Where:** The siren goes off. A fighting run back west across the railhead and over the level crossing into the old steam depot: round or across the flooded turntable pit (its deck is a 2-wide chokepoint), past or through the roundhouse, to the Seafarers' Mission, a little sailors' chapel and canteen in the north-west corner with bunks, a tea urn and a ship's bell nobody rings. Optional: the coal stage (storey 1, stairs and a ladder) is a perch over the depot with a rifle.
+- **HUD:** `Run for the Seafarers' Mission`
+- **Radio:**
+  - Pip: "Got the key! Also I MAY have leaned on the siren button."
+  - Nori: "Pip."
+  - Taro: "The Seafarers' Mission never locks its door. Back past the old turntable. Run!"
+- **Flags:** horde · checkpoint · closes: mission door
+
+**3.15b · `use` · Safe-room exit**
+- **Where:** The bar on the mission's siding door. A short lane runs north through the apron fence to Bertha.
+- **HUD:** `Unbar the siding door`
+- **Radio:**
+  - Taro: "My wife and I sang carols here every Christmas. Same tea urn, I think."
+  - Nori: "Guns, kit, a bell nobody rings. Load up. Bertha's crank is a long one."
+  - Mochi: "Siding door goes straight to Bertha. Last drop of the night, team."
+- **Flags:** opens: siding door
+
+**3.16 · `reach` · Back to Bertha**
+- **Where:** Up the mission lane onto the dock siding, to Bertha and the Guard flatcar beside her.
+- **HUD:** `Get back to Bertha`
+- **Radio:**
+  - Dot: "Key in the cab, sweet pea, and say hello to Bertha for me."
   - Taro: "She's older than me. I like her already."
 - **Flags:** none
 
-**3.13 · `use` · Crescendo 3 (finale)**
-- **Where:** Bertha's cab. Pour the diesel and crank the engine. The siding is an open apron with containers on both sides for flanking. The wharf stack (storey 1), one ladder at each end, is a perch over the crank, but the horde climbs both ladders and the Brute comes up too.
+**3.17 · `use` · Finale: the Big Hold On**
+- **Where:** Bertha's cab. Pour the diesel and crank the engine, and hold for three minutes against the whole wharf. The Guard's escort gun, a **Thump Cannon** (mounted support gun), is bolted to the flatcar beside her facing east down a long clear lane of the apron, where the hordes pour in from the bridge foot, Fish Dock Road and the far wharf. Its shells splash, so the gunner wants them far away. The siding is an open apron with containers on both sides for flanking; the wharf stack (storey 1), one ladder at each end, is a perch over the crank, but the horde climbs both ladders and the Brute comes up too.
 - **HUD:** `Fuel up and start Bertha`
 - **Radio:**
   - Dot: "Prime her, crank her, and hold on. Bertha takes her time and so should you."
-  - Pip: "Two minutes?! Dot, that's like a WEEK."
-- **Flags:** horde · holdout 120 s (scripted: waves with breathers, a Brute midway, then the big rush) · opens: cab door
+  - Pip: "Three minutes?! Dot, that's like a MONTH."
+  - Nori: "That's the Guard's cannon on the flatcar. Somebody man it. Aim long, it splashes."
+  - Pip: "I CALL THE CANNON!"
+- **Flags:** horde · **Big Hold On** · holdout 180 s (scripted: waves with breathers, a Brute midway, a flanking rush, then a long final push) · opens: cab door
 
-**3.14 · `gather` · Chapter end (vehicle)**
+**3.18 · `gather` · Chapter end (vehicle)**
 - **Where:** Bertha's cab and the coupled flatcar.
 - **HUD:** `All aboard Bertha!`
 - **Radio:**
@@ -566,21 +748,24 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 4 | Wren's lab notebook, page 1 (desk by terminal four) | HX-9 sleepers chase noise because the dream wants quiet. They're not cruel. They're trying to hush us. |
 | 5 | Wren's lab notebook, page 2 (pinned to the wall) | MORNING BELL won't wake them. I don't know how yet. It lets them lie down and rest. Needs the Pinecone Hill mast. Someone must keep it ringing. |
 | 6 | Crumpled memo in the break room bin | Wren, Council wants results by Sweet Dreams Night. Your "concerns" are noted. Ship HX-9. G.P. P.S. Get some sleep! |
+| 7 | Auction board on the fish market's auction floor | 3:00 a.m. auction. Lot 14, live eels, going once, going tw |
+| 8 | Requisition order on the sergeant's desk (Guard command post, upstairs) | 2:45 a.m. GUARD RAILHEAD. Loco No. 9 BERTHA taken for the hill line run. Escort gun on the flatcar beside her. Cab locked, key in the CP. Night watch: STAY AWAKE. |
+| 9 | Noticeboard in the Seafarers' Mission | Seafarers welcome! Tea all night, bunks free. Please do NOT ring the ship's bell after ten. It brings the whole wharf over. |
 
-**Map designer notes:** Twelve empty tanker cars on a siding labelled HX-9, with one bay left bare. Put a "DAYS SINCE INCIDENT: 0" sign on the Hush Works gate. Run a fog-leak trail from the tanks to the river. Pin sound-wave charts and a child's drawing ("To Wren, from Mum") in the lab. Make the tower's lit window visible across the water from the pier so the destination reads before the radio line plays.
+**Map designer notes:** Twelve empty tanker cars on a siding labelled HX-9, with one bay left bare. Put a "DAYS SINCE INCIDENT: 0" sign on the Hush Works gate. Run a fog-leak trail from the tanks to the river. Pin sound-wave charts and a child's drawing ("To Wren, from Mum") in the lab. Make the tower's lit window visible across the water from the pier so the destination reads before the radio line plays. South of the river, Bertha and the Guard flatcar should be lit and in view from the bridge foot, so the team sees the cannon (and the reason for the detour) before the radio explains it. The Guard checkpoint on Fish Dock Road is see-through, so the railhead reads as the goal from the road. The mission's ship's bell is a quiet nod to the Morning Bell: bells bring the sleepers.
 
 ---
 
 ### Chapter 4: Morning Bell
 
 **Subtitle:** Pinecone Hollow & Pinecone Hill
-**Setting:** Suburb into forest edge. Pinecone Hollow station, Maple Loop and Birch Court cul-de-sacs, fenced backyards, a prepper basement, Pinecone Elementary's schoolyard, the creek culvert with its flood gate, a pine forest trail, a ranger cabin, the Pinecone Hill switchbacks and transmitter compound, the downhill road, and the old river bridge with an army boom gate. Storey 0 is the valley floor. Storey 1 is the rock shelf of Pinecone Hill: the Hill Steps climb onto it from the foot of the switchbacks, and the upper switchbacks, the fire road, the hilltop compound and the first half of the downhill road sit on it, until the Old Stone Steps drop the road back to the valley. Storey 2 is the transmitter deck on the control shed's roof, where the Bell is rung, and the fire lookout's cab. Ladder side trips: the treehouse on the school path, the fire lookout, and the army watchtower over the boom gate.
-**Mood:** 6:05 a.m. moving to sunrise. Peach-gold sky, long blue shadows, lavender mist thinning in the pines. The last two steps are in full warm sunlight.
+**Setting:** Suburb into forest edge, then down to the river. Pinecone Hollow station, Maple Loop and Birch Court cul-de-sacs, fenced backyards, a prepper basement, Pinecone Elementary's schoolyard, the creek culvert with its flood gate, a pine forest trail, a ranger cabin, the lower woods (a rockslide on the hill trail, the old logging road, the logging camp, the Pinecone Dam and the old flume path), the Pinecone Hill switchbacks and transmitter compound, the downhill road, the river flats (Mill Road and Mill Row, the Pinecone Lumber Co. yard and sawmill, the Mallow River campground), the army field post, and the old river bridge with its army checkpoint and boom gate. Storey 0 is the valley floor. Storey 1 is the rock shelf of Pinecone Hill: the Hill Steps climb onto it from the foot of the switchbacks, and the upper switchbacks, the fire road, the hilltop compound and the first half of the downhill road sit on it, until the Old Stone Steps drop the road back to the valley. Storey 1 also carries the Pinecone Dam's deck, a long chokepoint over the reservoir and spillway. Storey 2 is the transmitter deck on the control shed's roof, where the Bell is rung, and the fire lookout's cab. Ladder side trips: the treehouse on the school path, the fire lookout, and the army watchtower over the boom gate (with a rocket pod on its roof).
+**Mood:** 6:05 a.m. moving to sunrise. Peach-gold sky, long blue shadows, lavender mist thinning in the pines. From the Bell on, everything is in warm sunlight.
 
 **Intro card:**
 > 6:05 a.m. Bertha ran out of track at Pinecone Hollow. Dot is driving the No. 9 bus to the old bridge to meet the last convoy at sunrise. But the voice on the radio says the sleepers will follow you all the way out, unless someone rings the Morning Bell from the top of the hill.
 
-**Requirements check:** start safe room 4.1 · checkpoints 4.4, 4.8 · crescendos 4.6, 4.10, 4.12 · collect 4.3 · Brute 4.5 · finale 4.13
+**Requirements check:** start safe room 4.1 · checkpoints 4.4, 4.8, 4.14 · crescendos 4.6, 4.11 · Big Hold On 4.15 · collects 4.3, 4.13 · Brute 4.5 · finale 4.15–4.16
 
 **4.1 · `use` · Start safe room**
 - **Where:** Pinecone Hollow station waiting room, with the ticket-office radio inside. Bertha has stopped outside against a fallen pine across the track.
@@ -666,24 +851,35 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Dot: "You heard her. Up you go, and bring my daughter a sandwich."
 - **Flags:** opens: cabin back door to the hill trail
 
-**4.9 · `reach` · Summit**
-- **Where:** East along the foot of Pinecone Hill and north to the Hill Steps, which climb onto the rock shelf (storey 1). Then the switchbacks west, north and east to the hilltop, with long uphill sightlines. A fire road loops off toward the hilltop past the fire lookout, a timber tower with one ladder up to its cab (storey 2), an optional sniper perch that sees over the rocks to the compound. The goal is the Pinecone Hill transmitter compound: a fenced concrete yard, the radio mast, and the control shed with Wren visible behind a reinforced window.
-- **HUD:** `Reach the transmitter on the hill`
+**4.9 · `reach` · The lower woods (detour)**
+- **Where:** A 4 a.m. rockslide buries the middle of the hill trail. The old logging road drops south through dark pines (flashlights; a woodcutter's lean-to off to the side hides a reward) to the Pinecone logging camp: an open clearing round log stacks, a log truck and a cookhouse tent, with the tight bunkhouse (the foreman's chalkboard) on one side and the reservoir on the other. South of the camp the trail climbs onto the **Pinecone Dam** (storey 1): a 3-wide, 23-tile deck with the reservoir on one side and the spillway on the other, a long chokepoint with rifle sightlines across the water. The dam keeper's hut sits on the west forecourt. The goal is the east end of the dam.
+- **HUD:** `Go round by the old dam`
 - **Radio:**
-  - Wren: "I'm behind the glass. Locked myself in. The console's up on the deck, by the mast."
-  - Pip: "She's real! Hi, radio lady!"
+  - Wren: "Oh no. The hill trail's under a rockslide. Take the old logging road round by the dam."
+  - Taro: "Bill Harlow's logging camp. Best flapjacks on the hill, every Sunday."
+  - Pip: "Detour quest. There's always a detour quest."
 - **Flags:** none
 
-**4.10 · `use` · Crescendo 2 (the Bell)**
+**4.10 · `reach` · Summit**
+- **Where:** North up the old flume path along the reservoir's far shore (a fishing spot on the way), round the head of the reservoir and back onto the hill trail beyond the rockslide, then north to the Hill Steps, which climb onto the rock shelf (storey 1). Then the switchbacks west, north and east to the hilltop, with long uphill sightlines. A fire road loops off toward the hilltop past the fire lookout, a timber tower with one ladder up to its cab (storey 2), an optional perch that sees over the rocks to the compound. The goal is the Pinecone Hill transmitter compound: a fenced concrete yard, the radio mast, and the control shed with Wren visible behind a reinforced window.
+- **HUD:** `Reach the transmitter on the hill`
+- **Radio:**
+  - Wren: "I can see you on the dam! The flume path climbs back up to the hill steps."
+  - Mochi: "Ten-minute delivery to the top of the hill. Keep the porch light on!"
+- **Flags:** none
+
+**4.11 · `use` · Crescendo 2 (the Bell)**
 - **Where:** The transmitter console on the transmitter deck, the control shed's roof (storey 2), round the foot of the mast. The way up is a steel stair flight from the west yard plus two ladders on the shed's north and east walls: the horde's three routes up. Cable drums and sandbags give imperfect cover, with a firing lane on every route. Ringing the Bell sends a slow, warm chime across the valley.
 - **HUD:** `Ring the Morning Bell`
 - **Radio:**
+  - Wren: "I'm behind the glass. Locked myself in. The console's up on the deck, by the mast."
+  - Pip: "She's real! Hi, radio lady!"
   - Wren: "When it rings, they'll come. Then they'll lie down. Hold until it takes."
   - Mochi: "Hold the deck, team. Watch the stairs and ladders. Last delivery of the night!"
 - **Flags:** horde · holdout 120 s · opens: compound gate to the downhill road
 
-**4.11 · `reach` · Aftermath (quiet beat)**
-- **Where:** The downhill road at sunrise, along the shelf (storey 1) and then down the Old Stone Steps to the valley floor, past Pell's empty limo to the army checkpoint plaza by the old bridge. Sleepers lie curled up along the verges as non-hostile props, with little "Zzz" particles.
+**4.12 · `reach` · Aftermath (quiet beat)**
+- **Where:** The downhill road at sunrise, along the shelf (storey 1) and then down the Old Stone Steps to the valley floor. Sleepers lie curled up along the verges as non-hostile props, with little "Zzz" particles, and the road is nearly empty (low wanderer density). At the foot of the steps the convoy's tail truck lies jackknifed right across the bridge road: DETOUR.
 - **HUD:** `Head down to the old bridge`
 - **Radio:**
   - Nori: "They're lying down. Breathing. Just... asleep."
@@ -691,15 +887,42 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Taro: "Sleep well. We'll come back for you."
 - **Flags:** none
 
-**4.12 · `use` · Crescendo 3 (finale)**
-- **Where:** The army boom-gate control at the near end of the old bridge. Sleepers from across the river, outside the Bell's range, still pour in through Bridge Park. Dot's No. 9 bus is visible on the far span. A sandbagged watchtower in the plaza's corner (storey 1), with a ladder on two faces, is a sniper perch over the gate.
+**4.13 · `collect` (3 fuel cans) · River flats sweep**
+- **Where:** The river flats, down in the hill's shadow where the Bell's chime doesn't carry, so the sleepers here are still up (high wanderer density). Mill Road runs south past Mill Row (a mower fuel can in a cottage garage) to the Pinecone Lumber Co. yard: lumber stacks, log piles and the log loader in the open yard (rifle range), and the dark sawmill shed with its saw line (shotgun range), the second can in the office (and the whiteboard about Dreamwell's bed-frame orders). The yard's east gate opens onto the Mallow River campground: tents, RVs, fire pits, the bathhouse, the boat ramp, the playground, and the camp store with its fuel pumps at the far south end (the third can).
+- **HUD:** `Find fuel for the army generator`
+- **Radio:**
+  - Dot: "Sweet pea, the convoy's last truck jackknifed on the bridge road. Go round by the river."
+  - Wren: "The Bell doesn't carry down to the river flats. The sleepers there are still up."
+  - Dot: "And the army post's generator is dry. No juice, no boom gate. Find me fuel cans."
+- **Flags:** opens: army field post back door
+
+**4.14 · `gather` · Checkpoint safe room**
+- **Where:** North up Bridge Road from the campground to the army field post, the soldiers' block between the river flats and the checkpoint plaza: army cots, a radio desk, a weapons rack, the generator, and the sergeant's field orders on the desk (the guns stay on the sandbags for whoever comes next). The rest before the climax.
+- **HUD:** `Hole up in the army field post`
+- **Radio:**
+  - Mochi: "Three cans of go-juice, signed for. Next stop, the bridge!"
+  - Dot: "I'm parked just past the army post. Found the door button. In you come, sweet peas."
+- **Flags:** checkpoint · closes: field post back door
+
+**4.14b · `use` · Safe-room exit**
+- **Where:** The field post generator. Fuelled, it powers the checkpoint and opens the front door onto the plaza.
+- **HUD:** `Fuel the field post generator`
+- **Radio:**
+  - Nori: "Cots, cold coffee, field orders. The soldiers left in a hurry."
+  - Taro: "And left their big guns on the sandbags. Somebody hoped we'd come."
+- **Flags:** opens: field post front door to the checkpoint plaza
+
+**4.15 · `use` · THE BIG HOLD ON (finale)**
+- **Where:** The boom-gate control at the near end of the old bridge, in the army checkpoint plaza. Raising the boom on generator power takes three minutes, and its motor calls every sleeper outside the Bell's range. Dot's No. 9 bus is visible on the far span the whole time. The soldiers left their mounted guns: a **Popcorn Gatling** (facing west over the plaza and the diner road) and a **Thump Cannon** (facing south over the plaza and the motor pool) in the sandbag nest by the boom control, and a **Fizzbang Pod** on the watchtower roof (storey 1, ladders on two faces) facing north over Bridge Park. The horde comes four ways: Bridge Park and the weir landing (north), the diner road and the Bridge Diner car park (west), and the motor pool (south-east). Cover is army trucks and low sandbags, imperfect on purpose, and every approach can be walked both ways.
 - **HUD:** `Raise the bridge boom gate`
 - **Radio:**
   - Dot: "I can see you! Get that boom gate up and get on my bus!"
   - Wren: "The far bank's out of range. They're still coming. Hold them!"
-- **Flags:** horde · holdout 90 s · opens: boom gate, bus door
+  - Pip: "Turret section! Gatling, cannon, rocket pod. Best level ever!"
+- **Holdout script (feed lines):** wave 36 s ("Here they come! Man the guns!") · breather 8 s · specials 26 s · wave from two sides 34 s ("Second wave! Watch every side!") · breather 6 s · Brute 26 s ("A Brute! Swing the cannon round!") · final 44 s ("The boom gate's nearly up! Hold on!")
+- **Flags:** Big Hold On (`big`) · horde · holdout 180 s · opens: boom gate, bus door
 
-**4.13 · `gather` · Campaign end (vehicle)**
+**4.16 · `gather` · Campaign end (vehicle)**
 - **Where:** Aboard Dot's No. 9 bus on the bridge.
 - **HUD:** `Everybody on Dot's bus!`
 - **Radio:**
@@ -716,10 +939,14 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 2 | Journal on the Henderson basement shelf | Day 1. Told Barb the free fog was a government plot. It was a sleep company plot. Still counts. Day 2. Barb went upstairs for a nap. |
 | 3 | Pinecone Elementary noticeboard | SNOOZLE ASSEMBLY CANCELLED due to "weird fog". School closed Friday. Enjoy your long weekend! |
 | 4 | Ranger cabin logbook | 3:10 a.m. Fog never reached the hill. 3:40 a lady in a lab coat ran up the trail with a hard drive and a sandwich. Said she's "fixing it". Gave her the transmitter key. |
-| 5 | Taped inside the transmitter shed window | Mum, if you're reading this, I'm fine. I'll ring it every morning until I know how to wake them. Save me a seat on the No. 9. W |
-| 6 | Back seat of an empty white limo by the bridge | Gift tag: "G. Pell, Executive Rest Kit: silk eye mask, HX-9 Pillow Mist (complimentary)." The kit is open. The limo is empty. |
+| 5 | Foreman's chalkboard, logging camp bunkhouse | CREW BUS to the Sweet Dreams fog party in town, 10 p.m. Free pillows! Back by 6 for first shift. Harlow |
+| 6 | Dam keeper's log, the hut by the Pinecone Dam | 4:10 a.m. Rockslide on the hill trail, heard it from here. 4:30 sleepers on the far shore, humming at the water. Kept the door shut. Kept the kettle on. |
+| 7 | Taped inside the transmitter shed window | Mum, if you're reading this, I'm fine. I'll ring it every morning until I know how to wake them. Save me a seat on the No. 9. W |
+| 8 | Back seat of an empty white limo by the bridge | Gift tag: "G. Pell, Executive Rest Kit: silk eye mask, HX-9 Pillow Mist (complimentary)." The kit is open. The limo is empty. |
+| 9 | Sawmill office whiteboard, Pinecone Lumber Co. | MON: Dreamwell order, 400 bed frames. TUE: Dreamwell order, 400 more. WED: who is buying all these beds?? |
+| 10 | Field orders on the desk, army field post | Hold the bridge until the convoy is clear. 0430: convoy pulled back across the river. Guns stay on the sandbags for whoever comes next. Keep the generator fed. Sgt. Okafor |
 
-**Map designer notes:** Snoozle billboards here are graffitied "WAKE UP". The Bell's chime should read visually as soft gold rings expanding from the mast during 4.10. After 4.10, swap ambient zombies on the downhill road for sleeping props. The No. 9 bus on the far side of the bridge should be visible from the boom gate, so the goal is on screen during the last holdout. Put Pell's limo on the verge just before the bridge.
+**Map designer notes:** Snoozle billboards here are graffitied "WAKE UP" (the station green, the logging camp, the campground, the far bank). The Bell's chime should read visually as soft gold rings expanding from the mast during 4.11. After 4.11 the downhill road is a quiet stretch of sleeping props; the river flats are crowded again because the chime doesn't reach them. The rockslide and the jackknifed convoy truck are both visible dead ends, each signposted to its detour. Pell's limo sits on the verge just before the bridge, on the plaza side of the truck, so players find it during or after the finale. The No. 9 bus on the far side of the bridge should be visible from the boom gate, so the goal is on screen during the Big Hold On.
 
 ---
 
