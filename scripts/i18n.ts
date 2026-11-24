@@ -13,6 +13,7 @@ function chapterStrings(i: number): string[] {
     out.push(s.objective);
     for (const [who, line] of s.radio) out.push(who, line);
     for (const g of s.holdScript ?? []) if (g.msg) out.push(g.msg);
+    for (const g of s.gates ?? []) if (g.msg) out.push(g.msg);
   }
   for (const n of d.notes) out.push(n.title, n.text);
   for (const p of d.pickups) if (p.label) out.push(p.label);

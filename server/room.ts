@@ -277,6 +277,12 @@ export class Room implements CombatHost {
     const meds = this.def.pickups.filter((p) => p.kind === 'medkit' && !p.keep && !this.taken.has(p.id));
     const inSafe = new Set(this.L.safeRooms().flat());
     this.safeMeds = this.L.safeRooms().map((r) => shuffle(r.filter((id) => this.def.pickups[id].kind === 'medkit' && !this.taken.has(id))));
+    // A Big Hold On's supply stand (its `keep` medkits within 6 tiles) stocks one per survivor, like a safe room.
+    for (const st of this.def.steps) {
+      if (!st.big) continue;
+      const near = this.def.pickups.filter((p) => p.kind === 'medkit' && p.keep && !this.taken.has(p.id) && Math.abs((p.y ?? 0) - (st.at.y ?? 0)) < 1 && Math.hypot(p.x - st.at.x, p.z - st.at.z) <= 12);
+      if (near.length) this.safeMeds.push(shuffle(near.map((p) => p.id)));
+    }
     this.medOrder = shuffle(meds.filter((p) => !inSafe.has(p.id)).map((p) => p.id));
     this.smallOrder = shuffle(this.def.pickups.filter((p) => medIndex(p.kind) > 0 && !p.keep && !this.taken.has(p.id)).map((p) => p.id));
     const squad = this.squad();
