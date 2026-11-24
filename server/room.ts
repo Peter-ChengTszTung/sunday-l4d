@@ -1323,7 +1323,8 @@ export class Room implements CombatHost {
   private spawnSpecial(type: number, minD: number, maxD: number, hold: boolean): Zombie | null {
     const S = DIRECTOR.specials;
     let c = -1;
-    if (AMBUSHER(type) && this.lonerP() && Math.random() < S.lonerBias) {
+    // (Not in a holdout with lanes: there every special comes down its lane.)
+    if (AMBUSHER(type) && !((this.holdout >= 0 || this.escape) && this.hs.zone.length) && this.lonerP() && Math.random() < S.lonerBias) {
       const [a, b] = S.lonerSpawn;
       c = this.trySpawnCell(a, b, 0, this.lonerField) ?? this.trySpawnCell(a, b + 6, 0, this.lonerField) ?? -1;
     }
