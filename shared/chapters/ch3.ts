@@ -666,26 +666,53 @@ export function build() {
   b.level(0);
 
   // ------------------------------------------------------------------
-  // 13. Dock siding: an open apron with containers on both sides, Bertha (finale: the Big Hold On)
+  // 13. Dock siding: Bertha, the Guard flatcar and the apron (finale: the Big Hold On)
   // ------------------------------------------------------------------
+  // The Big Hold On is a restart finale: Bertha stalls twice and someone has to hold her crank. The
+  // apron is three parts. West: Bertha, the flatcar with the Thump Cannon facing east, the supply
+  // stand and the wharf stack perch. Middle: the kill zone (x 40-55), open, the cannon's to sweep.
+  // East: container walls cut the apron into two 6-wide lanes that run at the cannon, so it looks
+  // straight down both (its splash wants range):
+  //
+  //   x: 40      56            77    83
+  //  140 ~~~~~~~~~~~~~~~~~~~~~~/br/~~~~~~~~   ~ river   br bridge stairs (A comes down here)
+  //      ......NNNNNNNNNNNNNNNN......wharf..   N north container wall (stepped, end-on boxes)
+  //      ......AAAAAAAAAANNNNNN.. c ........   A lane A: bridge foot -> WSW -> the kill zone
+  //   G> ......AAAAAAAAAAAAAAAA.. o  shed yd    W the wedge: stacked containers between the lanes
+  //   (155)....WWWWWWWAAAAAAAAAA. n ........   c connector: the first-visit walk, bridge -> road
+  //      ......WWWWWWWWWWWWWWWW.. n  +----+
+  //      ......BBBBBBBBWWWWWWWW.. e  |SHED|    B lane B: road gate -> WNW -> the kill zone
+  //      ......SSSSSSBBBBBBBBBB.. c  |  3 |    S south container wall (stepped, end-on boxes)
+  //  177 ......SSSSSSSSSSSSSSBB.. t  +----+
+  //  178 ####################### gate ######   road gate: Fish Dock Road (lane B's spawn zone)
+  //
+  // Lane C is the south-west gate behind Bertha (the mission lane, x 10-13), fed from the bonded
+  // yard behind the fence: the Brute and the special pushes come that way, at the crank's back.
   b.carve(6, 140, 130, 177, F.CONCRETE);
   b.walls(0, 140, 5, 179, WALL.FENCE, 3); b.walls(6, 178, 130, 179, WALL.FENCE, 3);
-  rail(6, 150.5, 130, 150.5); rail(6, 166, 82, 166); rail(84, 158, 130, 158);
-  b.label('DOCK SIDING', 64, 147.5, 26, SODIUM, 0);
+  rail(6, 150.5, 55, 150.5); rail(6, 166, 55, 166); rail(84, 158, 130, 158);
+  b.label('DOCK SIDING', 47.5, 141.6, 22, SODIUM, 0);
   // Two ways out of the apron's south fence: Fish Dock Road (section 14) and the lane from the
   // Seafarers' Mission's siding door (section 17), which is how the team comes back to Bertha.
   b.carve(77, 178, 82, 179, F.ASPHALT);
   b.carve(10, 178, 13, 180, F.CONCRETE);
-  // Wharf stacks (north) and yard stacks (south): flanking lanes for the horde. The strip south of
-  // Bertha (z 152-155) stays clear east to x 111: the cannon's firing lane.
-  for (const [x0, z0] of [[8, 142], [48, 142], [92, 142], [110, 142], [46, 156], [66, 156], [112, 154], [40, 172]]) {
+  // Bonded yard behind the south fence (lane C's spawn zone): an alley along the mission's north wall
+  // and a dead-end yard of bonded boxes. Out of sight of the apron, 60 m from the cannon.
+  b.carve(14, 179, 25, 180, F.CONCRETE); b.carve(26, 179, 40, 187, F.CONCRETE);
+  b.walls(26, 188, 41, 188, WALL.FENCE, 3); b.walls(41, 179, 41, 187, WALL.FENCE, 3);
+  box(28, 182, 1, 5); box(30, 182, 1, 5); box(35, 181, 4, 1); box(35, 185, 4, 1, COAL);
+  b.prop('crate', 33, 186); b.prop('pallet', 38, 183, 1, 2);
+  b.pick('ammo', 39, 187); b.pick('firebomb', 32, 187);                     // dark pocket, flashlight on
+  b.label('BONDED YARD', 33, 183.5, 12, STEEL, WEST); b.lamp(26.5, 181);
+  // Wharf stacks (north-west and far east) and the yard stack in the south-west of the kill zone.
+  for (const [x0, z0] of [[8, 142], [92, 142], [110, 142], [112, 154], [40, 172]]) {
     box(x0, z0, 6, 1); box(x0 + 6, z0, 6, 1); box(x0, z0 + 1, 6, 1);
   }
-  // Wharf stack (storey 1 on top): a perch over Bertha's crank, one ladder at each end. Strong
-  // ground for the finale, but the horde climbs both ladders and the Brute comes up too.
+  // Wharf stack (storey 1 on top): a perch over Bertha. Both ladders are at its west end, facing the
+  // back gate (lane C): from the lanes the horde has to come round, and the Brute still climbs.
   b.fill(28, 142, 39, 143); b.walls(28, 142, 39, 143, WALL.BUILDING, STOREY);
-  b.ladder(27, 143, '+x'); b.ladder(40, 142, '-x');
-  b.label('LADDER', 26.4, 143.5, 10, GOLD, E); b.label('LADDER', 40.6, 141.5, 10, GOLD, WEST);
+  b.ladder(27, 143, '+x'); b.ladder(29, 144, '-z');
+  b.label('LADDER', 26.4, 143.5, 10, GOLD, E); b.label('LADDER', 29.5, 145.2, 10, GOLD, 0);
   b.level(1);
   b.carve(28, 142, 39, 143, F.CONCRETE);
   b.label('WHARF STACK', 33.5, 143, 11, CREAM, 0);
@@ -693,24 +720,46 @@ export function build() {
   b.lamp(30, 142.5); b.lamp(37, 142.5);
   b.level(0);
   box(8, 156, 6, 1); box(8, 157, 6, 1);
-  // Cars on Bertha's track and the back siding.
-  box(46, 150, 5, 2); box(52, 150, 5, 2); b.prop('pallet', 62, 150, 5, 2); box(100, 150, 5, 2); box(106, 150, 5, 2);
-  box(12, 165, 5, 2); box(17, 165, 5, 2); box(36, 165, 5, 2); box(41, 165, 5, 2); box(60, 165, 5, 2);
-  for (const x of [66, 72, 86, 98, 116, 124]) b.prop('barrel', x, 140, 1, 1, { color: 0x2b2a36 });   // bollards
+  // Cars on the back siding (west half only: the east is the lanes now).
+  box(12, 165, 5, 2); box(17, 165, 5, 2); box(36, 165, 5, 2); box(41, 165, 5, 2); box(100, 150, 5, 2); box(106, 150, 5, 2);
+  for (const x of [86, 98, 116, 124]) b.prop('barrel', x, 140, 1, 1, { color: 0x2b2a36 });   // bollards
   b.prop('barrier', 6, 150, 1, 2); b.label('END OF LINE', 8, 153.4, 10, RED, 0);
-  for (const [x, z] of [[44, 160], [58, 147], [70, 153], [120, 147], [30, 168], [56, 170]]) b.prop('crate', x, z);
-  // Dock shed (pocket with supplies; doors on three sides).
+  for (const [x, z] of [[120, 147], [30, 168], [20, 172]]) b.prop('crate', x, z);
+
+  // The two lanes. Each runs along a line out of the cannon, stepped one row at a time (lane A
+  // drifts a row south every ~3.5 tiles going west, lane B a row north every ~2), so the gunner
+  // sees down the whole of both. Per step: [x0, x1, top row]; a lane is its top row and 5 below.
+  const laneA: [number, number, number][] = [[56, 58, 146], [59, 62, 145], [63, 65, 144], [66, 69, 143], [70, 72, 142], [73, 76, 141]];
+  const laneB: [number, number, number][] = [[56, 58, 163], [59, 60, 164], [61, 62, 165], [63, 64, 166], [65, 66, 167], [67, 69, 168], [70, 71, 169], [72, 73, 170], [74, 75, 171], [76, 76, 172]];
+  const topOf = (steps: [number, number, number][], x: number) => steps.find(([a, c]) => x >= a && x <= c)![2];
+  /** One column of end-on boxes (a 40 ft box is 1 x 6 tiles) from row z0 to z1. */
+  const endOn = (x: number, z0: number, z1: number) => { for (let z = z0; z <= z1; z += 6) box(x, z, 1, Math.min(6, z1 - z + 1)); };
+  for (let x = 56; x <= 76; x++) {
+    const a = topOf(laneA, x), bt = topOf(laneB, x);
+    if (a > 140) endOn(x, 140, a - 1);                                      // north container wall
+    if (bt + 6 <= 177) endOn(x, bt + 6, 177);                               // south container wall
+    // The wedge between the lanes: boxes stacked two high, its point at the kill zone.
+    b.fill(x, a + 6, x, bt - 1); b.walls(x, a + 6, x, bt - 1, WALL.BUILDING, 5.2);
+  }
+  b.label('BONDED STACKS', 56.6, 157, 12, CREAM, E);
+  // Lane signs and lamps: lit at the mouths and the far ends, dark between (flashlights, and the
+  // cannon's flash).
+  b.label('BRIDGE', 58.5, 149, 16, TEAL, E); b.label('ROAD GATE', 58.5, 166, 14, GOLD, E);
+  b.lamp(56.2, 146.2); b.lamp(56.2, 168.8); b.lamp(76.8, 141.2); b.lamp(75.8, 177.2); b.lamp(80, 160);
+
+  // Dock shed (pocket with supplies off the connector; doors on three sides).
   b.fill(84, 162, 112, 177); b.carve(85, 163, 111, 176, F.INTERIOR);
   b.carve(88, 162, 90, 162, F.INTERIOR); b.carve(104, 162, 106, 162, F.INTERIOR); b.carve(84, 169, 84, 170, F.INTERIOR);
   b.prop('shelf', 86, 164, 1, 10); b.prop('shelf', 110, 164, 1, 10); for (const x of [92, 98]) b.prop('pallet', x, 168, 3, 2);
   b.prop('truck', 94, 172, 6, 2, { color: 0xe8e3f0 });
   b.pick('rifle', 100, 164); b.pick('deagle', 101, 164); b.pick('autoshotgun', 99, 164); b.pick('launcher', 100, 165); b.pick('ammo', 90, 175); b.pick('ammo', 90, 174); b.pick('medkit', 106, 175);
   b.label('DOCK SHED 3', 98, 166.5, 16, SODIUM); b.lamp(92, 165); b.lamp(104, 170);
-  // The shed's best-in-chapter guns sat dark, 45 tiles off the line to Bertha: light both north doors,
-  // put its name big on the apron facing the bridge, and lay a supply trail from the bridge foot.
+  // The shed's best-in-chapter guns sat dark, off the line from the bridge to the road: light both
+  // north doors, put its name big on the apron facing the bridge, and lay a supply trail.
   b.lamp(87.6, 161.4); b.lamp(103.6, 161.4);
   b.label('DOCK SHED 3', 97, 159.6, 26, SODIUM, N);
   b.pick('ammo', 83, 146); b.pick('medkit', 86, 153); b.pick('ammo', 88, 159);
+
   // Bertha: a stubby cream-and-cherry diesel with a flatcar coupled behind.
   b.prop('bus', 16, 150, 5, 2, { color: CHERRY });                          // her hood
   b.fill(21, 149, 38, 152);
@@ -720,25 +769,34 @@ export function build() {
   const ignition = b.obj('valve', 26, 153, 'Pour the diesel and crank Bertha');
   b.label('BERTHA', 18.5, 147.6, 26, '#fff3e0', 0); b.label('No. 9 DIESEL, 1958', 30, 147.8, 11, CREAM, 0);
   b.label('REQUISITIONED: MALLOW BAY GUARD', 22, 153.7, 9, OLIVE_L, 0);
+  // Her starting crank, on the nose: the gate areas of the hold. Whoever cranks faces the back gate
+  // (lane C) with the cannon behind them.
+  b.prop('valve', 15, 152);
+  b.paint(13, 153, 16, 154, F.ASPHALT);
+  b.label('CRANK', 14.5, 155.4, 16, GOLD, 0); b.lamp(13.2, 152.6);
   // The Guard's gun flatcar on the spur beside her: the convoy's escort Thump Cannon, bolted down
-  // facing east down the apron, with a sandbagged side to the south. Bertha's crank flood comes from
-  // the east only (the step's spawn zones): down off the bridge, in at the road gate, out of the
-  // dock shed. Its blast can splash the team, so the lane it covers is long and clear.
+  // facing east at the two lanes, in a sandbag nest (Bertha to the north, bags to the south).
   rail(14, 155, 46, 155);
   b.paint(27, 154, 37, 156, F.ASPHALT);
-  b.prop('barrier', 27, 156, 5, 1);
+  b.prop('barrier', 27, 156, 5, 1); b.prop('barrier', 32, 157, 5, 1);
   b.mount('cannon', 34, 155, '+x');
-  b.label('GUARD FLATCAR', 31, 157.4, 11, OLIVE_L, 0); b.label('THUMP CANNON', 37.4, 153.6, 10, GOLD, E);
-  b.pick('ammo', 30, 154); b.pick('ammo', 31, 154); b.pick('ammo', 32, 154); b.pick('medkit', 20, 154); b.pick('ammo', 42, 147); b.pick('ammo', 43, 147); b.pick('medkit', 44, 154);
-  b.pick('rattle', 33, 154);                                     // for Bertha's long crank
-  b.pick('ammo', 60, 154); b.pick('ammo', 61, 154); b.pick('medkit', 72, 146);
-  for (const [x, z] of [[19, 154], [30, 155.5], [40, 148], [14, 146], [56, 148], [76, 145], [64, 160], [88, 155], [104, 148], [122, 160], [22, 168], [50, 162]]) b.lamp(x, z);
-  // First visit: Bertha in sight, but the arrows lead south to Fish Dock Road. Second visit: the
-  // mission lane's arrows lead north to her.
+  b.label('GUARD FLATCAR', 31, 158.4, 11, OLIVE_L, 0); b.label('THUMP CANNON', 37.4, 153.6, 10, GOLD, E);
+  // The Guard's supply stand for the prepare phase (kept: never thinned): a medkit each for four,
+  // ammo, and throwables for the crank runs.
+  const keep = (id: number) => { b.pickups[id].keep = true; };
+  for (const x of [18, 19, 20, 21]) keep(b.pick('medkit', x, 154));
+  for (const x of [29, 30, 31]) keep(b.pick('ammo', x, 154));
+  b.pick('rattle', 33, 154); b.pick('rattle', 22, 155); b.pick('firebomb', 23, 155); b.pick('firebomb', 24, 155);
+  b.label('GUARD SUPPLY', 21, 155.9, 10, OLIVE_L, 0);
+  b.pick('ammo', 42, 147); b.pick('ammo', 43, 147); b.pick('medkit', 44, 154); b.pick('ammo', 9, 169);
+  for (const [x, z] of [[19, 154], [30, 155.5], [40, 148], [14, 146], [88, 155], [104, 148], [122, 160], [22, 168], [46, 162], [12, 174]]) b.lamp(x, z);
+  // First visit: Bertha in sight, but the arrows lead south down the connector to Fish Dock Road.
+  // Second visit: the mission lane's arrows lead north to her.
   b.arrow(80, 143, S); b.arrow(80.5, 160, S); b.arrow(80, 175, S);
   b.label('FISH DOCK ROAD', 80, 171.5, 16, SODIUM); b.lamp(76.6, 177.4); b.lamp(83.4, 177.4);
   b.arrow(11.5, 175, N); b.arrow(11, 161, N); b.arrow(17, 158.5, E);
   zz(70, 145, WEST); zz(50, 147, WEST); zz(80, 166, S);
+  b.density(6, 140, 55, 177, 0);                                            // the finale arena: no sleepers by Bertha
 
   // ------------------------------------------------------------------
   // 14. Fish Dock Road: south from the apron to the Guard's closed checkpoint
@@ -1095,36 +1153,45 @@ export function build() {
     ],
   });
   b.use(ignition, {
-    objective: 'Fuel up and start Bertha', horde: true, hold: 180, big: true, opens: [cabDoor],
-    // The flood: the east apron (down off the bridge, in at the road gate, out of the dock shed),
-    // all in front of the Thump Cannon; nothing from the west end behind it.
-    lanes: { A: [{ x0: 56, z0: 140, x1: 130, z1: 182 }, { x0: 78, z0: 123, x1: 81, z1: 136, lv: 1 }] },
-    // The waypoint stands on the open apron by the valve (the valve tile itself is solid), 8 tiles
+    objective: 'Fuel up and start Bertha', horde: true, hold: 150, big: true, opens: [cabDoor],
+    // Lanes (section 13). A: down off the bridge and along the north container wall. B: in at the road
+    // gate and along the south container wall. Both run straight at the Thump Cannon and spawn only
+    // in their far halves (60 m+ from the gun). C, the flank: the bonded yard behind the south-west
+    // gate, outside the cannon's arc, at the crank's back: the Brute and the special pushes.
+    lanes: {
+      A: [{ x0: 66, z0: 140, x1: 82, z1: 148 }, { x0: 83, z0: 140, x1: 104, z1: 147 }, { x0: 78, z0: 123, x1: 81, z1: 136, lv: 1 }],
+      B: [{ x0: 66, z0: 167, x1: 82, z1: 177 }, { x0: 77, z0: 162, x1: 83, z1: 166 }, { x0: 75, z0: 178, x1: 84, z1: 200 }],
+      C: [{ x0: 14, z0: 179, x1: 25, z1: 180 }, { x0: 26, z0: 179, x1: 40, z1: 187 }],
+    },
+    // The waypoint stands on the open apron by the valve (the valve tile itself is solid), 7 tiles
     // from the Guard's cannon on the flatcar.
     at: [27.5, 154.5],
-    // The Big Hold On: Bertha coughs to life in fits, so the (much bigger) waves come with short
-    // breathers between, a Brute midway, a second flanking rush, then the long final push.
+    // A restart finale (L4D2 Hard Rain): Bertha stalls at the start of wave 2 and of the final, and
+    // the timer stops until someone has held her crank, on the nose, for 4 s.
+    gates: [
+      { at: 45, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'Bertha stalled! Crank her at the nose!' },
+      { at: 115, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'She stalled again! Back to the crank!' },
+    ],
     holdScript: [
-      { kind: 'wave', secs: 25 },
-      { kind: 'breather', secs: 8, msg: 'Bertha wheezes... keep cranking!' },
-      { kind: 'wave', secs: 22, horde: 0.8, flank: true },
-      { kind: 'specials', secs: 16, horde: 0.4 },
-      { kind: 'breather', secs: 8, msg: 'Bertha coughs. That\'s good, right?' },
-      { kind: 'brute', secs: 25 },
-      { kind: 'wave', secs: 24, horde: 0.9, flank: true, msg: 'Here comes the whole wharf! Thump them!' },
-      { kind: 'breather', secs: 7 },
-      { kind: 'final', secs: 45, msg: 'She\'s nearly up! Hold the line!' },
+      { kind: 'wave', secs: 35, lanes: ['A'], msg: 'Here they come! Down off the bridge!' },
+      { kind: 'breather', secs: 10, msg: 'Bertha coughs. That\'s good, right?' },
+      { kind: 'wave', secs: 35, lanes: ['A', 'B'], specials: 2, msg: 'The road gate too! Bridge and road!' },
+      { kind: 'brute', secs: 25, msg: 'A Brute at the back gate! Behind Bertha!' },
+      { kind: 'breather', secs: 10, msg: 'Bertha purrs. Breather! Patch up!' },
+      { kind: 'final', secs: 35, lanes: ['A', 'B'], msg: 'She\'s nearly up! Bridge and road, hold the line!' },
     ],
     radio: [
       ['Dot', 'Prime her, crank her, and hold on. Bertha takes her time and so should you.'],
-      ['Pip', 'Three minutes?! Dot, that\'s like a MONTH.'],
+      ['Taro', 'She\'ll stall on us, mind. Old girls do. When she coughs out, someone runs to the crank on her nose.'],
       ['Nori', 'That\'s the Guard\'s cannon on the flatcar. Somebody man it. Aim long, it splashes.'],
+      ['Mochi', 'They\'ll come off the bridge and in at the road gate. The back gate\'s ours to watch.'],
       ['Pip', 'I CALL THE CANNON!'],
     ],
   });
   b.gather({ x0: 22, z0: 150, x1: 37, z1: 151 }, {
     objective: 'All aboard Bertha!', closes: [cabDoor],
     radio: [
+      ['Taro', 'She\'s running! Everybody in the cab, now!'],
       ['Dot', 'Hill line runs up to Pinecone Hollow. I\'ll meet you near there with the bus.'],
     ],
   });
