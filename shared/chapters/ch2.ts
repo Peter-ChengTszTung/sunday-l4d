@@ -1153,7 +1153,7 @@ export function build() {
     objective: 'Open the yard gate', opens: [officeExit, dockDoor],
     radio: [
       ['Nori', 'Police clipboard. Last lift down to the tunnel left at 4:15. They left us something.'],
-      ['Pip', 'A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever.'],
+      ['Pip', 'A ROCKET POD. On the dock. In a sandbag nest. Best. Evacuation. Ever.'],
       ['Dot', 'The freight lift\'s at the bottom of the shaft, sweet peas. It\'s a long way up.'],
       ['Taro', 'Rest a minute first. That dock will be the longest few minutes of the night.'],
     ],

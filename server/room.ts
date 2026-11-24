@@ -1649,7 +1649,7 @@ export class Room implements CombatHost {
   private freshHold() {
     return {
       stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false,
-      lanes: {} as Record<string, number[]>, zone: [] as number[], zoneSets: [] as number[][], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0,
+      lanes: {} as Record<string, number[]>, zone: [] as number[], zoneSets: [] as number[][], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0, run: 0,
       stat: { spawned: 0, peak: 0, downs: 0, deaths: 0, gunKills: 0, kills: 0, t0: 0 },
     };
   }
@@ -1708,7 +1708,8 @@ export class Room implements CombatHost {
       let up = this.pendingBrute;
       for (const z of this.zombies.values()) if (z.type === ZT.BRUTE && !z.dormant) up = true;
       // One Brute at a time: with one already up this stage is a specials push instead.
-      if (up) push = g.specials ?? H.push.specials[k];
+      // (A Big Hold On's Brute stage always brings its Brute, even with one already up.)
+      if (up && !hs.big) push = g.specials ?? H.push.specials[k];
       else { hs.bruteWant = true; hs.bruteTry = 0; }
     }
     if (Object.keys(hs.lanes).length) this.useLanes(this.liveLanes(g));
@@ -1761,14 +1762,16 @@ export class Room implements CombatHost {
   private updateHoldout(dt: number, room: number, specials: number, brute: boolean): void {
     const H = DIRECTOR.holdout, hs = this.hs, n = this.players.size;
     if (!hs.stages.length) return;
-    const el = hs.total - this.holdout;
+    // Stages run on real time: a timer stopped at a HoldGate does not stop the script.
+    hs.run += dt;
+    const el = hs.run;
     let i = hs.i;
     while (i + 1 < hs.stages.length && el >= hs.ends[i]) i++;
     // Skipped stages (the whole team down for a while) are not replayed: only the latest begins.
     if (i !== hs.i) this.enterStage(i, false);
     const g = hs.stages[hs.i];
     if (hs.bruteWant) {
-      if (brute) hs.bruteWant = false;
+      if (brute && !hs.big) hs.bruteWant = false;
       else if ((hs.bruteTry -= dt) <= 0) { hs.bruteTry = 1; if (this.viaPush(() => this.spawnBrute())) hs.bruteWant = false; }
     }
     if (hs.big) {
@@ -1986,7 +1989,7 @@ export class Room implements CombatHost {
 
     if (this.holdout >= 0) {
       if (this.hs.big) this.hs.stat.peak = Math.max(this.hs.stat.peak, commons);
-      this.updateHoldout(dt, cap - 4 - commons, specials, brute); return;
+      this.updateHoldout(dt, cap - (this.hs.big ? 0 : 4) - commons, specials, brute); return;
     }
     // The escape after a Big Hold On: a steady trickle from every lane until everyone is aboard.
     const esc = this.escape;

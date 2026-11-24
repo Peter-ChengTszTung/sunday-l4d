@@ -228,7 +228,7 @@ export default {
   "Ambulances nose to tail, doors open. They got out on foot. I hope.": "救護車一輛接一輛，車門都開著。他們是走路離開的。希望是。",
   "Open the yard gate": "打開貨車場大門",
   "Police clipboard. Last lift down to the tunnel left at 4:15. They left us something.": "警察的寫字板。最後一班往隧道的電梯四點十五分下去。他們留了東西給我們。",
-  "A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever.": "「火箭莢艙」。在卸貨區。用螺栓鎖在卡車上。史上。最棒。疏散。",
+  "A ROCKET POD. On the dock. In a sandbag nest. Best. Evacuation. Ever.": "「火箭莢艙」。在卸貨區。架在沙包陣地裡。史上。最棒。疏散。",
   "The freight lift's at the bottom of the shaft, sweet peas. It's a long way up.": "貨梯停在井道最底下，小豌豆們。上來要很久喔。",
   "Rest a minute first. That dock will be the longest few minutes of the night.": "先休息一下。卸貨區那幾分鐘，會是今晚最漫長的幾分鐘。",
   "That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.": "那台電梯一路上來都會叮咚響。整座購物廊的夢遊者都會過來聽。",
