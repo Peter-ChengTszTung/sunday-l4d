@@ -4,22 +4,23 @@
 // Four real storeys (storey k's floor is k * STOREY = 4.2k m):
 //
 //   storey 3  .......... HOSPITAL ROOF / HELIPAD (x 4-61) with roof-access huts (stair cores up from 3F)
-//   storey 2  3F DREAMWELL SLEEP CLINIC (x 4-60) | SKYBRIDGE TERRACE (x 62-98) = skybridge ===> GALLERIA UPPER CONCOURSE
-//   storey 1  2F WARDS + SOUP (x 4-97) / ER roof + lobby roof (lower roofs)      BUN BUN TOYS + stockroom | MEZZANINE ring
-//   storey 0  GROUND: triage, ER, lobby, staff rooms, elevator lobby | bay inlet | arcade, security, FOOD COURT, loading dock
+//   storey 2  3F DREAMWELL SLEEP CLINIC (x 4-60) | SKYBRIDGE TERRACE (x 62-98) = skybridge ===> GALLERIA UPPER CONCOURSE | CINEPLEX | CAR PARK ROOF
+//   storey 1  2F WARDS + SOUP (x 4-97) / ER roof + lobby roof (lower roofs)      BUN BUN TOYS + stockroom | MEZZANINE ring | PLUMLEY'S HOME & BEDDING | CAR PARK LEVEL 1
+//   storey 0  GROUND: triage, ER, lobby, staff rooms, elevator lobby | bay inlet | arcade, security, FOOD COURT, loading dock | PLUMLEY'S GROUND | CAR PARK GROUND
 //
-//   x:  0     20     40     62        99  100   121 122            163
-//  z 3  +-----------------------+---------+ ~~~~~~~~ +----------------+
-//       | tower: staff rooms    | east    | ~ bay  ~ | north block:   |   storey 0 arcade + security
-//       | (G) / wards (2F) /    | wing:   | ~inlet ~ |   G  arcade    |   storey 1 toy store, stockroom
-//       | Sleep Clinic (3F) /   | elev.   |=skybridge| 1  toys        |   storey 2 concourse, ballroom
-//       | helipad roof (R)      | lobby   | (storey2)| 2  concourse   |
-//    37 +-----------------------+---------+ ~~~~~~~~ +----------------+
-//       | south wing: ER, waiting room,   | ~      ~ | FOOD COURT     |   atrium: mezzanine ring on storey 1,
-//       | lobby, gift, pharmacy (G only;  | ~      ~ | (Brute)        |   open skylight void over the middle
-//    65 | roofs on storey 1)              |          +--kitchens------+
-//       | AMBULANCE BAY (triage start)    |   cold storage | LOADING DOCK (finale), catwalk (storey 1), FREIGHT LIFT
-//   107 +---------------------------------+          | truck yard     |
+//   x:  0     20     40     62        99  100   121 122            163 165        203 205       224
+//  z 3  +-----------------------+---------+ ~~~~~~~~ +----------------+-+------------+-----------+
+//       | tower: staff rooms    | east    | ~ bay  ~ | north block:   | | PLUMLEY'S  : CINEPLEX  |  storey 0/1: Plumley's two
+//       | (G) / wards (2F) /    | wing:   | ~inlet ~ |   G  arcade    |=| DEPARTMENT : (storey 2,|  sales floors; storey 2: the
+//       | Sleep Clinic (3F) /   | elev.   |=skybridge| 1  toys        | | STORE (0,1): over both)|  Cineplex lobby, Screen 1
+//       | helipad roof (R)      | lobby   | (storey2)| 2  concourse   | |            :  Screen 2 |  (pocket), Screen 2, fire exit
+//    37 +-----------------------+---------+ ~~~~~~~~ +----------------+ +------------+---------F+  corridor (F) down the east side
+//       | south wing: ER, waiting room,   | ~      ~ | FOOD COURT     |                        F   footbridge (storey 2)
+//       | lobby, gift, pharmacy (G only;  | ~      ~ | (Brute)        | +----------------------F+
+//    65 | roofs on storey 1)              |          +--kitchens------+ | GALLERIA PARKING:      |  three decks (0, 1, roof 2),
+//       | AMBULANCE BAY (triage start)    |   cold storage | LOADING DOCK | ramps NE and SW, the   |  ramps at alternate corners
+//       |                                 |   EVACUATION POINT (finale)  | parking office (safe   |
+//   107 +---------------------------------+          | truck yard  <====gate=office) at the SW  |
 //
 // Route (storey in brackets): triage [0] → ER → waiting room → main lobby → staff areas (keycard
 // sweep) → staff elevator lobby (crescendo 1; the car arrives and faults, which unlocks the fire
@@ -29,10 +30,14 @@
 // huts and the ladders from the lobby roof) → glass skybridge over the bay inlet [2] → Galleria
 // upper concourse, ballroom → escalator down into Bun Bun Toys [2→1] → stockroom (checkpoint) →
 // mezzanine over the food court → escalator down [1→0] (Snoozle Brute) → arcade → Security
-// breakers → loading dock (finale; catwalk perch on storey 1) → freight lift.
+// breakers (the police have barricaded the dock from inside, so the way on is round the back) →
+// Plumley's ground floor [0] → escalator up to Home & Bedding [0→1] → escalator up to the Cineplex
+// [1→2] → dark Screen 2, fire-exit corridor, footbridge → car park roof, down the ramps [2→1→0] →
+// parking office (checkpoint) → truck yard → loading dock evacuation point (the Big Hold On: the
+// police's rocket pod, the freight lift chiming all the way up) → freight lift.
 //
 // Optional ladder routes: ambulance bay → ER roof (two ladders; loot, Larry's thermos note),
-// dock catwalk (ladder + stairs; sniper perch over the finale).
+// dock catwalk (ladder + stairs; a rifle perch over the finale).
 // Tile coordinates: x grows east, z grows south. Arrow rot 0 points south (+z).
 import { LevelBuilder, F, WALL, type Theme } from '../level';
 import { STOREY } from '../constants';
@@ -43,7 +48,7 @@ const S = 0, E = Math.PI / 2, WEST = -Math.PI / 2, N = Math.PI;
 const MINT = '#7cf2c8', CREAM = '#fff1c9', RED = '#ff5a5a', GOLD = '#ffd43b', LAV = '#c9a8ff', PINK = '#ff8fc8';
 const SOUP = '#f2a541', LEMON = '#fff27a', MAGENTA = '#ff3df0', SKY = '#8fd8ff';
 const GURNEY = 0xe8f0ee, PASTEL = [0xffb3d1, 0xfff1a8, 0xb8f0d8, 0xc9b8ff, 0xffd0a8];
-const W = 166, H = 108;
+const W = 228, H = 108;
 /** Wall tops (absolute metres): the hospital tower and the mall's north block reach the roof, the east wing the terrace. */
 const ROOF = 3 * STOREY, TERRACE = 2 * STOREY;
 
@@ -303,6 +308,10 @@ export function build() {
   b.pick('machete', 140, 18);
   b.label('MALL SECURITY', 142, 15.5, 16, CREAM); b.label('BREAKERS', 142, 9.6, 12, GOLD);
   b.lamp(142, 13);
+  // The fire shutter in Security's east wall came down with the power; the breakers raise it. Past it
+  // a staff corridor runs under Bun Bun Toys to Plumley's (the police barricaded the dock from inside).
+  const plumShutter = b.door(151, 15, 151, 16, 'shutter', "PLUMLEY'S");
+  b.label("STAFF: PLUMLEY'S", 148.5, 17.4, 9, PINK, E); b.arrow(148, 15.5, E);
   // Star Arcade, under the toy store.
   b.carve(141, 19, 143, 21, F.INTERIOR);
   b.carve(126, 22, 160, 37, F.INTERIOR);
@@ -336,7 +345,7 @@ export function build() {
   b.pick('ammo', 125, 41); b.pick('ammo', 162, 41); b.pick('medkit', 162, 67);
   b.label('FOOD COURT', 143, 49.5, 34, LEMON);
   for (const [x, z] of [[127, 48], [127, 58], [160, 48], [160, 60], [143, 54], [136, 62], [150, 58], [143, 66]]) b.lamp(x, z);
-  b.arrow(143, 46, N); b.arrow(129.5, 42, N); b.arrow(141.5, 66, S);
+  b.arrow(143, 46, N); b.arrow(129.5, 42, N);
   zz(150, 54, WEST); zz(138, 58, N);
   // Food stall kitchens along the south wall (hidey-holes and horde lanes).
   for (const [x0, name, col] of [[124, 'NOODLES', PINK], [131, 'TACO TACO', LEMON], [146, 'BUBBLE TEA', MINT], [153, 'PRETZEL', GOLD]] as const) {
@@ -346,8 +355,10 @@ export function build() {
     b.lamp(x0 + 3, 73.5);                                                  // a lit kitchen reads as worth a look from the court
   }
   b.pick('ammo', 125, 75); b.pick('ammo', 126, 75); b.pick('medkit', 149, 75); b.pick('ammo', 157, 74); b.pick('ammo', 157, 75);
-  // Loading-dock corridor (opened by the breakers), under the dock catwalk.
-  const dockDoor = b.door(140, 69, 143, 69, 'shutter', 'LOADING DOCK');
+  // Loading-dock corridor, under the dock catwalk. The police barricaded it from the dock side; it
+  // gives when the team leaves the parking office, and the finale horde pours through it.
+  const dockDoor = b.door(140, 69, 143, 69, 'barricade', 'MBPD: NO ENTRY');
+  b.label('POLICE BARRICADE', 141.5, 67.6, 10, RED, N);
   b.carve(140, 70, 143, 79, F.CONCRETE);
   b.prop('pallet', 140, 73); b.prop('crate', 143, 76);
   b.pick('ammo', 143, 71); b.pick('medkit', 140, 78);
@@ -356,8 +367,12 @@ export function build() {
   b.arrow(141.5, 76, S);
 
   // ------------------------------------------------------------------
-  // 9. Loading dock (finale), truck yard, freight lift
+  // 9. Loading dock: the police evacuation point (the Big Hold On), truck yard, freight lift
   // ------------------------------------------------------------------
+  // St. Marigold sent its awake patients and staff here by ambulance at 3:30; the police ran them down
+  // the freight lift to the service tunnel and the rail yard, then left on the last car at 4:15. They
+  // barricaded the corridor from the food court and left their rocket pod, bolted to its truck. The
+  // team comes in from the truck yard (from the car park, through the parking office).
   b.carve(104, 80, 154, 96, F.CONCRETE);
   // Truck bays in the south wall: the shutters are up and the yard is full of sleepers.
   b.carve(104, 99, 163, 106, F.ASPHALT);
@@ -366,7 +381,7 @@ export function build() {
     b.carve(x0, 97, x0 + 3, 98, F.CONCRETE);
     b.label('BAY', x0 + 2, 95.4, 12, GOLD);
   }
-  b.prop('truck', 106, 100, 8, 2, { color: 0xf0e2b6 }); b.prop('truck', 130, 102, 8, 2, { color: 0xffb3d1 }); b.prop('truck', 154, 100, 8, 2, { color: 0xfff1a8 });
+  b.prop('truck', 106, 100, 8, 2, { color: 0xf0e2b6 }); b.prop('truck', 130, 102, 8, 2, { color: 0xffb3d1 }); b.prop('truck', 152, 104, 8, 2, { color: 0xfff1a8 });
   b.prop('container', 118, 104, 6, 2, { color: 0x8fb4c6 }); b.prop('container', 144, 103, 2, 4, { color: 0xd3a7bf });
   for (const [x, z] of [[122, 100], [150, 105], [160, 104], [140, 100]]) b.prop('pallet', x, z);
   // Back-of-house pockets around the dock: more ways in for the finale horde.
@@ -379,13 +394,25 @@ export function build() {
   // Dock floor cover: pallets, crate stacks, a dead mall van.
   for (const [x, z] of [[112, 84], [126, 87], [118, 92], [134, 90], [146, 88], [108, 94]]) b.prop('crate', x, z, 2, 1);
   for (const [x, z] of [[116, 88], [130, 84], [140, 93], [123, 95]]) b.prop('pallet', x, z, 2, 1);
-  b.prop('car', 136, 83, 2, 1, { color: 0xffd43b }); b.prop('van', 149, 91, 1, 3, { color: 0xe6c3d3, rot: N });
+  b.prop('car', 136, 83, 2, 1, { color: 0xffd43b }); b.prop('van', 144, 92, 1, 3, { color: 0xe6c3d3, rot: N });
   b.prop('container', 110, 88, 1, 4, { color: 0x7aa59c });
+  // The evacuation point: police vans, two ambulances, triage tents and sandbags round the pod. The
+  // sandbags are low and broken (cover, never a wall): the flood can reach the stand from every side.
+  b.prop('van', 147, 82, 3, 1, { color: 0x3a5fd0 }); b.prop('van', 118, 82, 3, 1, { color: 0xf4f4f4 }); b.prop('van', 122, 90, 1, 3, { color: 0xf4f4f4, rot: N });
+  b.prop('container', 113, 94, 4, 2, { color: 0xe8f0ee }); b.prop('container', 132, 93, 4, 2, { color: 0xe8f0ee });   // triage tents
+  b.prop('truck', 146, 85, 3, 2, { color: 0x3a5fd0 });                                  // the pod's truck; the pod stands beside it
+  for (const [x, z, w] of [[148, 91, 2], [153, 91, 2], [138, 88, 3], [144, 89, 1]] as const) b.prop('barrier', x, z, w, 1, { color: 0xc9b38a });
+  b.label('MBPD EVACUATION POINT', 128, 90.4, 18, LEMON); b.label('ST. MARIGOLD OVERFLOW', 115, 92.6, 10, MINT);
+  b.label('FACE THE BAYS', 151, 93.5, 12, RED, N); b.label('FIZZBANG POD: MBPD', 151, 87.2, 9, SKY, N);
   b.pick('ammo', 105, 81); b.pick('ammo', 153, 88); b.pick('medkit', 152, 94); b.pick('ammo', 128, 95); b.pick('medkit', 153, 94);
   b.pick('rattle', 153, 87);                                    // by the lift button, for the long finale
+  // The police's leftovers at the stand: more ammo and fire for a flood (before it, not after).
+  b.pick('ammo', 149, 88); b.pick('ammo', 154, 90); b.pick('firebomb', 150, 86); b.pick('firebomb', 154, 92); b.pick('medkit', 148, 84);
   b.label('BAYSIDE GALLERIA DELIVERIES', 128, 86.5, 20, CREAM);
   for (const [x, z] of [[108, 84], [120, 82], [134, 86], [146, 84], [114, 92], [128, 92], [142, 94], [152, 90], [112, 104], [136, 104], [158, 104], [114, 76]]) b.lamp(x, z);
-  b.arrow(141.5, 82, E); b.arrow(147, 85.5, E);
+  // Way in from the yard gate: west along the yard, north through bay 4 to the lift button.
+  b.arrow(160, 100.5, WEST); b.arrow(151.5, 99.5, N); b.arrow(152, 95, N);
+  b.label('YARD GATE', 162, 102.6, 10, CREAM, WEST);
   // Dock catwalk access: a ladder at the west end, stairs at the east end (catwalk is storey 1).
   b.ladder(108, 80, '-z'); b.ladder(130, 80, '-z');                     // west end and mid-span
   // Returns nook under the catwalk: a hidden pocket the finale horde boils out of, close to the mid-span ladder.
@@ -397,9 +424,99 @@ export function build() {
   // Freight lift (end safe room) behind its gate.
   b.carve(156, 84, 163, 92, F.SAFE);
   const liftButton = b.obj('terminal', 154, 85, 'Call the freight lift');
+  // The Fizzbang Pod faces the truck bays, where most of the flood comes in; the gunner can swing
+  // 80 degrees either way, from the compactor round to the cold storage. Behind it, the food-court
+  // corridor, the returns nook and the catwalk ladders are for the rest of the team to hold.
+  b.mount('rockets', 151, 89, '+z');
   const liftGate = b.door(155, 86, 155, 89, 'fence', 'FREIGHT LIFT');
   b.label('FREIGHT LIFT', 160, 87, 18, GOLD); b.label('TO SERVICE TUNNEL', 160, 89.5, 11, CREAM);
   b.lamp(160, 88);
+
+  // ------------------------------------------------------------------
+  // 9b. Staff corridor and Plumley's ground floor: Cosmetics & Perfume, Shoes & Handbags
+  // ------------------------------------------------------------------
+  // Plumley's is the Galleria's old department store (x 165-203). Its ground floor is two halls split
+  // by the perfume wall: in at the north-west, east through the perfume counters (tight, shotgun range),
+  // round the end of the wall, back west through shoes to the escalator up by the west wall.
+  b.carve(152, 15, 166, 16, F.INTERIOR);
+  b.pick('ammo', 158, 16);
+  b.label('STAFF CORRIDOR', 159, 15.5, 9, CREAM, E);
+  b.lamp(154, 16); b.lamp(164, 15.5);
+  b.arrow(165, 15.5, E);
+  b.carve(167, 4, 202, 48, F.INTERIOR);
+  b.paint(167, 27, 202, 48, F.WOOD);
+  b.fill(167, 26, 196, 26);                                               // the perfume wall
+  // Perfume and cosmetics islands, with pastel bottle displays.
+  for (const x of [171, 178, 185, 192]) for (const z of [7, 12, 20]) b.prop('counter', x, z, 3, 2, { color: x % 2 ? 0xffd0e0 : 0xfff1c9 });
+  for (const [x, z] of [[175, 5], [189, 16], [182, 23], [196, 9], [169, 22]]) b.prop('barrel', x, z, 1, 1, { color: pastel() });
+  b.prop('pillar', 199, 6, 2, 2, { color: 0xffe0b0 });                    // a Snoozle display tower
+  b.pick('shotgun', 201, 5); b.pick('ammo', 202, 5); b.pick('ammo', 168, 5); b.pick('medkit', 201, 24);
+  b.label("PLUMLEY'S", 184, 16.5, 30, PINK, E); b.label('COSMETICS & PERFUME', 184, 10, 12, LEMON, E);
+  b.label('SNOOZLE SAYS: SMELL DREAMY', 199.5, 9.4, 8, PINK, S);
+  for (const [x, z] of [[171, 16], [181, 10], [188, 18], [196, 12], [200, 22]]) b.lamp(x, z);
+  b.arrow(170, 15.5, E); b.arrow(190, 16.5, E); b.arrow(199.5, 20, S); b.arrow(199.5, 30, S);
+  zz(182, 17, E); zz(199, 25, S);
+  // Shoes and handbags: shoe walls and fitting benches, a fitting-room pocket on the south wall.
+  for (const x of [173, 179, 185, 191]) b.prop('shelf', x, 30, 1, 7, { color: 0xe8dcff });
+  for (const x of [176, 188]) b.prop('bench', x, 40, 3, 1);
+  b.prop('counter', 196, 36, 1, 4, { color: 0xc9b8ff });
+  b.fill(185, 43, 197, 43); b.carve(190, 43, 191, 43, F.WOOD);             // fitting rooms
+  b.fill(185, 44, 185, 48); b.fill(197, 44, 197, 48);
+  for (const x of [188, 194]) b.prop('shelf', x, 46, 1, 3, { color: 0xffb3d1 });   // curtains
+  b.pick('armor', 196, 48); b.pick('ammo', 186, 48);                       // off-route reward
+  b.label('FITTING ROOMS', 190.5, 45.4, 9, PINK, N);
+  b.label('SHOES & HANDBAGS', 184, 34, 14, LEMON, WEST);
+  // The escalator up to Home & Bedding, against the west wall (it rises north).
+  b.fill(167, 38, 169, 39); b.fill(169, 40, 169, 42);
+  b.stairs(167, 40, 168, 42, '-z', F.TILES);
+  b.label('ESCALATOR UP: HOME & BEDDING', 167.5, 45, 7, GOLD, S);
+  b.note(171, 47, 'Customer service board', 'SWEET DREAMS NIGHT LATE OPENING till 3 a.m.! Free Hush Pillow Mist with every pillow, courtesy of Dreamwell. [pen:] Bob from Bedding dozed off on Bed 4 at 2:50.');
+  b.pick('medkit', 170, 47); b.pick('ammo', 169, 44);
+  for (const [x, z] of [[199, 31], [190, 36], [180, 41], [169, 45], [191, 46]]) b.lamp(x, z);
+  b.arrow(193, 34, WEST); b.arrow(181, 42.5, WEST); b.arrow(167.5, 44, N);
+
+  // ------------------------------------------------------------------
+  // 9c. Galleria Parking, ground deck, and the parking office (checkpoint)
+  // ------------------------------------------------------------------
+  // Three decks (x 166-224, z 54-106): ground, level 1 and the open roof (storey 2). The team comes
+  // down from the roof: the ramps sit at alternate corners (roof SW → level 1, level 1 NE → ground),
+  // so every deck is crossed corner to corner. St. Marigold's ambulances queued nose to tail all the
+  // way up for the evacuation point. Enclosed and dim below the roof: flashlight decks, mid sightlines.
+  b.walls(166, 54, 224, 106, WALL.BUILDING, TERRACE);
+  b.walls(165, 51, 224, 53, WALL.FENCE, 2.5);                             // the service lane under the footbridge
+  b.carve(167, 55, 223, 105, F.CONCRETE);
+  const pillars = () => { for (const x of [176, 186, 196, 206]) for (const z of [64, 74, 84, 94]) b.prop('pillar', x, z, 1, 1, { color: 0x9aa6b0 }); };
+  pillars();
+  // The ramp up from the ground deck to level 1 (north-east corner; it rises south).
+  b.fill(219, 58, 219, 63);
+  b.stairs(220, 58, 223, 63, '+z');
+  b.label('GROUND: PARKING OFFICE', 216.5, 57, 9, GOLD, WEST);
+  // Ground deck: ambulances, a police car, rows of parked cars.
+  for (const [x, z, c] of [[210, 70, 0xf4f4f4], [200, 78, 0xf4f4f4], [190, 86, 0xff6b6b], [214, 88, 0x3a5fd0]] as const) b.prop('van', x, z, 3, 1, { color: c });
+  for (const x of [170, 173, 180, 183, 190, 199, 202, 209, 212]) b.prop('car', x, 56, 1, 2, { color: PASTEL[x % 5] });
+  for (const x of [179, 182, 192, 195, 201, 211]) b.prop('car', x, 103, 1, 2, { color: PASTEL[(x + 2) % 5] });
+  for (const [x, z] of [[181, 69], [193, 69], [181, 79], [212, 79], [188, 97], [200, 97]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
+  b.prop('terminal', 178, 95); b.prop('barrier', 177, 92, 1, 3);           // pay machine, queue rail
+  b.pick('ammo', 222, 75); b.pick('medkit', 205, 104); b.pick('ammo', 187, 104);
+  b.label('LEVEL G', 205, 66, 22, CREAM, WEST); b.label('EVAC QUEUE', 196, 82, 12, RED, WEST);
+  for (const [x, z] of [[214, 67], [200, 72], [186, 80], [176, 90]]) b.lamp(x, z);
+  b.arrow(216, 60, WEST); b.arrow(200, 75, WEST); b.arrow(184, 88, S); b.arrow(171.5, 92, S);
+  // The parking office (checkpoint safe room), south-west corner: in from the deck, out to the truck yard.
+  b.fill(167, 96, 176, 96); b.fill(176, 97, 176, 105);
+  b.carve(167, 97, 175, 105, F.SAFE);
+  const officeEntry = b.door(171, 96, 172, 96, 'shutter', 'PARKING OFFICE');
+  const officeExit = b.door(166, 100, 166, 101, 'shutter', 'YARD GATE');
+  b.carve(164, 100, 165, 101, F.CONCRETE);                                // the gate through the yard fence
+  b.prop('counter', 173, 98, 1, 3, { color: 0x9aa6b8 }); b.prop('terminal', 175, 98); b.prop('desk', 174, 104, 2, 1);
+  const officeLever = b.obj('lever', 167, 98, 'Open the yard gate');
+  b.note(173, 101, 'MBPD clipboard', 'EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Pod bolted to the truck, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays. Sgt. Tuttle');
+  for (const x of [168, 169, 170, 171]) b.pick('medkit', x, 105);
+  b.pick('ammo', 172, 105); b.pick('ammo', 173, 105); b.pick('ammo', 175, 102);
+  b.pick('rifle', 175, 100); b.pick('autoshotgun', 175, 101); b.pick('shotgun', 168, 103); b.pick('smg', 169, 103); b.pick('launcher', 170, 103);
+  b.pick('armor', 175, 97); b.pick('firebomb', 167, 105); b.pick('rattle', 172, 103); b.pick('machete', 174, 103);
+  b.label('SAFE ROOM', 171, 99.5, 18, RED); b.label('PARKING OFFICE', 171, 104.2, 10, GOLD);
+  b.label('PARKING OFFICE', 171.5, 94.6, 12, GOLD, N);
+  b.lamp(171, 101); b.lamp(171.5, 94);
 
   // ==================================================================
   // STOREY 1: 2F wards, lower roofs, Bun Bun Toys, mezzanine, dock catwalk
@@ -494,7 +611,7 @@ export function build() {
   b.open(37, 37, 37, 62);                                                 // a gap between the two roofs
   b.prop('gen', 9, 41, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 24, 46, 3, 2, { color: 0xb8c4c8 }); b.prop('gen', 14, 52, 2, 2, { color: 0xb8c4c8 });
   b.prop('crate', 31, 40); b.prop('crate', 32, 40); b.prop('pallet', 18, 58, 2, 1); b.prop('bench', 21, 61, 2, 1);
-  // Larry's smoke-break ledge: a sniper perch over the ambulance bay.
+  // Larry's smoke-break ledge: a rifle perch over the ambulance bay.
   b.pick('rifle', 16, 61); b.pick('ammo', 17, 61); b.pick('medkit', 25, 61); b.pick('armor', 34, 39);
   b.note(20, 60, 'Thermos on the roof ledge', 'Best seat in the house. You can see the helipad AND the Galleria skylight. Back in 10, just resting my eyes. L.');
   b.label('LARRY WAS HERE', 20, 57.5, 12, GOLD);
@@ -554,6 +671,58 @@ export function build() {
   b.pick('rifle', 124, 78); b.pick('ammo', 125, 78); b.pick('medkit', 136, 78); b.pick('ammo', 148, 81);
   b.label('CATWALK', 128, 78, 12, CREAM, E);
   b.lamp(110, 78); b.lamp(128, 78); b.lamp(147, 80);
+
+  // ------------------------------------------------------------------
+  // 13b. Plumley's first floor: Home & Bedding and the Sweet Dreams Night sale
+  // ------------------------------------------------------------------
+  // Arrive at the south-west; north up the beds, east along the linens at the top of the display
+  // wall, south through Dreamwell's sale corner to the escalator up to the Cineplex.
+  wallUp(165, 2, 203, 50, ROOF);
+  b.carve(167, 4, 202, 48, F.INTERIOR);
+  b.paint(167, 4, 202, 11, F.WOOD);
+  b.fill(184, 12, 185, 48);                                               // the display wall
+  // Show beds: every one neatly made, one dented where Bob lay down.
+  for (const x of [170, 175, 180]) for (const z of [15, 23, 31]) b.prop('bed', x, z, 2, 3, { color: pastel() });
+  b.label('BED 4', 176, 22.4, 9, CREAM, N);
+  b.label('HOME & BEDDING', 176, 27.5, 14, LEMON, S); b.label('MATTRESS TESTERS WELCOME', 176, 37, 8, PINK, S);
+  // Linens and pillows along the top.
+  for (const x of [170, 176, 190, 196]) b.prop('shelf', x, 4, 4, 1, { color: 0xfff1f0 });
+  b.prop('counter', 186, 9, 4, 1, { color: 0xf2c48d });
+  b.label('LINENS & PILLOWS', 185, 7.5, 12, CREAM, E);
+  // Dreamwell's sale corner: Hush mist displays and nap pods.
+  for (const [x, z] of [[189, 16], [196, 16], [189, 24], [196, 24]]) b.prop('bed', x, z, 2, 3, { color: 0xe8dcff });
+  for (const [x, z] of [[193, 20], [193, 28], [200, 30], [188, 33]]) b.prop('barrel', x, z, 1, 1, { color: 0xc9a8ff });
+  b.prop('counter', 190, 37, 6, 1, { color: 0xc9b8ff });
+  b.label('SWEET DREAMS NIGHT SALE', 194, 34.5, 10, LAV, N); b.label('FREE HUSH WITH EVERY PILLOW', 194, 41, 8, PINK, N);
+  zz(198, 21, S); zz(187, 28, S);
+  b.pick('ammo', 168, 5); b.pick('firebomb', 183, 5); b.pick('ammo', 202, 12);
+  b.pick('medkit', 186, 47); b.pick('ammo', 198, 47); b.pick('medkit', 199, 47);   // before the dark cinema
+  // The escalator up to the Cineplex, against the east wall (it rises north).
+  b.fill(200, 38, 202, 39); b.fill(200, 40, 200, 42);
+  b.stairs(201, 40, 202, 42, '-z', F.TILES);
+  b.label('ESCALATOR UP: CINEPLEX', 201.5, 45, 7, GOLD, S);
+  for (const [x, z] of [[168, 36], [168, 20], [176, 8], [192, 8], [194, 20], [197, 32], [201, 45]]) b.lamp(x, z);
+  b.arrow(168, 35, N); b.arrow(168, 18, N); b.arrow(178, 9, E); b.arrow(193, 9, E); b.arrow(198, 14, S); b.arrow(198, 30, S); b.arrow(201.5, 44, N);
+
+  // ------------------------------------------------------------------
+  // 13c. Galleria Parking, level 1
+  // ------------------------------------------------------------------
+  // Down from the roof at the south-west, across to the ramp down in the north-east. The evacuation
+  // queue jammed here: ambulances nose to tail and a crash at the turn. Dark: flashlight deck.
+  b.carve(167, 55, 223, 105, F.CONCRETE);
+  pillars();
+  b.fill(171, 96, 171, 101);
+  b.stairs(167, 96, 170, 101, '-z');                                      // up to the roof (rises north)
+  for (const [x, z] of [[176, 99], [184, 92], [192, 85], [200, 78], [208, 71]]) b.prop('van', x, z, 3, 1, { color: 0xf4f4f4 });   // the ambulance queue
+  b.prop('van', 213, 66, 1, 3, { color: 0xff6b6b, rot: 0.4 }); b.prop('car', 203, 65, 2, 1, { color: 0x3a5fd0, rot: -0.3 });   // the crash
+  for (const x of [178, 181, 188, 191, 194, 203, 210]) b.prop('car', x, 56, 1, 2, { color: PASTEL[(x + 1) % 5] });
+  for (const x of [180, 186, 193, 199, 205, 214]) b.prop('car', x, 103, 1, 2, { color: PASTEL[(x + 3) % 5] });
+  for (const [x, z] of [[214, 80], [214, 92], [182, 72], [190, 64]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
+  b.pick('ammo', 172, 104); b.pick('medkit', 222, 72); b.pick('ammo', 216, 56);
+  b.label('LEVEL 1', 190, 100, 22, CREAM, E); b.label('EVAC QUEUE: KEEP LEFT', 196, 90, 10, RED, E);
+  for (const [x, z] of [[180, 103], [200, 92], [218, 76]]) b.lamp(x, z);
+  b.arrow(175, 103, E); b.arrow(196, 96, E); b.arrow(214, 86, N); b.arrow(221.5, 68, N);
+  b.label('RAMP DOWN: GROUND', 221.5, 66, 9, GOLD, S);
 
   // ==================================================================
   // STOREY 2: 3F Sleep Clinic, the skybridge terrace, skybridge, Galleria upper concourse
@@ -655,7 +824,7 @@ export function build() {
   b.prop('container', 76, 26, 2, 4, { color: 0x8fb4c6 }); b.prop('crate', 92, 12); b.prop('crate', 93, 12);
   b.prop('pallet', 70, 32, 2, 1); b.prop('barrier', 90, 30, 3, 1); b.prop('barrier', 95, 8, 1, 3);
   b.pick('ammo', 95, 24); b.pick('ammo', 96, 24); b.pick('ammo', 97, 24); b.pick('medkit', 98, 24);
-  b.pick('launcher', 95, 25); b.pick('rifle', 96, 25); // before the skybridge holdout; long roof sightlines
+  b.pick('launcher', 95, 25); b.pick('rifle', 96, 25);  // before the skybridge holdout; long roof sightlines
   b.pick('rattle', 97, 25);
   b.label('SKYBRIDGE TERRACE', 80, 18, 20, CREAM);
   b.label('SKYBRIDGE', 96.5, 20, 16, GOLD, E);
@@ -705,6 +874,69 @@ export function build() {
   b.carve(143, 4, 162, 11, F.INTERIOR); b.carve(150, 12, 151, 12, F.INTERIOR);
   b.prop('shelf', 162, 5, 1, 6); b.prop('counter', 145, 9, 4, 1); b.pick('ammo', 160, 10);
   b.label('CLOSED', 152, 7, 12, PINK);
+
+  // ------------------------------------------------------------------
+  // 17b. Galleria Cineplex (over Plumley's and east of it): lobby, Screen 1, Screen 2, fire exit
+  // ------------------------------------------------------------------
+  // The Midnight Marathon audience dozed off in Screen 2 and turned in their seats at 3:00. The way
+  // on is through it: in at the back corner, along the cross aisle in the dark, out by the screen,
+  // then the long fire-exit corridor down the east side to the footbridge over the service lane.
+  wallUp(165, 2, 224, 50, ROOF);
+  b.carve(186, 33, 219, 48, F.INTERIOR);                                  // lobby
+  b.prop('counter', 205, 45, 9, 1, { color: 0xff8fc8 }); b.prop('gen', 211, 46, 2, 2, { color: 0xffd43b });   // candy bar, popcorn
+  b.prop('counter', 190, 44, 1, 3, { color: 0xc9b8ff });                  // ticket podium
+  b.prop('bench', 208, 36, 4, 1); b.prop('bench', 194, 36, 1, 3); b.prop('bush', 219, 33); b.prop('bush', 186, 48);
+  b.label('GALLERIA CINEPLEX', 208, 40, 18, MAGENTA, WEST);
+  b.label('MIDNIGHT MARATHON: SNOOZLE 1, 2, 3', 208, 42.6, 9, LEMON, WEST);
+  b.label('SCREEN 2', 188.5, 34.6, 12, GOLD, S);
+  b.note(213, 44, "Usher's clipboard", 'Midnight Marathon, Screen 2: 212 tickets. Everybody dozed off in part 2. I stayed up on pick-n-mix. At 3 they all stood up at once, humming. Benji');
+  b.pick('ammo', 214, 47); b.pick('ammo', 186, 33);
+  for (const [x, z] of [[196, 40], [208, 38], [216, 44], [189, 36]]) b.lamp(x, z);
+  b.arrow(198, 37, WEST); b.arrow(188.5, 36, N);
+  zz(194, 41, WEST);
+  // Screen 1 (side pocket off the lobby): SOLD OUT, its rows empty but for a stash in the projectionist's corner.
+  b.carve(167, 33, 184, 48, F.INTERIOR); b.carve(185, 40, 185, 41, F.INTERIOR);
+  for (const x of [171, 174, 177, 180]) b.prop('bench', x, 35, 1, 11, { color: 0x8a2b4a });
+  b.pick('autoshotgun', 168, 34); b.pick('ammo', 169, 34); b.pick('medkit', 168, 47);   // off-route reward
+  b.label('SCREEN 1: SOLD OUT', 176, 47, 9, PINK, WEST);
+  b.lamp(169, 40);
+  // Screen 2: the screen on the east wall, the seat rows run north-south with a cross aisle.
+  b.carve(186, 4, 219, 30, F.INTERIOR); b.carve(188, 31, 189, 32, F.INTERIOR);
+  for (const x of [192, 195, 198, 201, 204, 207, 210]) { b.prop('bench', x, 7, 1, 10, { color: 0x8a2b4a }); b.prop('bench', x, 19, 1, 12, { color: 0x8a2b4a }); }
+  b.prop('shelf', 219, 8, 1, 18, { color: 0xf4f0e0 });                    // the screen
+  b.label('SNOOZLE 2: COUNTING SHEEP', 216.5, 17, 12, CREAM, E);
+  b.label('EXIT', 217.5, 28.6, 10, RED, E);
+  b.pick('ammo', 187, 5); b.pick('medkit', 213, 5);
+  b.lamp(216, 28); b.lamp(188, 18);                                       // only the exit signs are lit
+  b.arrow(188.5, 24, N); b.arrow(195, 17.5, E); b.arrow(209, 17.5, E); b.arrow(214, 24, S);
+  b.density(186, 4, 219, 30, 2);                                          // a packed house
+  // Fire-exit corridor: tight and long, down the east side behind the lobby.
+  b.carve(220, 28, 220, 29, F.INTERIOR); b.carve(221, 28, 222, 50, F.INTERIOR);
+  b.pick('ammo', 222, 33);
+  b.label('FIRE EXIT: CAR PARK', 221.5, 34, 8, RED, N);
+  for (const z of [30, 39, 48]) b.lamp(221.5, z);
+  b.arrow(221.5, 31, S); b.arrow(221.5, 42, S);
+  // The footbridge over the service lane onto the car park roof.
+  b.carve(221, 51, 222, 54, F.CONCRETE);
+  b.lamp(221.5, 52);
+
+  // ------------------------------------------------------------------
+  // 17c. Galleria Parking roof (open air): the Sweet Dreams Night fog unit
+  // ------------------------------------------------------------------
+  // In at the north-east off the footbridge, across to the ramp down in the south-west. Long open
+  // sightlines (rifle country), parked cars for cover, and one of Dreamwell's fog trailers, empty.
+  b.carve(167, 55, 223, 105, F.CONCRETE);
+  b.prop('gen', 192, 76, 4, 2, { color: 0xc9a8ff }); b.prop('gen', 198, 76, 2, 2, { color: 0xc9a8ff });   // fog unit 7 and its blower
+  for (const [x, z] of [[191, 79], [193, 79], [195, 79], [197, 79]]) b.prop('barrel', x, z, 1, 1, { color: 0xb38fe0 });   // spent Hush canisters
+  b.label('SWEET DREAMS NIGHT: FOG UNIT 7', 195, 74.2, 10, LAV, WEST);
+  b.prop('van', 208, 90, 3, 1, { color: 0xf4f4f4 }); b.prop('van', 178, 66, 1, 3, { color: 0x3a5fd0 });   // a news van, a police van
+  for (const [x, z] of [[214, 62], [205, 68], [184, 62], [216, 82], [202, 98], [183, 88], [176, 78], [212, 72]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
+  for (const x of [172, 186, 200, 214]) b.prop('barrier', x, 104, 3, 1);
+  b.pick('rifle', 222, 57); b.pick('ammo', 223, 57); b.pick('medkit', 186, 90); b.pick('ammo', 172, 92);
+  b.label('ROOF', 205, 60, 26, CREAM, WEST); b.label('SNOOZLE SAYS: SLEEP TIGHT, MALLOW BAY!', 195, 102, 10, PINK, WEST);
+  b.label('RAMP DOWN: LEVEL 1', 168.5, 92.6, 8, GOLD, N);
+  for (const [x, z] of [[218, 58], [204, 66], [186, 70], [210, 84], [192, 90], [176, 96], [170, 88]]) b.lamp(x, z);
+  b.arrow(218, 60, WEST); b.arrow(204, 72, S); b.arrow(186, 84, WEST); b.arrow(172, 90, S); b.arrow(168.5, 94, S);
 
   // ==================================================================
   // STOREY 3: the hospital roof and helipad
@@ -841,16 +1073,68 @@ export function build() {
     ],
   });
   b.use(breaker, {
-    objective: 'Restore power in Security', opens: [dockDoor],
+    objective: 'Restore power in Security', opens: [plumShutter],
     radio: [
       ['Dot', 'The loading dock lift needs power. Breakers are in Security, past the arcade.'],
       ['Pip', 'Past the ARCADE?'],
       ['Nori', 'No.'],
     ],
   });
-  b.use(liftButton, {
-    objective: 'Call the freight lift', horde: true, hold: 90, opens: [liftGate],
+  b.reach({ x0: 167, z0: 33, x1: 172, z1: 39, lv: 1 }, {
+    objective: "Go round through Plumley's",
     radio: [
+      ['Dot', 'Lights are on! Oh. Sweet peas, the police barricaded the dock. It\'s an evacuation point.'],
+      ['Dot', 'Go round: through Plumley\'s, over the car park, in from the truck yard.'],
+      ['Mochi', 'The scenic route. Customers love the scenic route.'],
+      ['Pip', 'Perfume counters. Every sleeper in here smells AMAZING.'],
+    ],
+  });
+  b.reach({ x0: 186, z0: 33, x1: 219, z1: 48, lv: 2 }, {
+    objective: 'Head up to the Cineplex',
+    radio: [
+      ['Pip', 'A whole floor of beds. Nobody touch the beds. This is SO a trap.'],
+      ['Nori', '\'Sweet Dreams Night Sale.\' Free Hush with every pillow. They planned this.'],
+      ['Dot', 'The cinema\'s up top. Its fire exit crosses to the car park roof.'],
+    ],
+  });
+  b.reach({ x0: 200, z0: 55, x1: 223, z1: 68, lv: 2 }, {
+    objective: 'Cut through to the car park roof',
+    radio: [
+      ['Taro', 'A midnight marathon. Three Snoozle films. I\'d have dozed off in the first one.'],
+      ['Mochi', 'Looks like everybody did.'],
+      ['Nori', 'Fire exit\'s past the screen. Flashlights on, and step quietly.'],
+    ],
+  });
+  b.reach({ x0: 208, z0: 55, x1: 223, z1: 66 }, {
+    objective: 'Get down through the car park', opens: [officeEntry],
+    radio: [
+      ['Pip', 'Is that a FOG MACHINE? On the roof? Who puts a fog machine on a roof?'],
+      ['Nori', 'Dreamwell does. \'Sweet Dreams Night, Unit 7.\' Empty now.'],
+      ['Dot', 'St. Marigold sent its ambulances up those ramps. The police office is at the bottom.'],
+    ],
+  });
+  b.gather({ x0: 167, z0: 97, x1: 175, z1: 105 }, {
+    objective: 'Hole up in the parking office', checkpoint: true, closes: [officeEntry],
+    radio: [
+      ['Dot', 'Parking office, ground floor, south-west corner. Get in and get that door shut.'],
+      ['Taro', 'Ambulances nose to tail, doors open. They got out on foot. I hope.'],
+    ],
+  });
+  b.use(officeLever, {
+    objective: 'Open the yard gate', opens: [officeExit, dockDoor],
+    radio: [
+      ['Nori', 'Police clipboard. Last lift down to the tunnel left at 4:15. They left us something.'],
+      ['Pip', 'A ROCKET POD. On the dock. Bolted to a truck. Best. Evacuation. Ever.'],
+      ['Dot', 'The freight lift\'s at the bottom of the shaft, sweet peas. It\'s a long way up.'],
+      ['Taro', 'Rest a minute first. That dock will be the longest three minutes of the night.'],
+    ],
+  });
+  b.use(liftButton, {
+    // The stand is the open tile beside the button (the button itself is solid), by the rocket pod.
+    objective: 'Call the freight lift', horde: true, hold: 180, big: true, opens: [liftGate], at: [153.5, 86.5],
+    radio: [
+      ['Dot', 'That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.'],
+      ['Pip', 'Dibs on the rocket pod!'],
       ['Mochi', 'Slowest lift in the world. Everybody face out!'],
       ['Nori', 'And Pip, do not hum along to the music.'],
     ],
