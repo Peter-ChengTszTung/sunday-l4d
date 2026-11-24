@@ -559,7 +559,8 @@ export function build() {
   b.carve(34, 1, 99, 2, F.SIDEWALK);                                 // north towpath
   b.carve(34, 3, 221, 6, F.WATER);                                   // the canal, all the way to the river
   b.carve(34, 7, 99, 8, F.CONCRETE); b.carve(34, 9, 99, 14, F.ASPHALT); b.carve(34, 15, 99, 16, F.SIDEWALK);
-  b.carve(58, 3, 60, 6, F.WOOD); b.carve(84, 3, 86, 6, F.WOOD);     // footbridges
+  // Footbridges. Not F.WOOD: wood is an indoor floor and gets a ceiling, which hung in the open air here.
+  b.carve(58, 3, 60, 6, F.CONCRETE); b.carve(84, 3, 86, 6, F.CONCRETE);
   b.prop('container', 40, 4, 8, 2, { color: 0xc8324b }); b.prop('container', 66, 3, 7, 2, { color: 0x2f5f78 }); b.prop('container', 91, 4, 6, 2, { color: 0xffd43b });   // moored barges
   car(45, 10, E, 2, 1); car(55, 13, WEST, 2, 1); b.prop('van', 63, 10, 3, 1, { color: 0x9775fa }); car(73, 12, E, 2, 1); car(81, 9, WEST, 2, 1); car(93, 13, E, 2, 1);
   b.prop('bench', 50, 7, 2, 1); b.prop('bench', 77, 7, 2, 1); b.prop('dumpster', 70, 16, 2, 1);
@@ -602,7 +603,7 @@ export function build() {
   // switch opens the freight stairs. Up to Wharf Halt (storey 1) with the horde behind, then west over
   // the freight bridge above Wash Alley and Library Row: one long elevated sightline.
   b.carve(222, 0, 231, 100, F.WATER);                                // the river
-  b.carve(212, 15, 221, 61, F.SIDEWALK); b.paint(219, 17, 221, 61, F.WOOD);
+  b.carve(212, 15, 221, 61, F.SIDEWALK); b.paint(219, 17, 221, 61, F.CONCRETE);   // the boardwalk edge (no F.WOOD outdoors: it gets a ceiling)
   b.carve(233, 34, 234, 35, F.CONCRETE); b.prop('pillar', 233, 34, 2, 2, { color: 0xe8e3f0 });   // Dispatch Tower, far bank
   b.carve(233, 36, 233, 36, F.CONCRETE); b.prop('beacon', 233, 36);
   for (const [x, z] of [[213, 20], [213, 37], [213, 54]]) b.prop('tree', x, z);
@@ -612,7 +613,7 @@ export function build() {
   b.arrow(215.5, 15, S); b.arrow(216, 34, S); b.arrow(216, 50, S);
   b.density(212, 17, 221, 61, 1.3);
   // Pier (optional): out over the water, the best view of the tower.
-  b.carve(222, 38, 229, 40, F.WOOD);
+  b.carve(222, 38, 229, 40, F.CONCRETE);
   b.pick('ammo', 229, 39); b.pick('rattle', 229, 38);
   b.label('DISPATCH TOWER', 226, 39, 12, RED, E);
   b.lamp(228.5, 40.6);
