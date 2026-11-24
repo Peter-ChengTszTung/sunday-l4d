@@ -25,14 +25,14 @@ Each chapter ends with a Big Hold On: a `use` step with `big`, a 150 s hold, and
 
   | Survivors | 1 | 2 | 3 | 4 |
   | --- | --- | --- | --- | --- |
-  | Base (wave 1) | 22 | 30 | 40 | 50 |
-  | Wave 2 / final | 33 | 45 | 60 | 75 |
-  | Commons alive at once | 30 | 40 | 55 | 70 |
+  | Base (wave 1) | 44 | 60 | 80 | 100 |
+  | Wave 2 / final | 66 | 90 | 120 | 150 |
+  | Commons alive at once | 60 | 80 | 110 | 140 |
 
 - **Breathers bring the dead back.** A survivor who died comes back when a breather starts, so one early death doesn't end the hold.
 - **The gunner is a target.** In each special push, one grabber (Snatcher or Piggyback) goes for whoever is on a mounted gun.
 - **Timer stops** (`gates`). Chapters 2 and 3 stop the timer at set points until the team does a job (pick up a power cell, hold a crank). While it is stopped the stage doesn't advance, but the horde already queued keeps coming.
-- **Escape.** When the timer runs out the vehicle opens. Until everyone is aboard, one walker spawns every 1.1 s from the lane zones (all lanes, flank included), up to the cap. The run is short in chapters 1 to 3 and a real run in chapter 4.
+- **Escape.** When the timer runs out the vehicle opens. Until everyone is aboard, one walker spawns every 0.55 s from the lane zones (all lanes, flank included), up to the cap. The run is short in chapters 1 to 3 and a real run in chapter 4.
 - **Map rules.** Each gun sits in a sandbag nest with a wall or vehicle at its back and both front lanes in its arc, with 25 m or more of open lane in front of it. Guns have 8 facings (diagonals included). Cover in the arena is low and imperfect. The arena itself has no sleepers waiting (density 0).
 
 ---

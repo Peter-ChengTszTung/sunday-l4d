@@ -240,7 +240,8 @@ export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline:
  * aboard) trickles one walker every `escapeEvery` s from every lane. Spawns use the step's lanes
  * (ZONE_MIN, ZONE_GUN_GAP). One grabber per special push goes for whoever mans a gun.
  */
-export const BIG_HOLD = { base: [22, 30, 40, 50] as const, open: 0.6, brute: 0.4, cap: [30, 40, 55, 70] as const, drain: 0.08, escapeEvery: 1.1 };
+// Doubled (base, cap, escape trickle) after the first v2 review: the finales read too thin.
+export const BIG_HOLD = { base: [44, 60, 80, 100] as const, open: 0.6, brute: 0.4, cap: [60, 80, 110, 140] as const, drain: 0.08, escapeEvery: 0.55 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 export const BRUTE_HP_PER = 1100;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */
