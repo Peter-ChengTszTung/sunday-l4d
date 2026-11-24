@@ -6,7 +6,7 @@ import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLA
 import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
@@ -1136,16 +1136,21 @@ export class Room implements CombatHost {
   private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
     if (this.holdout >= 0 && field === this.flow && this.hs.zone.length) {
       // A holdout with spawn zones: only there (however far), unless nowhere in them is hidden and walkable.
-      // The nearest of a few hidden cells, so a deep zone still feeds the fight from its near edge.
-      const zone = this.hs.zone, players = this.standing();
-      let best = -1, found = 0;
-      for (let tries = 0; tries < 60 && found < 4; tries++) {
-        const c = zone[(Math.random() * zone.length) | 0], d = field[c];
-        if (d < minD || d >= INF || (best >= 0 && d >= field[best])) continue;
-        const o = this.L.centre(c);
-        if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) { best = c; found++; }
+      // ZONE_MIN out first (the nearest of a few hidden cells past it, so a deep zone still feeds the
+      // fight); a zone that does not reach that far uses the caller's minimum.
+      const zone = this.hs.zone, players = this.standing(), guns = this.def.mounts, g2 = ZONE_GUN_GAP * ZONE_GUN_GAP;
+      for (const far of [true, false]) {
+        const lo = far ? Math.max(minD, ZONE_MIN) : minD;
+        let best = -1, found = 0;
+        for (let tries = 0; tries < 60 && found < 4; tries++) {
+          const c = zone[(Math.random() * zone.length) | 0], d = field[c];
+          if (d < lo || d >= INF || (best >= 0 && d >= field[best])) continue;
+          const o = this.L.centre(c);
+          if (far && guns.some((m) => (m.x - o.x) ** 2 + (m.z - o.z) ** 2 < g2)) continue;
+          if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) { best = c; found++; }
+        }
+        if (best >= 0) return best;
       }
-      if (best >= 0) return best;
     }
     if (this.holdout >= 0 && field === this.flow) {
       const lv = this.perchLevel();

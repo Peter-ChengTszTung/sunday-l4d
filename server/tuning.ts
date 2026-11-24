@@ -34,6 +34,14 @@ export const WANDERERS = {
 };
 /** Director spawns never appear closer than this (metres) to any survivor. */
 export const MIN_SPAWN_DIST = 16;
+/**
+ * A holdout with spawn zones (Step.from) places its zombies at least this many path tiles from the
+ * team when the zone reaches that far, so the flood walks in down the guns' lanes instead of
+ * appearing at the zone's near edge, right by the sandbags.
+ */
+export const ZONE_MIN = 24;
+/** ...and at least this many metres in a straight line from every mounted gun (a fence or a wall by the guns is no distance). */
+export const ZONE_GUN_GAP = 30;
 /** Horde waves: members spawn within CLUSTER tiles of their source; FLANK_CHANCE that a big team-sourced
  * wave (FLANK_MIN+) also comes from a second side; NOISE_REACH: how far (path tiles) a noise source may sit
  * from the noise; GOO_HUNT: seconds a gooed survivor stays marked (wave members chase them first). */
