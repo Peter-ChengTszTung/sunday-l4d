@@ -1132,7 +1132,7 @@ export function build() {
   b.use(liftButton, {
     // The stand is the open tile beside the button (the button itself is solid), by the rocket pod.
     objective: 'Call the freight lift', horde: true, hold: 180, big: true, opens: [liftGate], at: [153.5, 86.5],
-    from: [{ x0: 104, z0: 99, x1: 163, z1: 106 }],                     // the truck yard: in through the bays
+    lanes: { A: [{ x0: 104, z0: 99, x1: 163, z1: 106 }] },                     // the truck yard: in through the bays
     radio: [
       ['Dot', 'That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.'],
       ['Pip', 'Dibs on the rocket pod!'],

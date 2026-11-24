@@ -1,7 +1,7 @@
 // Static checks + stats for a chapter, shared by scripts/check-chapters.ts and
 // the map viewer. Walks the quest in order with each step's door state and
 // verifies every objective is reachable from where the team stands.
-import { TILE, STOREY, WEAPONS, PLAYER } from './constants';
+import { TILE, STOREY, WEAPONS, PLAYER, MOUNT } from './constants';
 import { F, ALL_OPEN, RAMP_DX, RAMP_DZ, cellOf, type Level, type Rect, type Step, type Vec2 } from './level';
 import { wandererRegions } from './regions';
 
@@ -234,13 +234,36 @@ export function validateChapter(L: Level): ChapterReport {
     const has = (def.mounts ?? []).some((m) => near[mountCell(m)] <= BIG_MOUNT_TILES);
     if (!has) errors.push(`${name(i)}: a Big Hold On needs a mounted gun (LevelBuilder.mount) within ${BIG_MOUNT_TILES} path tiles of its stand`);
   });
-  // Holdout spawn zones: only on holdouts, and each must hold floor the flood can walk to the stand from.
+  // Holdout lanes: only on holdouts; each lane's floor must reach the stand; stages may only name lanes
+  // the step has; gates need what they wait on. In a Big Hold On every front lane (all but 'C', the
+  // flank) must come into some mounted gun's arc: where the lane's nearest cells to the stand lie, seen
+  // from the gun, is within MOUNT.arc of where it faces.
   def.steps.forEach((s, i) => {
-    if (!s.from) return;
-    if (!s.hold && s.kind !== 'holdout') { errors.push(`${name(i)}: from is only for holdouts`); return; }
+    const names = Object.keys(s.lanes ?? {});
+    if (names.length && !s.hold && s.kind !== 'holdout') { errors.push(`${name(i)}: lanes are only for holdouts`); return; }
     const open = L.doorsAfter(i), stand = s.kind === 'use' ? useCells(s.at.x, s.at.z, s.at.y ?? 0).filter((c) => !L.blocked(c, open)) : [cell(s.at)];
     const d = L.distanceField(stand, open);
-    s.from.forEach((r, k) => { if (!rectNodes(r, open).some((c) => d[c] < INF)) errors.push(`${name(i)}: spawn zone ${k + 1} (${r.x0},${r.z0}-${r.x1},${r.z1}) has no floor that reaches the stand`); });
+    for (const n of names) {
+      const cells = s.lanes![n].flatMap((r) => rectNodes(r, open)).filter((c) => d[c] < INF);
+      if (!cells.length) { errors.push(`${name(i)}: lane ${n} has no floor that reaches the stand`); continue; }
+      if (!s.big || n === 'C') continue;
+      cells.sort((a, b) => d[a] - d[b]);
+      const near = cells.slice(0, Math.max(1, Math.ceil(cells.length * 0.1)));
+      const ex = near.reduce((v, c) => v + L.nodeX(c), 0) / near.length * TILE + TILE / 2, ez = near.reduce((v, c) => v + L.nodeZ(c), 0) / near.length * TILE + TILE / 2;
+      const covered = (def.mounts ?? []).some((m) => {
+        const dx = ex - m.x, dz = ez - m.z, fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), len = Math.hypot(dx, dz) || 1;
+        return Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / len))) <= MOUNT.arc && len < 90;
+      });
+      if (!covered) errors.push(`${name(i)}: front lane ${n} (enters near ${Math.round(ex / TILE)},${Math.round(ez / TILE)}) is outside every mounted gun's arc`);
+    }
+    for (const g of s.holdScript ?? []) for (const n of [...(g.lanes ?? []), ...(g.push ?? [])]) if (!names.includes(n)) errors.push(`${name(i)}: stage ${g.kind} names lane ${n}, which the step does not have`);
+    let last = -1;
+    for (const g of s.gates ?? []) {
+      if (g.at < last) errors.push(`${name(i)}: gates must be in order of \`at\``);
+      last = g.at;
+      if (g.items !== undefined && (!s.group || g.items > def.pickups.filter((p) => p.kind === 'item' && p.group === s.group).length)) errors.push(`${name(i)}: gate at ${g.at} s waits for ${g.items} items of group "${s.group}", which the map does not have`);
+      if (g.area && !rectNodes(g.area, open).some((c) => d[c] < INF)) errors.push(`${name(i)}: gate at ${g.at} s has an area nobody can reach`);
+    }
   });
   if (!def.steps.some((s) => s.big)) warnings.push('no Big Hold On step (big: true) in this chapter');
 

@@ -48,6 +48,7 @@ export interface Zombie {
   pinT: number; acc: number;
   /** Damage taken from survivors while pinning (knocks it off at CHARGER.pinBreakDmg). */ pinHit: number;
   /** Until this room time, chase goo-marked survivors first (puffer wave members). */ hunt: number;
+  /** Big Hold On grabber sent at a gunner: that survivor's id while they man a gun (0 = none). */ gunner: number;
   /** Special holding for a coordinated attack: 0 = attacking, 1 = lurking unseen, 2 = lurking but in a survivor's sight (backs off). */
   hold: number;
   /** Id of the queued horde (Wave.id) this walker was spawned for; 0 = not a horde member (ambient, wanderer, holdout). */

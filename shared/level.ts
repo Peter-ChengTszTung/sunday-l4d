@@ -36,6 +36,12 @@ export type WallKind = (typeof WALL)[keyof typeof WALL];
 /** Ramp directions (the way the floor rises): +x, -x, +z, -z. 0 = flat. */
 export const RAMP = { NONE: 0, PX: 1, NX: 2, PZ: 3, NZ: 4 } as const;
 export type RampDir = '+x' | '-x' | '+z' | '-z';
+/** Mounted gun facings: the four axes and the four diagonals. */
+export type MountDir = RampDir | '+x+z' | '+x-z' | '-x+z' | '-x-z';
+/** Tile step a mount facing points along (its barrel); the gunner stands one step back. */
+const MOUNT_FWD: Record<MountDir, [number, number]> = {
+  '+x': [1, 0], '-x': [-1, 0], '+z': [0, 1], '-z': [0, -1], '+x+z': [1, 1], '+x-z': [1, -1], '-x+z': [-1, 1], '-x-z': [-1, -1],
+};
 const RAMP_OF: Record<RampDir, number> = { '+x': RAMP.PX, '-x': RAMP.NX, '+z': RAMP.PZ, '-z': RAMP.NZ };
 /** Unit step per ramp code (index = RAMP value). */
 export const RAMP_DX = [0, 1, -1, 0, 0], RAMP_DZ = [0, 0, 0, 1, -1];
@@ -106,7 +112,21 @@ export interface HoldStage {
   /** Also bring the horde from a second side (default: only `final`). */ flank?: boolean;
   /** Specials in the push at the stage start; overrides the kind's team-scaled default. */ specials?: number;
   /** Feed line shown to everyone when the stage begins (the game's existing 'msg' event). */ msg?: string;
+  /**
+   * A Big Hold On with lanes (Step.lanes): the lanes this stage's horde and trickle come down. Default:
+   * every lane but 'C' (the flank).
+   */
+  lanes?: string[];
+  /** ...and the lanes its special push and Brute come down. Default: 'C' when the step has one, else `lanes`. */
+  push?: string[];
 }
+/**
+ * A pause in a holdout's timer (Step.gates): when the hold has run `at` seconds the timer stops until
+ * the condition is met, while the stage script and its horde carry on. `items`: that many of the
+ * step's items (Step.group) collected; `area` + `secs`: a standing survivor has stayed in the area
+ * that long (the clock resets if it is left empty).
+ */
+export interface HoldGate { at: number; items?: number; area?: Rect; secs?: number; /** Feed line when the timer stops. */ msg?: string }
 export interface Step {
   kind: StepKind;
   /** HUD text. Collect steps get " 2/4" appended. */ objective: string;
@@ -126,12 +146,15 @@ export interface Step {
    */
   big?: boolean;
   /**
-   * Holdouts: where the holdout's zombies come from. Every horde, trickle, special and Brute it spawns
-   * is placed in one of these tile rects (its `lv` the storey), out of sight, so the flood arrives
-   * through the entrances they sit behind and the mounted gun can face them. Absent: anywhere round
+   * Holdouts: the lanes the holdout's zombies come down, by name ('A', 'B', 'C'...), each a set of
+   * tile rects (their `lv` the storey) behind its entrance. Every horde, trickle, special and Brute is
+   * placed in the lanes its stage names (HoldStage.lanes / push), out of sight and well away from the
+   * guns, and the escape that follows a Big Hold On trickles from all of them. Absent: anywhere round
    * the team, as usual.
    */
-  from?: Rect[];
+  lanes?: Record<string, Rect[]>;
+  /** Holdouts: pauses in the timer (HoldGate), in order of `at`. */
+  gates?: HoldGate[];
   /** Where the HUD waypoint points (metres; `y` = floor height). */ at: Vec2;
   /**
    * Client set piece for a `use` step with a hold (client/src/setpieces.ts): `lift` counts the nearest
@@ -193,7 +216,7 @@ export const DEFAULT_THEME: Theme = {
 export interface StepOpts {
   objective: string; radio?: RadioLine[]; area?: Rect; target?: number; group?: string; hold?: number; holdScript?: HoldStage[];
   opens?: number[]; closes?: number[]; checkpoint?: boolean; horde?: boolean; brute?: boolean; at?: [number, number] | [number, number, number];
-  cue?: StepCue; big?: boolean; from?: Rect[];
+  cue?: StepCue; big?: boolean; lanes?: Record<string, Rect[]>; gates?: HoldGate[];
 }
 
 /**
@@ -368,17 +391,18 @@ export class LevelBuilder {
   }
 
   /**
-   * A mounted support gun on tile (x, z) of this storey, facing `dir` (where its barrel points; the
-   * gunner turns MOUNT.arc either side of it). The tile behind it (opposite `dir`) is where the gunner
+   * A mounted support gun on tile (x, z) of this storey, facing `dir` (where its barrel points: an
+   * axis or a diagonal such as '-x+z'; the gunner turns MOUNT.arc either side of it). The tile behind it (opposite `dir`) is where the gunner
    * stands, so it must be open floor too. Returns the mount id.
    */
-  mount(kind: MountKind, x: number, z: number, dir: RampDir): number {
+  mount(kind: MountKind, x: number, z: number, dir: MountDir): number {
     const i = this.idx(x, z);
-    const back = { '+x': [-1, 0], '-x': [1, 0], '+z': [0, -1], '-z': [0, 1] }[dir];
-    if (!back) throw new Error(`bad mount direction ${dir}`);
-    const j = this.idx(x + back[0], z + back[1]);
+    const fwd = MOUNT_FWD[dir];
+    if (!fwd) throw new Error(`bad mount direction ${dir}`);
+    const j = this.idx(x - fwd[0], z - fwd[1]);
     for (const k of [i, j]) if (this.solid[k] || this.floor[k] === F.NONE || this.ramp[k]) throw new Error(`mount ${kind} at ${x},${z}: it and the tile behind it must be open flat floor`);
-    const yaw = { '+x': -Math.PI / 2, '-x': Math.PI / 2, '+z': Math.PI, '-z': 0 }[dir];
+    let yaw = Math.atan2(-fwd[0], -fwd[1]);
+    if (yaw <= -Math.PI + 1e-9) yaw = Math.PI; // facing +z: PI, as before
     this.mounts.push({ id: this.mounts.length, kind, x: (x + 0.5) * TILE, z: (z + 0.5) * TILE, y: this.baseY, yaw });
     return this.mounts.length - 1;
   }
@@ -421,7 +445,7 @@ export class LevelBuilder {
     if (o.area?.lv !== undefined && !(o.area.lv >= 0 && o.area.lv < this.levels)) throw new Error(`step "${o.objective}": area storey ${o.area.lv} does not exist`);
     this.steps.push({
       kind, objective: o.objective, radio: o.radio ?? [], area: o.area, target: o.target, group: o.group, hold: o.hold, holdScript: o.holdScript,
-      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...(o.big ? { big: true } : {}), ...(o.from ? { from: o.from } : {}), ...extra,
+      opens: o.opens ?? [], closes: o.closes ?? [], checkpoint: !!o.checkpoint, horde: !!o.horde, brute: !!o.brute, at: this.stepAt(o), ...(o.cue ? { cue: o.cue } : {}), ...(o.big ? { big: true } : {}), ...(o.lanes ? { lanes: o.lanes } : {}), ...(o.gates ? { gates: o.gates } : {}), ...extra,
     });
     return this.steps.length - 1;
   }

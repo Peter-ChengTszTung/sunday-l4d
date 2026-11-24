@@ -1098,7 +1098,7 @@ export function build() {
     objective: 'Fuel up and start Bertha', horde: true, hold: 180, big: true, opens: [cabDoor],
     // The flood: the east apron (down off the bridge, in at the road gate, out of the dock shed),
     // all in front of the Thump Cannon; nothing from the west end behind it.
-    from: [{ x0: 56, z0: 140, x1: 130, z1: 182 }, { x0: 78, z0: 123, x1: 81, z1: 136, lv: 1 }],
+    lanes: { A: [{ x0: 56, z0: 140, x1: 130, z1: 182 }, { x0: 78, z0: 123, x1: 81, z1: 136, lv: 1 }] },
     // The waypoint stands on the open apron by the valve (the valve tile itself is solid), 8 tiles
     // from the Guard's cannon on the flatcar.
     at: [27.5, 154.5],

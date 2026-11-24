@@ -1167,7 +1167,7 @@ export function build() {
   b.use(boomLever, {
     objective: 'Raise the bridge boom gate', horde: true, hold: 180, big: true, at: [149.5, 169.5], opens: [boomGate, busDoor],
     // Two ways in: Bridge Park (north) and the diner road (west), where the guns face.
-    from: [{ x0: 134, z0: 150, x1: 158, z1: 162 }, { x0: 84, z0: 164, x1: 118, z1: 192 }],
+    lanes: { A: [{ x0: 134, z0: 150, x1: 158, z1: 162 }, { x0: 84, z0: 164, x1: 118, z1: 192 }] },
     radio: [
       ['Dot', 'I can see you! Get that boom gate up and get on my bus!'],
       ['Wren', 'The far bank\'s out of range. They\'re still coming. Hold them!'],

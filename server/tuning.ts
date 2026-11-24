@@ -35,7 +35,7 @@ export const WANDERERS = {
 /** Director spawns never appear closer than this (metres) to any survivor. */
 export const MIN_SPAWN_DIST = 16;
 /**
- * A holdout with spawn zones (Step.from) places its zombies at least this many path tiles from the
+ * A holdout with lanes (Step.lanes) places its zombies at least this many path tiles from the
  * team when the zone reaches that far, so the flood walks in down the guns' lanes instead of
  * appearing at the zone's near edge, right by the sandbags.
  */
@@ -231,13 +231,16 @@ export const DIFFICULTY: Record<DifficultyId, {
  */
 export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline: 32, recheck: 0.3 };
 /**
- * A Big Hold On (a step with `big: true`, shared/level.ts): stage hordes x `horde`, the trickle every
- * `trickle` x as often and `clump` walkers at a time, room for `cap[n - 1]` commons at once (n
- * survivors; normally min(46, 20 + 6n)), queued hordes drain one walker every `drain` s (normally
- * 0.22), and `specials` more specials alive at once. Tuned to 95% of the first cut (horde, cap, trickle)
- * after three-player playtests kept falling in the last 20-30 s.
+ * A Big Hold On (a step with `big: true`, shared/level.ts), the finale of each chapter. Hordes are
+ * budgets, not multipliers: a stage's commons are `base[n - 1]` (n survivors) x its `horde` fraction
+ * (wave 1 by default; wave 2 and the final 1.5), `open` of them as the stage's opening horde and the
+ * rest trickled evenly over the stage. A Brute stage trickles `brute` x base, a breather nothing.
+ * `cap[n - 1]` commons alive at once; queued hordes drain one walker every `drain` s. Survivors who
+ * died come back when a breather starts. The escape after it (the next step, until everyone is
+ * aboard) trickles one walker every `escapeEvery` s from every lane. Spawns use the step's lanes
+ * (ZONE_MIN, ZONE_GUN_GAP). One grabber per special push goes for whoever mans a gun.
  */
-export const BIG_HOLD = { horde: 2.28, trickle: 0.47, clump: [2, 4] as const, cap: [57, 71, 90, 105] as const, drain: 0.08, specials: 1 };
+export const BIG_HOLD = { base: [22, 30, 40, 50] as const, open: 0.6, brute: 0.4, cap: [30, 40, 55, 70] as const, drain: 0.08, escapeEvery: 1.1 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 export const BRUTE_HP_PER = 1100;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */

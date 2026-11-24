@@ -870,7 +870,7 @@ export function build() {
   b.use(ignition, {
     objective: 'Start the hospital shuttle', horde: true, hold: 180, big: true, opens: [shuttleDoor, bayDoor, busWash, spurGate], at: [85.5, 86.5],
     // The siren pulls the town into Depot Square, and from there through the gate, in front of the Gatling.
-    from: [{ x0: 62, z0: 58, x1: 98, z1: 72 }],
+    lanes: { A: [{ x0: 62, z0: 58, x1: 98, z1: 72 }] },
     radio: [
       ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company. Three minutes.'],
       ['Dot', 'And the Guard wired their evac siren to that bay. Every sleeper in town will come.'],

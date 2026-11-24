@@ -57,7 +57,9 @@ export class Room implements CombatHost {
    * length, current stage index, seconds to the next final-stage special refill, and a Brute the
    * current stage still owes (retried every second until one fits).
    */
-  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false, zone: [] as number[] };
+  private hs = this.freshHold();
+  /** Lane cells of the Big Hold On just won, while its escape step runs (trickle from every lane); null otherwise. */
+  private escape: { step: number; zone: number[]; t: number } | null = null;
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
@@ -229,7 +231,13 @@ export class Room implements CombatHost {
     this.nextZid = 1;
     this.state = 'play';
     this.endTimer = 0;
+    if (this.holdout >= 0 && this.hs.big && !process.env.NODE_ENV?.startsWith('prod')) {
+      const st = this.hs.stat;
+      console.log(`[big hold ${this.code}] ch${this.ch + 1} lost at ${(this.time - st.t0).toFixed(0)} s of ${(this.hs.total / HOLD_SCALE).toFixed(0)}, ${this.players.size} survivors: ${st.spawned} commons spawned, peak ${st.peak} alive, ${st.downs} downs, ${st.deaths} deaths, ${st.gunKills} gun kills`);
+    }
     this.holdout = -1;
+    this.escape = null;
+    this.hs = this.freshHold();
     this.collected = 0;
     this.time = cp && !freshStart ? this.time : 0;
     if (!cp || freshStart) this.kills = 0;
@@ -377,6 +385,8 @@ export class Room implements CombatHost {
   private beginStep(silent = false): void {
     const s = this.cur;
     if (!s) return;
+    if (this.escape && this.escape.step !== this.step) this.escape = null;
+    if (this.escape) this.hs.zone = this.escape.zone;
     this.collected = 0;
     this.holdout = -1;
     if (!silent) this.events.push(['step', this.step]);
@@ -411,13 +421,42 @@ export class Room implements CombatHost {
     this.beginStep();
   }
 
+  /**
+   * The step's next HoldGate, once the hold has run to it: true while it stops the timer. Passing it
+   * (enough items in, or a survivor long enough in its area) moves on to the next.
+   */
+  private gateHolds(s: Step, stand: Player[], dt: number): boolean {
+    const hs = this.hs, g = s.gates?.[hs.gate];
+    if (!g || hs.total - this.holdout < g.at * HOLD_SCALE) return false;
+    if (hs.gateSaid !== hs.gate) { hs.gateSaid = hs.gate; hs.gateT = 0; if (g.msg) this.events.push(['msg', g.msg]); }
+    let ok = false;
+    if (g.items !== undefined) ok = this.collected >= g.items;
+    else if (g.area) {
+      hs.gateT = stand.some((p) => this.L.inRect(p.x, p.y, p.z, g.area!)) ? hs.gateT + dt : 0;
+      ok = hs.gateT >= (g.secs ?? 0);
+    } else ok = true;
+    if (ok) { hs.gate++; return false; }
+    return true;
+  }
+
+  /** A holdout's timer ran out: log its summary (dev servers) and, after a Big Hold On, start the escape trickle. */
+  private endHoldout(s: Step): void {
+    const hs = this.hs;
+    if (!hs.big) return;
+    const st = hs.stat;
+    if (!process.env.NODE_ENV?.startsWith('prod')) console.log(`[big hold ${this.code}] ch${this.ch + 1} "${s.objective}" won in ${(this.time - st.t0).toFixed(0)} s, ${this.players.size} survivors: ${st.spawned} commons spawned, peak ${st.peak} alive, ${st.downs} downs, ${st.deaths} deaths, ${this.kills - st.kills} kills (${st.gunKills} by guns)`);
+    const all = Object.keys(hs.lanes);
+    if (all.length) this.escape = { step: this.step + 1, zone: this.zoneOf(all), t: 0 };
+  }
+
   private updateQuest(dt: number): void {
     const s = this.cur;
     if (!s) return;
     const stand = this.standing();
     if (this.holdout >= 0) {
+      if (this.gateHolds(s, stand, dt)) return;
       this.holdout -= dt;
-      if (this.holdout <= 0) { this.crescendoOver(); this.completeStep(); }
+      if (this.holdout <= 0) { this.endHoldout(s); this.crescendoOver(); this.completeStep(); }
       return;
     }
     switch (s.kind) {
@@ -441,6 +480,7 @@ export class Room implements CombatHost {
     this.zombies = new Map();
     this.clearHazards();
     this.doors = this.L.doorsAfter(step);
+    this.escape = null;
     this.step = step;
     this.started = step > 0;
     this.taken = new Set();
@@ -610,7 +650,9 @@ export class Room implements CombatHost {
       if (!s.hold) this.completeStep();
       return;
     } else if (pk.kind === 'item') {
-      if (!s || s.kind !== 'collect' || s.group !== pk.group || this.taken.has(id)) return;
+      // Items count in a collect step, or during a holdout that gates on them (Step.gates items).
+      const siege = !!s && s.kind === 'use' && this.holdout >= 0 && !!s.gates?.some((g) => g.items !== undefined);
+      if (!s || (s.kind !== 'collect' && !siege) || s.group !== pk.group || this.taken.has(id)) return;
       this.taken.add(id); this.collected++;
       this.events.push(['pk', id], ['item', p.id, id, this.collected, s.count ?? 0]);
       return;
@@ -643,13 +685,14 @@ export class Room implements CombatHost {
   /** `y`: the floor height at (x, z) (a node centre's, from `cellPos`). */
   private spawnZombie(type: number, x: number, y: number, z: number, dormant = false): Zombie {
     const T = ZTYPES[type];
+    if (!dormant && this.holdout >= 0 && this.hs.big && isCommon(type)) this.hs.stat.spawned++;
     const zb: Zombie = {
       id: this.nextZid++, type, x, y, z, ry: rand(0, Math.PI * 2), st: dormant ? ZSTATE.IDLE : ZSTATE.RUN,
       hp: type === ZT.BRUTE ? Math.round((T.hp + BRUTE_HP_PER * (this.players.size - 1)) * this.diff.bruteHp)
         : isCommon(type) ? T.hp : Math.round(T.hp * this.diff.spHp),
       speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
-      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, hold: 0, wave: 0, region: -1, sit: false, anger: 0, run: false, runT: 0, runTgt: 0,
+      sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, gunner: 0, hold: 0, wave: 0, region: -1, sit: false, anger: 0, run: false, runT: 0, runTgt: 0,
     };
     this.zombies.set(zb.id, zb);
     return zb;
@@ -777,6 +820,7 @@ export class Room implements CombatHost {
     if (z.hp > 0) return;
     this.zombies.delete(z.id);
     this.kills++;
+    if (by && by.mount >= 0 && this.holdout >= 0) this.hs.stat.gunKills++;
     if (z.hold) this.blowAmbush(z, 'killed');
     if (SLOTTED(z.type)) this.specialGone(z.type);
     if (by) by.kills++;
@@ -1078,6 +1122,7 @@ export class Room implements CombatHost {
       this.bumpIntensity(p, DIRECTOR.down);
       this.unpin(p);
       p.downs++;
+      if (this.holdout >= 0) this.hs.stat.downs++;
       // The down that kills (SURVIVOR_RULES.downs): no getting back up this time.
       if (p.downs >= this.rules.downs) {
         this.events.push(['msg', `${p.name} went down one time too many!`]);
@@ -1096,6 +1141,7 @@ export class Room implements CombatHost {
 
   private killPlayer(p: Player): void {
     this.unpin(p); this.letGo(p);
+    if (this.holdout >= 0) this.hs.stat.deaths++;
     p.st = PSTATE.DEAD; p.hp = 0; p.respawnT = this.rules.respawn; p.y = p.gy;
     this.events.push(['dead', p.id]);
   }
@@ -1134,7 +1180,7 @@ export class Room implements CombatHost {
    * the perch; the usual rule when no such cell is hidden.
    */
   private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
-    if (this.holdout >= 0 && field === this.flow && this.hs.zone.length) {
+    if ((this.holdout >= 0 || this.escape) && field === this.flow && this.hs.zone.length) {
       // A holdout with spawn zones: only there (however far), unless nowhere in them is hidden and walkable.
       // ZONE_MIN out first (the nearest of a few hidden cells past it, so a deep zone still feeds the
       // fight); a zone that does not reach that far uses the caller's minimum.
@@ -1583,6 +1629,19 @@ export class Room implements CombatHost {
 
   // -------------------------------------------------------------- holdouts
   /** Start step `s`'s holdout: the timer, its script (authored or the default curve) and the first stage. */
+  /**
+   * Holdout bookkeeping. `lanes`: spawnable cells per lane (Step.lanes); `zone`: the cells spawns use
+   * right now; `gate`: next HoldGate index and `gateT` its stand clock; `left`: commons this stage
+   * still trickles and `per` its rate; `stat`: the summary logged when it ends.
+   */
+  private freshHold() {
+    return {
+      stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false,
+      lanes: {} as Record<string, number[]>, zone: [] as number[], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0,
+      stat: { spawned: 0, peak: 0, downs: 0, deaths: 0, gunKills: 0, kills: 0, t0: 0 },
+    };
+  }
+
   private startHoldout(s: Step): void {
     const n = this.players.size, H = DIRECTOR.holdout, hold = s.hold ?? 60;
     const stages = s.holdScript ?? defaultHoldScript(hold, n, !s.brute && hold >= H.longHold && Math.random() < H.bruteChance * this.diff.brute);
@@ -1590,21 +1649,39 @@ export class Room implements CombatHost {
     const ends = stages.map((g) => (acc += g.secs) * HOLD_SCALE);
     ends[ends.length - 1] = Infinity; // the last stage runs until the timer does, whatever the script adds up to
     this.holdout = hold * HOLD_SCALE;
-    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: !!s.big, zone: this.zoneCells(s) };
+    this.hs = { ...this.freshHold(), stages, ends, total: this.holdout, big: !!s.big, lanes: this.laneCells(s) };
+    this.hs.stat.t0 = this.time; this.hs.stat.kills = this.kills;
     // Lurking specials from before join the fight now; from here on only the holdout's pushes hold.
     this.releaseAmbush('holdout');
     if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout ${hold}s x${HOLD_SCALE}: ${stages.map((g) => `${g.kind} ${g.secs}`).join(' | ')}`);
     this.enterStage(0, s.horde);
   }
 
-  /** Spawnable nodes inside step `s`'s holdout spawn zones (Step.from); empty: no zones. */
-  private zoneCells(s: Step): number[] {
-    if (!s.from?.length) return [];
-    const L = this.L;
-    return this.cd.open.filter((c) => {
-      const x = L.nodeX(c), z = L.nodeZ(c), lv = L.lvOf(c);
-      return s.from!.some((r) => (r.lv ?? 0) === lv && x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
-    });
+  /** Spawnable nodes in each of step `s`'s lanes (Step.lanes); empty: no lanes. */
+  private laneCells(s: Step): Record<string, number[]> {
+    const L = this.L, out: Record<string, number[]> = {};
+    for (const [name, rects] of Object.entries(s.lanes ?? {})) {
+      out[name] = this.cd.open.filter((c) => {
+        const x = L.nodeX(c), z = L.nodeZ(c), lv = L.lvOf(c);
+        return rects.some((r) => (r.lv ?? 0) === lv && x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+      });
+    }
+    return out;
+  }
+
+  /** Cells of the named lanes (no lanes on the step: none, so spawns go anywhere as usual). */
+  private zoneOf(names: string[]): number[] { return names.flatMap((n) => this.hs.lanes[n] ?? []); }
+  /** Live lanes of stage `g`: its own list, else every lane but the flank 'C'. */
+  private liveLanes(g: HoldStage): string[] { return g.lanes ?? Object.keys(this.hs.lanes).filter((n) => n !== 'C'); }
+  /** Lanes stage `g`'s specials push and Brute come down: its `push`, else 'C' if the step has one, else its live lanes. */
+  private pushLanes(g: HoldStage): string[] { return g.push ?? ('C' in this.hs.lanes ? ['C'] : this.liveLanes(g)); }
+  /** Run `f` with spawns limited to the stage's push lanes. */
+  private viaPush<T>(f: () => T): T {
+    const hs = this.hs, g = hs.stages[hs.i];
+    if (!g || !Object.keys(hs.lanes).length) return f();
+    const keep = hs.zone;
+    hs.zone = this.zoneOf(this.pushLanes(g));
+    try { return f(); } finally { hs.zone = keep; }
   }
 
   /** Begin holdout stage `i`. `opening`: the first stage, whose horde is the step's `horde` flag. */
@@ -1620,11 +1697,23 @@ export class Room implements CombatHost {
       if (up) push = g.specials ?? H.push.specials[k];
       else { hs.bruteWant = true; hs.bruteTry = 0; }
     }
-    const size = (g.horde ?? H.horde[g.kind]) * (hs.big ? BIG_HOLD.horde : 1);
+    if (Object.keys(hs.lanes).length) hs.zone = this.zoneOf(this.liveLanes(g));
+    let size = g.horde ?? H.horde[g.kind];
+    if (hs.big) {
+      // Budget: base x the stage's fraction; `open` of it comes now, the rest trickles over the stage.
+      const B = BIG_HOLD, base = B.base[k] * this.diff.mob;
+      const frac = g.horde ?? (g.kind === 'wave' ? (i === 0 ? 1 : 1.5) : g.kind === 'final' ? 1.5 : 0);
+      const budget = g.kind === 'brute' ? B.brute * base : frac * base;
+      const now = g.kind === 'brute' ? 0 : Math.round(budget * B.open);
+      hs.left = Math.round(budget) - now; hs.per = hs.left / Math.max(1, g.secs * HOLD_SCALE); hs.acc = 0;
+      size = now / Math.max(1, HORDE.base + HORDE.per * this.players.size) / this.diff.mob;
+      // A breather brings the dead back (the finale's second chance).
+      if (g.kind === 'breather') for (const p of this.players.values()) if (p.st === PSTATE.DEAD) p.respawnT = Math.min(p.respawnT, 0.5);
+    }
     const msg = g.msg ?? (g.kind === 'final' ? H.finalMsg : '');
     if (msg) this.events.push(['msg', msg]);
-    if (size > 0 && (i > 0 || opening)) this.horde(1, size, g.flank ?? g.kind === 'final');
-    const pushed = push > 0 ? this.pushSpecials(push, true) : 0;
+    if (size > 0 && (i > 0 || opening)) this.horde(1, size, g.flank ?? (!hs.big && g.kind === 'final'));
+    const pushed = push > 0 ? this.viaPush(() => this.pushSpecials(push, true)) : 0;
     if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout stage ${i + 1}/${hs.stages.length} ${g.kind}: horde ${i > 0 || opening ? size : 0}, specials ${pushed}/${push}${hs.bruteWant ? ', Brute' : ''}`);
   }
 
@@ -1638,13 +1727,15 @@ export class Room implements CombatHost {
       byType[z.type]++;
       if (SLOTTED(z.type)) alive++;
     }
-    const extra = this.bigHold ? BIG_HOLD.specials : 0;
-    k = Math.min(k, Math.min(this.slotCap(), Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.slotBonus(n) + extra)) - alive);
+    k = Math.min(k, Math.min(this.slotCap(), Math.max(1, H.maxSpecials[Math.min(Math.max(n, 1), 4) - 1] + this.slotBonus(n))) - alive);
     let got = 0;
+    // A Big Hold On sends one grabber of the push at whoever mans a gun (the L4D Smoker and the minigun).
+    let gunner = this.bigHold ? [...this.players.values()].find((p) => p.mount >= 0 && p.st === PSTATE.ALIVE) : undefined;
     for (let j = 0; j < k; j++) {
       const type = this.pickSpecial(byType, true);
       const zb = type >= 0 ? this.spawnSpecial(type, 9, 20, hold) : null;
       if (!zb) break;
+      if (gunner && GRABBER(type)) { zb.gunner = gunner.id; gunner = undefined; }
       byType[type]++; got++;
       if (zb.hold) this.ambushUntil = Math.min(this.ambushUntil, this.time + H.pushWait);
     }
@@ -1664,22 +1755,29 @@ export class Room implements CombatHost {
     const g = hs.stages[hs.i];
     if (hs.bruteWant) {
       if (brute) hs.bruteWant = false;
-      else if ((hs.bruteTry -= dt) <= 0) { hs.bruteTry = 1; if (this.spawnBrute()) hs.bruteWant = false; }
+      else if ((hs.bruteTry -= dt) <= 0) { hs.bruteTry = 1; if (this.viaPush(() => this.spawnBrute())) hs.bruteWant = false; }
     }
-    const every = H.trickle[g.kind] * (hs.big ? BIG_HOLD.trickle : 1);
-    if (every > 0) {
-      this.t.ambient -= dt;
-      if (this.t.ambient <= 0) {
-        this.t.ambient = Math.max(hs.big ? H.triMin * BIG_HOLD.trickle : H.triMin, every - H.triPer * (n - 1)) / this.diff.ambient;
-        // A Big Hold On trickles in clumps.
-        const clump = hs.big ? Math.round(roll(BIG_HOLD.clump)) : 1;
-        for (let j = 0; j < Math.min(clump, room); j++) if (!this.spawnAt(this.commonType(), 6, 18)) break;
+    if (hs.big) {
+      // The stage's budget, trickled evenly (in pairs) while the cap allows.
+      hs.acc += hs.per * dt;
+      while (hs.acc >= 2 && hs.left > 0 && room > 0) {
+        hs.acc -= 2;
+        for (let j = 0; j < 2 && hs.left > 0 && room > 0; j++) { if (!this.spawnAt(this.commonType(), 6, 18)) break; hs.left--; room--; }
+      }
+    } else {
+      const every = H.trickle[g.kind];
+      if (every > 0) {
+        this.t.ambient -= dt;
+        if (this.t.ambient <= 0) {
+          this.t.ambient = Math.max(H.triMin, every - H.triPer * (n - 1)) / this.diff.ambient;
+          if (room > 0) this.spawnAt(this.commonType(), 6, 18);
+        }
       }
     }
     if (g.kind === 'final' && (hs.drip -= dt) <= 0) {
       hs.drip = H.drip;
       const want = g.specials ?? H.push.final[Math.min(Math.max(n, 1), 4) - 1];
-      if (specials < want) this.pushSpecials(1, false);
+      if (specials < want) this.viaPush(() => this.pushSpecials(1, false));
     }
   }
 
@@ -1836,7 +1934,7 @@ export class Room implements CombatHost {
       commons++;
       if (this.flow[this.nodeOf(z)] <= D.fadeNear) nearCommons++;
     }
-    const cap = this.bigHold ? BIG_HOLD.cap[Math.min(Math.max(n, 1), 4) - 1] : Math.min(46, 20 + 6 * n);
+    const cap = this.bigHold || this.escape ? BIG_HOLD.cap[Math.min(Math.max(n, 1), 4) - 1] : Math.min(46, 20 + 6 * n);
 
     this.decayIntensity(dt);
     if (this.holdout < 0) this.updatePhase(dt, nearCommons);
@@ -1872,7 +1970,16 @@ export class Room implements CombatHost {
       }
     }
 
-    if (this.holdout >= 0) { this.updateHoldout(dt, cap - 4 - commons, specials, brute); return; }
+    if (this.holdout >= 0) {
+      if (this.hs.big) this.hs.stat.peak = Math.max(this.hs.stat.peak, commons);
+      this.updateHoldout(dt, cap - 4 - commons, specials, brute); return;
+    }
+    // The escape after a Big Hold On: a steady trickle from every lane until everyone is aboard.
+    const esc = this.escape;
+    if (esc && esc.step === this.step) {
+      if ((esc.t -= dt) <= 0 && commons < cap) { esc.t = BIG_HOLD.escapeEvery; this.spawnAt(this.commonType(), 6, 18); }
+      return;
+    }
     // Safe rooms are a breather: no new pressure while the whole team is inside one.
     if (allSafe) return;
 
@@ -2126,6 +2233,12 @@ export class Room implements CombatHost {
     if (loner && AMBUSHER(z.type) && tgt !== loner && d > 4 && this.lonerField[zn] <= DIRECTOR.specials.lonerReach) {
       tgt = loner; d = Math.hypot(loner.x - z.x, loner.z - z.z, loner.gy - z.y); field = this.lonerField;
     } else if (tgt === loner && loner && AMBUSHER(z.type)) field = this.lonerField;
+    // A grabber sent at the gunner keeps to them while they stay on the gun.
+    if (z.gunner) {
+      const gp = this.players.get(z.gunner);
+      if (gp && gp.st === PSTATE.ALIVE && gp.mount >= 0) { if (gp !== tgt) { tgt = gp; d = Math.hypot(gp.x - z.x, gp.z - z.z, gp.gy - z.y); field = this.flow; } }
+      else z.gunner = 0;
+    }
     const pk = this.pick;
     pk.tgt = tgt; pk.d = d; pk.field = field;
     return pk;
@@ -2491,7 +2604,7 @@ export class Room implements CombatHost {
   private cullStragglers(zs: Zombie[]): void {
     const C = DIRECTOR.cull, stand = this.standing(), watch = this.watchers();
     // A holdout with spawn zones places its flood further out on purpose, and the team is not moving: nothing to outrun.
-    if (!stand.length || (this.holdout >= 0 && this.hs.zone.length)) return;
+    if (!stand.length || ((this.holdout >= 0 || this.escape) && this.hs.zone.length)) return;
     const downed = watch.filter((p) => p.st === PSTATE.DOWN), g2 = C.downGuard * C.downGuard;
     let owed = 0, culled = 0;
     for (const z of zs) {
