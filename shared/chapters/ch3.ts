@@ -721,9 +721,9 @@ export function build() {
   b.label('BERTHA', 18.5, 147.6, 26, '#fff3e0', 0); b.label('No. 9 DIESEL, 1958', 30, 147.8, 11, CREAM, 0);
   b.label('REQUISITIONED: MALLOW BAY GUARD', 22, 153.7, 9, OLIVE_L, 0);
   // The Guard's gun flatcar on the spur beside her: the convoy's escort Thump Cannon, bolted down
-  // facing east down the apron (the bridge foot, the road gate and the far wharf all feed that
-  // way), with a sandbagged side to the south. Its blast can splash the team, so the lane it
-  // covers is long and clear.
+  // facing east down the apron, with a sandbagged side to the south. Bertha's crank flood comes from
+  // the east only (the step's spawn zones): down off the bridge, in at the road gate, out of the
+  // dock shed. Its blast can splash the team, so the lane it covers is long and clear.
   rail(14, 155, 46, 155);
   b.paint(27, 154, 37, 156, F.ASPHALT);
   b.prop('barrier', 27, 156, 5, 1);
@@ -1096,6 +1096,9 @@ export function build() {
   });
   b.use(ignition, {
     objective: 'Fuel up and start Bertha', horde: true, hold: 180, big: true, opens: [cabDoor],
+    // The flood: the east apron (down off the bridge, in at the road gate, out of the dock shed),
+    // all in front of the Thump Cannon; nothing from the west end behind it.
+    from: [{ x0: 56, z0: 140, x1: 130, z1: 182 }, { x0: 78, z0: 123, x1: 81, z1: 136, lv: 1 }],
     // The waypoint stands on the open apron by the valve (the valve tile itself is solid), 8 tiles
     // from the Guard's cannon on the flatcar.
     at: [27.5, 154.5],

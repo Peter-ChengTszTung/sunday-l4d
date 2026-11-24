@@ -234,6 +234,14 @@ export function validateChapter(L: Level): ChapterReport {
     const has = (def.mounts ?? []).some((m) => near[mountCell(m)] <= BIG_MOUNT_TILES);
     if (!has) errors.push(`${name(i)}: a Big Hold On needs a mounted gun (LevelBuilder.mount) within ${BIG_MOUNT_TILES} path tiles of its stand`);
   });
+  // Holdout spawn zones: only on holdouts, and each must hold floor the flood can walk to the stand from.
+  def.steps.forEach((s, i) => {
+    if (!s.from) return;
+    if (!s.hold && s.kind !== 'holdout') { errors.push(`${name(i)}: from is only for holdouts`); return; }
+    const open = L.doorsAfter(i), stand = s.kind === 'use' ? useCells(s.at.x, s.at.z, s.at.y ?? 0).filter((c) => !L.blocked(c, open)) : [cell(s.at)];
+    const d = L.distanceField(stand, open);
+    s.from.forEach((r, k) => { if (!rectNodes(r, open).some((c) => d[c] < INF)) errors.push(`${name(i)}: spawn zone ${k + 1} (${r.x0},${r.z0}-${r.x1},${r.z1}) has no floor that reaches the stand`); });
+  });
   if (!def.steps.some((s) => s.big)) warnings.push('no Big Hold On step (big: true) in this chapter');
 
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));

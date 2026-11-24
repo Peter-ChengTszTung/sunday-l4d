@@ -463,11 +463,10 @@ export function build() {
   // ------------------------------------------------------------------
   // 13. Depot yard and maintenance bay (finale: the Big Hold On), Shuttle No. 4
   // ------------------------------------------------------------------
-  // One open bay from the fence to the back wall, so a flood has room to come at the team from every
-  // side. Four ways in once the gate switch is thrown: the depot gate (north, from Depot Square), the
-  // freight spur tunnel (north-east, from Mallow Junction), the bay roller door (west, from the east
-  // lane) and the bus wash (south-west, from the east lane). The Guard's Popcorn Gatling sits on its
-  // sandbags just north of the ignition, facing the gate; the west and south-west are for the guns.
+  // One open bay from the fence to the back wall. During the Big Hold On the flood comes one way only:
+  // out of Depot Square through the depot gate (north), straight down the barrel of the Guard's Popcorn
+  // Gatling on its sandbags north of the ignition. The freight spur tunnel (north-east), the bay roller
+  // door (west) and the bus wash (south-west) stay shut until the shuttle starts.
   b.carve(62, 74, 98, 92, F.CONCRETE);
   // Shuttle No. 4: a walk-in body in the middle of the bay, ignition at the driver's end.
   b.fill(70, 84, 84, 88); b.walls(70, 84, 84, 88, WALL.BUILDING, 3.2);
@@ -855,15 +854,17 @@ export function build() {
     ],
   });
   b.use(gateSwitch, {
-    objective: 'Open the depot gate', opens: [depotGate, bayDoor, busWash, spurGate],
+    objective: 'Open the depot gate', opens: [depotGate],
     radio: [
       ['Dot', 'Gate switch is in Gerald\'s booth. Sorry, Gerald.'],
       ['Taro', 'Gerald and I shared a thermos most nights. Sleep well, big fella.'],
-      ['Dot', 'That switch opens every door in the yard. The shuttle will want a clear road.'],
+      ['Dot', 'The rest of the yard is locked tight. Anything that wants you comes through that gate.'],
     ],
   });
   b.use(ignition, {
-    objective: 'Start the hospital shuttle', horde: true, hold: 180, big: true, opens: [shuttleDoor], at: [85.5, 86.5],
+    objective: 'Start the hospital shuttle', horde: true, hold: 180, big: true, opens: [shuttleDoor, bayDoor, busWash, spurGate], at: [85.5, 86.5],
+    // The siren pulls the town into Depot Square, and from there through the gate, in front of the Gatling.
+    from: [{ x0: 62, z0: 58, x1: 98, z1: 72 }],
     radio: [
       ['Dot', 'Shuttle No. 4\'s battery is moody. Crank her and keep her company. Three minutes.'],
       ['Dot', 'And the Guard wired their evac siren to that bay. Every sleeper in town will come.'],

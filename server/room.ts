@@ -57,7 +57,7 @@ export class Room implements CombatHost {
    * length, current stage index, seconds to the next final-stage special refill, and a Brute the
    * current stage still owes (retried every second until one fits).
    */
-  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false };
+  private hs = { stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false, zone: [] as number[] };
   private collected = 0;
   private checkpoint: Checkpoint | null = null;
   private taken = new Set<number>();
@@ -1134,6 +1134,19 @@ export class Room implements CombatHost {
    * the perch; the usual rule when no such cell is hidden.
    */
   private trySpawnCell(minD: number, maxD: number, side: Side, field = this.flow): number | null {
+    if (this.holdout >= 0 && field === this.flow && this.hs.zone.length) {
+      // A holdout with spawn zones: only there (however far), unless nowhere in them is hidden and walkable.
+      // The nearest of a few hidden cells, so a deep zone still feeds the fight from its near edge.
+      const zone = this.hs.zone, players = this.standing();
+      let best = -1, found = 0;
+      for (let tries = 0; tries < 60 && found < 4; tries++) {
+        const c = zone[(Math.random() * zone.length) | 0], d = field[c];
+        if (d < minD || d >= INF || (best >= 0 && d >= field[best])) continue;
+        const o = this.L.centre(c);
+        if (this.hidden(o.x, o.y, o.z, players, MIN_SPAWN_DIST)) { best = c; found++; }
+      }
+      if (best >= 0) return best;
+    }
     if (this.holdout >= 0 && field === this.flow) {
       const lv = this.perchLevel();
       if (lv > 0) {
@@ -1572,11 +1585,21 @@ export class Room implements CombatHost {
     const ends = stages.map((g) => (acc += g.secs) * HOLD_SCALE);
     ends[ends.length - 1] = Infinity; // the last stage runs until the timer does, whatever the script adds up to
     this.holdout = hold * HOLD_SCALE;
-    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: !!s.big };
+    this.hs = { stages, ends, total: this.holdout, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: !!s.big, zone: this.zoneCells(s) };
     // Lurking specials from before join the fight now; from here on only the holdout's pushes hold.
     this.releaseAmbush('holdout');
     if (DIRECTOR_DEBUG) console.log(`[director ${this.code}] t=${this.time.toFixed(1)} holdout ${hold}s x${HOLD_SCALE}: ${stages.map((g) => `${g.kind} ${g.secs}`).join(' | ')}`);
     this.enterStage(0, s.horde);
+  }
+
+  /** Spawnable nodes inside step `s`'s holdout spawn zones (Step.from); empty: no zones. */
+  private zoneCells(s: Step): number[] {
+    if (!s.from?.length) return [];
+    const L = this.L;
+    return this.cd.open.filter((c) => {
+      const x = L.nodeX(c), z = L.nodeZ(c), lv = L.lvOf(c);
+      return s.from!.some((r) => (r.lv ?? 0) === lv && x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+    });
   }
 
   /** Begin holdout stage `i`. `opening`: the first stage, whose horde is the step's `horde` flag. */
@@ -2462,7 +2485,8 @@ export class Room implements CombatHost {
    */
   private cullStragglers(zs: Zombie[]): void {
     const C = DIRECTOR.cull, stand = this.standing(), watch = this.watchers();
-    if (!stand.length) return;
+    // A holdout with spawn zones places its flood further out on purpose, and the team is not moving: nothing to outrun.
+    if (!stand.length || (this.holdout >= 0 && this.hs.zone.length)) return;
     const downed = watch.filter((p) => p.st === PSTATE.DOWN), g2 = C.downGuard * C.downGuard;
     let owed = 0, culled = 0;
     for (const z of zs) {

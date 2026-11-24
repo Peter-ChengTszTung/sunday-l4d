@@ -424,9 +424,9 @@ export function build() {
   // Freight lift (end safe room) behind its gate.
   b.carve(156, 84, 163, 92, F.SAFE);
   const liftButton = b.obj('terminal', 154, 85, 'Call the freight lift');
-  // The Fizzbang Pod faces the truck bays, where most of the flood comes in; the gunner can swing
-  // 80 degrees either way, from the compactor round to the cold storage. Behind it, the food-court
-  // corridor, the returns nook and the catwalk ladders are for the rest of the team to hold.
+  // The Fizzbang Pod faces the truck bays. The lift's chime draws the flood out of the truck yard and
+  // in through the four bays (the step's spawn zone), all inside the 80 degrees either way the gunner
+  // can swing; the corridors, returns nook and catwalk behind it stay quiet.
   b.mount('rockets', 151, 89, '+z');
   const liftGate = b.door(155, 86, 155, 89, 'fence', 'FREIGHT LIFT');
   b.label('FREIGHT LIFT', 160, 87, 18, GOLD); b.label('TO SERVICE TUNNEL', 160, 89.5, 11, CREAM);
@@ -1132,6 +1132,7 @@ export function build() {
   b.use(liftButton, {
     // The stand is the open tile beside the button (the button itself is solid), by the rocket pod.
     objective: 'Call the freight lift', horde: true, hold: 180, big: true, opens: [liftGate], at: [153.5, 86.5],
+    from: [{ x0: 104, z0: 99, x1: 163, z1: 106 }],                     // the truck yard: in through the bays
     radio: [
       ['Dot', 'That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.'],
       ['Pip', 'Dibs on the rocket pod!'],

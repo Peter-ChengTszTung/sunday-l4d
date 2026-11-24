@@ -171,7 +171,7 @@ export default {
   "That door comes out on Depot Square. On the right side of the Guard's fence.": "那扇門通到總站廣場，而且是在國民兵圍欄的這一邊。",
   "Last leg, then. For real this time.": "那就是最後一段了。這次是真的。",
   "Last drop of the night!": "今晚最後一單！",
-  "That switch opens every door in the yard. The shuttle will want a clear road.": "那個開關會打開車場裡的每一扇門。接駁車要一條暢通的路。",
+  "The rest of the yard is locked tight. Anything that wants you comes through that gate.": "車場其他地方都鎖得死死的。想找你們的東西，全都得從那道閘門進來。",
   "Shuttle No. 4's battery is moody. Crank her and keep her company. Three minutes.": "四號接駁車的電池脾氣不好。發動她，再陪她一會兒。三分鐘。",
   "And the Guard wired their evac siren to that bay. Every sleeper in town will come.": "還有，國民兵把撤離警報接到那個維修區了。全城的夢遊者都會跑過來。",
   "There's a Guard gun on those sandbags. Popcorn Gatling. I named it. It's named.": "沙包上有一挺國民兵的槍。爆米花加特林。我取的名字。就這麼定了。",

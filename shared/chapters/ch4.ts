@@ -948,9 +948,9 @@ export function build() {
   // ------------------------------------------------------------------
   // 14. The old bridge: the army checkpoint plaza, THE BIG HOLD ON. The soldiers left their guns on
   //     the sandbags: a Popcorn Gatling and a Thump Cannon in the nest by the boom control, a
-  //     Fizzbang Pod on the watchtower roof (storey 1). The horde comes four ways: Bridge Park and
-  //     the weir landing (north), the diner road (west), the motor pool (south-east). Cover is
-  //     trucks and low sandbags: imperfect on purpose, and every approach is walkable both ways.
+  //     Fizzbang Pod on the watchtower roof (storey 1). The horde comes two ways (the step's spawn
+  //     zones): out of Bridge Park (north: the Pod and the Cannon) and up the diner road (west: the
+  //     Gatling). The post and the motor pool behind stay quiet. Cover is trucks and low sandbags.
   // ------------------------------------------------------------------
   b.carve(133, 164, 158, 178, F.ASPHALT);
   b.paint(133, 177, 158, 178, F.SIDEWALK);
@@ -972,7 +972,7 @@ export function build() {
   b.prop('barrel', 157, 176);
   const boomLever = b.obj('lever', 153, 164, 'Raise the army boom gate');   // the control box at the foot of the bridge ramp
   b.mount('minigun', 147, 168, '-x');                                         // Popcorn Gatling: the plaza and the diner road
-  b.mount('cannon', 151, 171, '+z');                                          // Thump Cannon: the south plaza and the motor pool
+  b.mount('cannon', 151, 171, '-z');                                          // Thump Cannon: Bridge Park and the boom gate
   b.pick('ammo', 149, 166); b.pick('ammo', 150, 166); b.pick('ammo', 136, 172); b.pick('ammo', 136, 173); b.pick('ammo', 154, 176);
   b.pick('medkit', 141, 174); b.pick('medkit', 152, 169); b.pick('rifle', 137, 170); b.pick('autoshotgun', 136, 170); b.pick('launcher', 144, 172);
   b.pick('rattle', 143, 167); b.pick('firebomb', 154, 170);      // for the Big Hold On
@@ -1161,6 +1161,8 @@ export function build() {
   });
   b.use(boomLever, {
     objective: 'Raise the bridge boom gate', horde: true, hold: 180, big: true, at: [149.5, 169.5], opens: [boomGate, busDoor],
+    // Two ways in: Bridge Park (north) and the diner road (west), where the guns face.
+    from: [{ x0: 134, z0: 150, x1: 158, z1: 162 }, { x0: 84, z0: 164, x1: 118, z1: 192 }],
     radio: [
       ['Dot', 'I can see you! Get that boom gate up and get on my bus!'],
       ['Wren', 'The far bank\'s out of range. They\'re still coming. Hold them!'],
@@ -1170,7 +1172,7 @@ export function build() {
       { kind: 'wave', secs: 36, msg: 'Here they come! Man the guns!' },
       { kind: 'breather', secs: 8 },
       { kind: 'specials', secs: 26 },
-      { kind: 'wave', secs: 34, flank: true, msg: 'Second wave! Watch every side!' },
+      { kind: 'wave', secs: 34, flank: true, msg: 'Second wave! Watch the park and the road!' },
       { kind: 'breather', secs: 6 },
       { kind: 'brute', secs: 26, msg: 'A Brute! Swing the cannon round!' },
       { kind: 'final', secs: 44, msg: 'The boom gate\'s nearly up! Hold on!' },

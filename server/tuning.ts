@@ -226,9 +226,10 @@ export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline:
  * A Big Hold On (a step with `big: true`, shared/level.ts): stage hordes x `horde`, the trickle every
  * `trickle` x as often and `clump` walkers at a time, room for `cap[n - 1]` commons at once (n
  * survivors; normally min(46, 20 + 6n)), queued hordes drain one walker every `drain` s (normally
- * 0.22), and `specials` more specials alive at once.
+ * 0.22), and `specials` more specials alive at once. Tuned to 95% of the first cut (horde, cap, trickle)
+ * after three-player playtests kept falling in the last 20-30 s.
  */
-export const BIG_HOLD = { horde: 2.4, trickle: 0.45, clump: [2, 4] as const, cap: [60, 75, 95, 110] as const, drain: 0.08, specials: 1 };
+export const BIG_HOLD = { horde: 2.28, trickle: 0.47, clump: [2, 4] as const, cap: [57, 71, 90, 105] as const, drain: 0.08, specials: 1 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 export const BRUTE_HP_PER = 1100;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */

@@ -203,7 +203,7 @@ export default {
   "And left their big guns on the sandbags. Somebody hoped we'd come.": "還把大傢伙留在沙包上。有人盼著我們會來。",
   "Turret section! Gatling, cannon, rocket pod. Best level ever!": "砲台關卡！機槍、大砲、火箭莢艙。史上最棒的一關！",
   "Here they come! Man the guns!": "他們來了！快上砲座！",
-  "Second wave! Watch every side!": "第二波！每個方向都盯緊！",
+  "Second wave! Watch the park and the road!": "第二波！盯緊公園和那條路！",
   "A Brute! Swing the cannon round!": "巨漢來了！把大砲轉過去！",
   "The boom gate's nearly up! Hold on!": "柵欄快升起來了！撐住！",
   "Foreman's chalkboard": "工頭的黑板",
