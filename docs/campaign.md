@@ -486,7 +486,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** opens: Security's east fire shutter (to Plumley's)
 
 **2.13 · `reach` · Round the back**
-- **Where:** The police have barricaded the dock corridor from the inside, so the team goes round. A staff corridor under Bun Bun Toys leads into Plumley's, the Galleria's old department store. Its ground floor is two halls split by a perfume wall: east through the cosmetics and perfume counters (tight, shotgun range), round the end of the wall, back west through shoes and handbags (a fitting-room pocket with armour) to the escalator up.
+- **Where:** The police have barricaded the dock corridor from the inside, so the team goes round. A staff corridor under Bun Bun Toys leads into Plumley's, the Galleria's old department store. Its ground floor is two halls split by a perfume wall: south-east through the cosmetics and perfume counters (tight, shotgun range), through a smashed mirror panel in the wall, then west through shoes and handbags (a fitting-room pocket with armour) to the escalator up. The far east end, round the end of the wall, is optional (a Snoozle display tower and a shotgun).
 - **HUD:** `Go round through Plumley's`
 - **Radio:**
   - Dot: "Lights are on! Oh. Sweet peas, the police barricaded the dock. It's an evacuation point."
@@ -496,7 +496,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** none
 
 **2.14 · `reach` · Home & Bedding**
-- **Where:** Plumley's first floor (storey 1): north past rows of neatly made show beds (Bed 4 is where Bob from Bedding dozed off), east along linens and pillows, south through Dreamwell's "Sweet Dreams Night Sale" corner of Hush displays and nap pods, then the escalator up to the Galleria Cineplex lobby (storey 2).
+- **Where:** Plumley's first floor (storey 1): north-east between rows of neatly made show beds (Bed 4 is where Bob from Bedding dozed off), through a gap halfway down the display wall (linens and pillows along the top are a side loop), south through Dreamwell's "Sweet Dreams Night Sale" corner of Hush displays and nap pods, then the escalator up to the Galleria Cineplex lobby (storey 2).
 - **HUD:** `Head up to the Cineplex`
 - **Radio:**
   - Pip: "A whole floor of beds. Nobody touch the beds. This is SO a trap."
@@ -514,7 +514,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** none
 
 **2.16 · `reach` · Down the car park**
-- **Where:** Galleria Parking, three decks. The open roof (storey 2) has long sightlines (a rifle by the footbridge) and one of Dreamwell's "Sweet Dreams Night" fog trailers, empty. The ramps sit at alternate corners, so each deck is crossed corner to corner: roof north-east to south-west, level 1 (dark, St. Marigold's ambulances jammed nose to tail in the evacuation queue) back to the north-east, down to the ground deck.
+- **Where:** Galleria Parking, three decks. The open roof (storey 2) has long sightlines (a rifle by the footbridge) and one of Dreamwell's "Sweet Dreams Night" fog trailers, empty. The roof is crossed corner to corner, north-east to south-west. Level 1 (dark, St. Marigold's ambulances jammed nose to tail in the evacuation queue up the deck) is crossed along its south side to the ramp down in the south-east corner, onto the ground deck.
 - **HUD:** `Get down through the car park`
 - **Radio:**
   - Pip: "Is that a FOG MACHINE? On the roof? Who puts a fog machine on a roof?"
@@ -523,7 +523,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** opens: parking office door
 
 **2.17 · `gather` · Checkpoint safe room**
-- **Where:** Across the ground deck to the parking office in its south-west corner, which the police used as their desk. Its back door is the yard gate.
+- **Where:** Back west along the ground deck's south side to the parking office in its south-west corner, which the police used as their desk. Its back door is the yard gate.
 - **HUD:** `Hole up in the parking office`
 - **Radio:**
   - Dot: "Parking office, ground floor, south-west corner. Get in and get that door shut."

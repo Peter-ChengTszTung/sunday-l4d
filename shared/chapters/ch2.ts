@@ -18,8 +18,8 @@
 //       | south wing: ER, waiting room,   | ~      ~ | FOOD COURT     |                        F   footbridge (storey 2)
 //       | lobby, gift, pharmacy (G only;  | ~      ~ | (Brute)        | +----------------------F+
 //    65 | roofs on storey 1)              |          +--kitchens------+ | GALLERIA PARKING:      |  three decks (0, 1, roof 2),
-//       | AMBULANCE BAY (triage start)    |   cold storage | LOADING DOCK | ramps NE and SW, the   |  ramps at alternate corners
-//       |                                 |   EVACUATION POINT (finale)  | parking office (safe   |
+//       | AMBULANCE BAY (triage start)    |   cold storage | LOADING DOCK | ramps SW and SE, the   |  roof crossed corner to corner,
+//       |                                 |   EVACUATION POINT (finale)  | parking office (safe   |  then along the south side
 //   107 +---------------------------------+          | truck yard  <====gate=office) at the SW  |
 //
 // Route (storey in brackets): triage [0] → ER → waiting room → main lobby → two staff keycards (the
@@ -462,8 +462,9 @@ export function build() {
   // 9b. Staff corridor and Plumley's ground floor: Cosmetics & Perfume, Shoes & Handbags
   // ------------------------------------------------------------------
   // Plumley's is the Galleria's old department store (x 165-203). Its ground floor is two halls split
-  // by the perfume wall: in at the north-west, east through the perfume counters (tight, shotgun range),
-  // round the end of the wall, back west through shoes to the escalator up by the west wall.
+  // by the perfume wall: in at the north-west, south-east through the perfume counters (tight, shotgun
+  // range), through the mirror panel the sleepers walked into, then west through shoes to the
+  // escalator up by the west wall. The far east (the Snoozle tower, round the wall's end) is optional.
   b.carve(152, 15, 166, 16, F.INTERIOR);
   b.pick('ammo', 158, 16);
   b.label('STAFF CORRIDOR', 159, 15.5, 9, CREAM, E);
@@ -472,6 +473,8 @@ export function build() {
   b.carve(167, 4, 202, 48, F.INTERIOR);
   b.paint(167, 27, 202, 48, F.WOOD);
   b.fill(167, 26, 196, 26);                                               // the perfume wall
+  b.carve(181, 26, 183, 26, F.INTERIOR);                                  // its smashed mirror panel
+  b.label('MIND THE GLASS', 182, 24.6, 8, CREAM, S); b.lamp(182, 25);
   // Perfume and cosmetics islands, with pastel bottle displays.
   for (const x of [171, 178, 185, 192]) for (const z of [7, 12, 20]) b.prop('counter', x, z, 3, 2, { color: x % 2 ? 0xffd0e0 : 0xfff1c9 });
   for (const [x, z] of [[175, 5], [189, 16], [182, 23], [196, 9], [169, 22]]) b.prop('barrel', x, z, 1, 1, { color: pastel() });
@@ -480,8 +483,8 @@ export function build() {
   b.label("PLUMLEY'S", 184, 16.5, 30, PINK, E); b.label('COSMETICS & PERFUME', 184, 10, 12, LEMON, E);
   b.label('SNOOZLE SAYS: SMELL DREAMY', 199.5, 9.4, 8, PINK, S);
   for (const [x, z] of [[171, 16], [181, 10], [188, 18], [196, 12], [200, 22]]) b.lamp(x, z);
-  b.arrow(170, 15.5, E); b.arrow(190, 16.5, E); b.arrow(199.5, 20, S); b.arrow(199.5, 30, S);
-  zz(182, 17, E); zz(199, 25, S);
+  b.arrow(170, 15.5, E); b.arrow(176, 17, E); b.arrow(182, 23, S);
+  zz(182, 17, S); zz(199, 25, S);
   // Shoes and handbags: shoe walls and fitting benches, a fitting-room pocket on the south wall.
   for (const x of [173, 179, 185, 191]) b.prop('shelf', x, 30, 1, 7, { color: 0xe8dcff });
   for (const x of [176, 188]) b.prop('bench', x, 40, 3, 1);
@@ -499,34 +502,34 @@ export function build() {
   b.note(171, 47, 'Customer service board', 'SWEET DREAMS NIGHT LATE OPENING till 3 a.m.! Free Hush Pillow Mist with every pillow, courtesy of Dreamwell. [pen:] Bob from Bedding dozed off on Bed 4 at 2:50.');
   b.pick('medkit', 170, 47); b.pick('ammo', 169, 44);
   for (const [x, z] of [[199, 31], [190, 36], [180, 41], [169, 45], [191, 46]]) b.lamp(x, z);
-  b.arrow(193, 34, WEST); b.arrow(181, 42.5, WEST); b.arrow(167.5, 44, N);
+  b.arrow(182, 30, S); b.arrow(178, 42.5, WEST); b.arrow(167.5, 44, N);
 
   // ------------------------------------------------------------------
   // 9c. Galleria Parking, ground deck, and the parking office (checkpoint)
   // ------------------------------------------------------------------
   // Three decks (x 166-224, z 54-106): ground, level 1 and the open roof (storey 2). The team comes
-  // down from the roof: the ramps sit at alternate corners (roof SW → level 1, level 1 NE → ground),
-  // so every deck is crossed corner to corner. St. Marigold's ambulances queued nose to tail all the
+  // down from the roof: the roof is crossed corner to corner (NE footbridge → SW ramp), level 1 along
+  // its south side (SW → the SE ramp), and the ground deck back west to the office. St. Marigold's ambulances queued nose to tail all the
   // way up for the evacuation point. Enclosed and dim below the roof: flashlight decks, mid sightlines.
   b.walls(166, 54, 224, 106, WALL.BUILDING, TERRACE);
   b.walls(165, 51, 224, 53, WALL.FENCE, 2.5);                             // the service lane under the footbridge
   b.carve(167, 55, 223, 105, F.CONCRETE);
   const pillars = () => { for (const x of [176, 186, 196, 206]) for (const z of [64, 74, 84, 94]) b.prop('pillar', x, z, 1, 1, { color: 0x9aa6b0 }); };
   pillars();
-  // The ramp up from the ground deck to level 1 (north-east corner; it rises south).
-  b.fill(219, 58, 219, 63);
-  b.stairs(220, 58, 223, 63, '+z');
-  b.label('GROUND: PARKING OFFICE', 216.5, 57, 9, GOLD, WEST);
+  // The ramp up from the ground deck to level 1 (south-east corner; it rises north).
+  b.fill(219, 98, 219, 103);
+  b.stairs(220, 98, 223, 103, '-z');
+  b.label('GROUND: PARKING OFFICE', 216.5, 104.6, 9, GOLD, WEST);
   // Ground deck: ambulances, a police car, rows of parked cars.
   for (const [x, z, c] of [[210, 70, 0xf4f4f4], [200, 78, 0xf4f4f4], [190, 86, 0xff6b6b], [214, 88, 0x3a5fd0]] as const) b.prop('van', x, z, 3, 1, { color: c });
   for (const x of [170, 173, 180, 183, 190, 199, 202, 209, 212]) b.prop('car', x, 56, 1, 2, { color: PASTEL[x % 5] });
   for (const x of [179, 182, 192, 195, 201, 211]) b.prop('car', x, 103, 1, 2, { color: PASTEL[(x + 2) % 5] });
   for (const [x, z] of [[181, 69], [193, 69], [181, 79], [212, 79], [188, 97], [200, 97]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
-  b.prop('terminal', 178, 95); b.prop('barrier', 177, 92, 1, 3);           // pay machine, queue rail
+  b.prop('terminal', 178, 89); b.prop('barrier', 177, 86, 1, 3);           // pay machine, queue rail
   b.pick('ammo', 222, 75); b.pick('medkit', 205, 104); b.pick('ammo', 187, 104);
   b.label('LEVEL G', 205, 66, 22, CREAM, WEST); b.label('EVAC QUEUE', 196, 82, 12, RED, WEST);
   for (const [x, z] of [[214, 67], [200, 72], [186, 80], [176, 90]]) b.lamp(x, z);
-  b.arrow(216, 60, WEST); b.arrow(200, 75, WEST); b.arrow(184, 88, S); b.arrow(171.5, 92, S);
+  b.arrow(216, 101, WEST); b.arrow(198, 100.5, WEST); b.arrow(180, 95, WEST);
   // The parking office (checkpoint safe room), south-west corner: in from the deck, out to the truck yard.
   b.fill(167, 96, 176, 96); b.fill(176, 97, 176, 105);
   b.carve(167, 97, 175, 105, F.SAFE);
@@ -711,12 +714,14 @@ export function build() {
   // ------------------------------------------------------------------
   // 13b. Plumley's first floor: Home & Bedding and the Sweet Dreams Night sale
   // ------------------------------------------------------------------
-  // Arrive at the south-west; north up the beds, east along the linens at the top of the display
-  // wall, south through Dreamwell's sale corner to the escalator up to the Cineplex.
+  // Arrive at the south-west; north-east between the show beds, through the gap in the display wall,
+  // south through Dreamwell's sale corner to the escalator up to the Cineplex. The linens along the
+  // top (round the wall's north end) are a side loop.
   wallUp(165, 2, 203, 50, ROOF);
   b.carve(167, 4, 202, 48, F.INTERIOR);
   b.paint(167, 4, 202, 11, F.WOOD);
   b.fill(184, 12, 185, 48);                                               // the display wall
+  b.carve(184, 27, 185, 29, F.INTERIOR);                                  // a gap halfway down it
   // Show beds: every one neatly made, one dented where Bob lay down.
   for (const x of [170, 175, 180]) for (const z of [15, 23, 31]) b.prop('bed', x, z, 2, 3, { color: pastel() });
   b.label('BED 4', 176, 22.4, 9, CREAM, N);
@@ -738,13 +743,15 @@ export function build() {
   b.stairs(201, 40, 202, 42, '-z', F.TILES);
   b.label('ESCALATOR UP: CINEPLEX', 201.5, 45, 7, GOLD, S);
   for (const [x, z] of [[168, 36], [168, 20], [176, 8], [192, 8], [194, 20], [197, 32], [201, 45]]) b.lamp(x, z);
-  b.arrow(168, 35, N); b.arrow(168, 18, N); b.arrow(178, 9, E); b.arrow(193, 9, E); b.arrow(198, 14, S); b.arrow(198, 30, S); b.arrow(201.5, 44, N);
+  b.arrow(170, 35, N); b.arrow(177, 28.5, E); b.arrow(188, 28.5, E); b.arrow(198, 32, S); b.arrow(201.5, 44, N);
+  b.lamp(184.5, 26);
 
   // ------------------------------------------------------------------
   // 13c. Galleria Parking, level 1
   // ------------------------------------------------------------------
-  // Down from the roof at the south-west, across to the ramp down in the north-east. The evacuation
-  // queue jammed here: ambulances nose to tail and a crash at the turn. Dark: flashlight deck.
+  // Down from the roof at the south-west, east along the south side to the ramp down in the south-east.
+  // The evacuation queue jammed here: ambulances nose to tail up the deck and a crash at the turn,
+  // up in the north-east. Dark: flashlight deck.
   b.carve(167, 55, 223, 105, F.CONCRETE);
   pillars();
   b.fill(171, 96, 171, 101);
@@ -757,8 +764,8 @@ export function build() {
   b.pick('ammo', 172, 104); b.pick('medkit', 222, 72); b.pick('ammo', 216, 56);
   b.label('LEVEL 1', 190, 100, 22, CREAM, E); b.label('EVAC QUEUE: KEEP LEFT', 196, 90, 10, RED, E);
   for (const [x, z] of [[180, 103], [200, 92], [218, 76]]) b.lamp(x, z);
-  b.arrow(175, 103, E); b.arrow(196, 96, E); b.arrow(214, 86, N); b.arrow(221.5, 68, N);
-  b.label('RAMP DOWN: GROUND', 221.5, 66, 9, GOLD, S);
+  b.arrow(175, 102, E); b.arrow(194, 98, E); b.arrow(212, 97, E); b.arrow(221.5, 96.5, S);
+  b.label('RAMP DOWN: GROUND', 221.5, 95, 9, GOLD, N); b.lamp(219, 96);
 
   // ==================================================================
   // STOREY 2: 3F Sleep Clinic, the skybridge terrace, skybridge, Galleria upper concourse
@@ -1142,7 +1149,7 @@ export function build() {
       ['Nori', 'Fire exit\'s past the screen. Flashlights on, and step quietly.'],
     ],
   });
-  b.reach({ x0: 208, z0: 55, x1: 223, z1: 66 }, {
+  b.reach({ x0: 206, z0: 96, x1: 223, z1: 105 }, {
     objective: 'Get down through the car park', opens: [officeEntry],
     radio: [
       ['Pip', 'Is that a FOG MACHINE? On the roof? Who puts a fog machine on a roof?'],
