@@ -206,6 +206,19 @@ export function hash2(x: number, z: number): number {
 }
 
 const PROP_OPAQUE: Partial<Record<PropType, boolean>> = { barrier: false, bench: false, bush: false, pallet: false, valve: false, lever: false };
+/**
+ * How high an opaque prop stops shots and sight (metres above its floor): its drawn height in
+ * client/src/world.ts drawProp, so you can shoot over a bed or a counter but not through a bus.
+ * Keep the two in step. Trees and pines block to the top of their foliage, a crate to the top of the
+ * smaller crate stacked on it; tanks are worked out in propTop. Thin details stay see-through (a desk's
+ * monitor, a fountain's centre column, a beacon's pole). The barrel sits a hair above EYE (1.2), so
+ * eye-to-eye sight over it isn't a knife edge between client and server.
+ */
+const PROP_TOP: Partial<Record<PropType, number>> = {
+  car: 1.62, van: 1.75, bus: 2.8, truck: 3.1, container: 2.62, dumpster: 1.96, crate: 3.2, barrel: 1.25,
+  tree: 4.9, pine: 4.85, rock: 1.55, fountain: 0.6, shelf: 2.25, desk: 0.8, bed: 0.85, counter: 1.14, pillar: CEIL_H,
+  gen: 1.4, radio: 1.5, terminal: 1.93, battery: 1.1, beacon: 0.6,
+};
 
 export const DEFAULT_THEME: Theme = {
   sky: [0xfc9ea3, 0x8f61bd, 0x2b2661], fog: 0x7a4f8e, fogNear: 24, fogFar: 105,
@@ -1015,9 +1028,37 @@ export class Level {
       }
     }
   }
+  /** How high an opaque prop stops shots and sight, metres above its floor (its drawn height: client/src/world.ts drawProp). */
+  private propTop(p: Prop): number {
+    if (p.type !== 'tank') return PROP_TOP[p.type] ?? 2.4;
+    const wid = Math.min(p.w, p.d) * TILE;
+    if (p.w !== p.d) { const R = Math.min(wid / 2 - 0.15, 1.3); return 0.75 + 2 * R + 0.15; } // a tanker car
+    // An upright tank stops under a ceiling (an indoor floor, or a storey built over it), dome included.
+    const lv = p.lv ?? 0, def = this.def, R = wid / 2 - 0.2;
+    let covered = false;
+    for (let z = p.z; z < p.z + p.d && !covered; z++) for (let x = p.x; x < p.x + p.w && !covered; x++) {
+      if (!this.inBounds(x, z)) continue;
+      const n = this.node(x, z, lv);
+      if (def.floor[n] === F.NONE) continue;
+      covered = isIndoor(def.floor[n]) || (lv + 1 < this.levels && !def.air[n + this.WH]);
+    }
+    const h = covered ? Math.min(9, 2 + wid, CEIL_H - 0.15 - R * 0.3) : Math.min(9, 2 + wid);
+    return h + R * 0.3;
+  }
   private buildColumns(): void {
     const { H, WH, levels, def } = this;
     const slab = (n: number) => def.floor[n] !== F.NONE; // an upper-storey floor (holes and air have none)
+    // How high each prop node stops shots (metres above its floor; the tallest prop on it).
+    const propTop = new Float32Array(this.N);
+    for (const p of def.props) {
+      if (PROP_OPAQUE[p.type] === false) continue; // see-through: stops nothing
+      const h = this.propTop(p), lv = p.lv ?? 0;
+      for (let z = p.z; z < p.z + p.d; z++) for (let x = p.x; x < p.x + p.w; x++) {
+        if (!this.inBounds(x, z)) continue;
+        const n = this.node(x, z, lv);
+        propTop[n] = Math.max(propTop[n], h);
+      }
+    }
     for (let c = 0; c < WH; c++) {
       const o = c * MAXI * 2;
       let m = 0;
@@ -1030,18 +1071,32 @@ export class Level {
         if (wall && (k === 0 || def.wallH[n] > 0)) {
           // A wall stack: up to the floor above it if one was carved there, else as tall as the sky.
           // Walls stacked on top (auto or authored) are part of the same stack.
-          let top = INF_Y, stackTop = def.wallH[n];
-          for (let j = k + 1; j < levels; j++) {
+          let top = INF_Y, stackTop = def.wallH[n], j = k + 1;
+          for (; j < levels; j++) {
             const u = j * WH + c;
             if (def.floor[u] === F.NONE && !def.air[u]) { stackTop = Math.max(stackTop, def.wallH[u]); continue; }
             if (slab(u)) top = j * STOREY; // a roof or upper storey built on it
-            // Under open air a building-height wall stops at its own top, so you can see over a low roof
-            // from higher up; fences and hedges (under 3 m) stay sky-high as on flat maps.
-            else if (stackTop >= 3) top = stackTop;
+            // Under open air a wall stops at its drawn top (client/src/worldkit.ts storeysOf): you see and
+            // shoot over a low roof, a fence or a stair rail, from beside it or from higher up.
+            else top = Math.min(stackTop, j * STOREY);
             break;
           }
+          // A stack that runs up through the top storey stops at its drawn top too (a roof parapet), on
+          // multi-storey maps; flat maps keep sky-high walls.
+          if (j === levels && levels > 1) top = stackTop;
+          // A wall face beside an indoor floor is drawn up to that room's ceiling (client/src/arch.ts),
+          // however low the wall: from inside it is a solid room wall (Bertha's car in ch3).
+          if (top < INF_Y) {
+            const cx = c % this.W, cz = (c / this.W) | 0;
+            for (let i = k; i < Math.min(j, levels); i++) {
+              for (const [ex, ez] of NEI) {
+                const x = cx + ex, z = cz + ez;
+                if (this.inBounds(x, z) && isIndoor(def.floor[i * WH + z * this.W + x])) { top = Math.max(top, i * STOREY + CEIL_H); break; }
+              }
+            }
+          }
           add(base, top);
-        } else if (!wall && def.propCell[n] && def.opaque[n]) add(base, base + 2.4);
+        } else if (!wall && def.propCell[n] && def.opaque[n]) add(base, base + (propTop[n] || 2.4));
         // Indoor ceiling with nothing built on top: a roof at CEIL_H.
         if (isIndoor(def.floor[n]) && !def.ramp[n] && (k === levels - 1 || !slab(n + WH))) add(base + CEIL_H, base + CEIL_H + 0.3);
       }

@@ -194,13 +194,16 @@ export function onBlast(room: CombatHost, p: Player, m: Extract<ClientMsg, { t: 
 
 /**
  * Multi-storey maps: a lobbed shell or throw may arc over what the straight line clips (a roof edge,
- * up onto a roof): clear along two legs through an apex above the midpoint. Flat maps keep the
- * straight-line rule (their walls are sky-high anyway).
+ * up onto a roof, a counter or a fence just short of where it lands): clear along two legs through an
+ * apex above the midpoint, or (a real arc drops steeply at the end) on along the apex height and
+ * straight down onto the landing. Flat maps keep the straight-line rule (their walls are sky-high anyway).
  */
 function lobClear(room: CombatHost, ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
   if (room.L.levels === 1) return false;
+  const L = room.L, o = room.doors;
   const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = Math.max(ay, by) + Math.min(6, 0.3 * Math.hypot(bx - ax, bz - az));
-  return room.L.hasLOS(ax, ay, az, mx, my, mz, room.doors) && room.L.hasLOS(mx, my, mz, bx, by, bz, room.doors);
+  if (!L.hasLOS(ax, ay, az, mx, my, mz, o)) return false;
+  return L.hasLOS(mx, my, mz, bx, by, bz, o) || (L.hasLOS(mx, my, mz, bx, my, bz, o) && L.hasLOS(bx, my, bz, bx, by, bz, o));
 }
 
 /** Blast `B` at (bx, by, bz): zombies in its radius and sight, a nick and a hop for survivors near the centre. */

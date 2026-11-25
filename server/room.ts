@@ -2450,8 +2450,11 @@ export class Room implements CombatHost {
     if (z.hold && this.lurk(z, target, field, dt)) return true;
     if (z.type === ZT.PUFFER && target.st === PSTATE.ALIVE && d < T.range) { this.damageZombie(z, 9999, null, false); return true; }
     z.sp -= dt;
+    // Charges and leaps need a line its body can travel, not just sight: over a counter, a bed or a low
+    // fence it would only slam into it (z.run: moveZombie's clear-line test, a few times a second).
+    const bodyLine = z.run && z.runTgt === target.id;
     if (z.type === ZT.CHARGER && target.st === PSTATE.ALIVE && !target.pinned && z.sp <= 0 && d > CHARGER.minRange && d < CHARGER.maxRange
-      && level && this.sees(c)) {
+      && level && bodyLine && this.sees(c)) {
       z.st = ZSTATE.WINDUP; z.t = CHARGER.windup; this.face(c);
       return true;
     }
@@ -2463,7 +2466,7 @@ export class Room implements CombatHost {
       // Keeps its distance: well back while the lasso recovers, just out of arm's reach otherwise.
       if (d > T.range && d < (z.sp > 0 ? SNATCHER.keepAway : SNATCHER.minRange + 1) && this.sees(c)) { this.backOff(z, 0.95, dt, field); return true; }
     }
-    if (z.type === ZT.PIGGYBACK && target.st === PSTATE.ALIVE && !target.pinned && z.leapCd <= 0 && d > PIGGY.leapMin && d < PIGGY.leapMax && level && this.sees(c)) {
+    if (z.type === ZT.PIGGYBACK && target.st === PSTATE.ALIVE && !target.pinned && z.leapCd <= 0 && d > PIGGY.leapMin && d < PIGGY.leapMax && level && bodyLine && this.sees(c)) {
       z.st = ZSTATE.WINDUP; z.t = PIGGY.windup; this.face(c);
       return true;
     }
@@ -2492,7 +2495,7 @@ export class Room implements CombatHost {
     if (z.type === ZT.DROOLER && d < DROOLER.maxRange - 6 && d >= DROOLER.keepAway && this.sees(c)) {
       z.st = ZSTATE.IDLE; this.face(c); return true; // in its comfort band: wait for the next spit
     }
-    if (z.type === ZT.LEAPER && target.st === PSTATE.ALIVE && z.leapCd <= 0 && d > 4.5 && d < 12 && level && this.sees(c)) {
+    if (z.type === ZT.LEAPER && target.st === PSTATE.ALIVE && z.leapCd <= 0 && d > 4.5 && d < 12 && level && bodyLine && this.sees(c)) {
       z.st = ZSTATE.WINDUP; z.t = 0.6; this.face(c);
       return true;
     }
