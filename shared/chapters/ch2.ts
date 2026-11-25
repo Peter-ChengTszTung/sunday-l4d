@@ -22,11 +22,11 @@
 //       |                                 |   EVACUATION POINT (finale)  | parking office (safe   |
 //   107 +---------------------------------+          | truck yard  <====gate=office) at the SW  |
 //
-// Route (storey in brackets): triage [0] → ER → waiting room → main lobby → staff areas (keycard
-// sweep) → staff elevator lobby (crescendo 1; the car arrives and faults, which unlocks the fire
-// stairs) → fire stairs up [0→1] → 2F east hall, corridor A west past the soup → west stairs up [1→2]
-// → 3F Sleep Clinic → observation room (checkpoint) → stairwell up [2→3] → helipad (no helicopter)
-// → flight down to the skybridge terrace [3→2] (crescendo 2: the horde boils up the roof-access
+// Route (storey in brackets): triage [0] → ER → waiting room → main lobby → two staff keycards (the
+// pharmacy, the nurses' station) → staff elevator lobby (crescendo 1; the car arrives and faults,
+// which unlocks the fire stairs) → fire stairs up [0→1] → 2F east hall, corridor A west to the day
+// room and the soup → day-room stairs up [1→2] into the pod ward → 3F Sleep Clinic → observation
+// room (checkpoint) → stairwell up [2→3] → helipad (no helicopter) → flight down to the skybridge terrace [3→2] (crescendo 2: the horde boils up the roof-access
 // huts and the ladders from the lobby roof) → glass skybridge over the bay inlet [2] → Galleria
 // upper concourse, ballroom → escalator down into Bun Bun Toys [2→1] → stockroom (checkpoint) →
 // mezzanine over the food court → escalator down [1→0] (Snoozle Brute) → arcade → Security
@@ -141,7 +141,7 @@ export function build() {
   b.pick('ammo', 35, 51);
 
   // ------------------------------------------------------------------
-  // 2. Emergency Room (curtained bays) and Radiology (keycard)
+  // 2. Emergency Room (curtained bays) and Radiology (side room)
   // ------------------------------------------------------------------
   b.carve(4, 30, 36, 48, F.TILES);
   for (const x of [6, 10, 14, 18, 22]) { b.prop('bed', x, 31, 1, 2, { color: GURNEY }); b.prop('counter', x + 2, 30, 1, 3, { color: 0x9fe3cf }); }
@@ -152,12 +152,12 @@ export function build() {
   b.label('EMERGENCY', 17.5, 35.5, 30, RED); b.label('ER', 31, 40, 40, MINT);
   b.lamp(10, 37); b.lamp(24, 40); b.lamp(14, 46); b.lamp(32, 45);
   b.arrow(13.5, 47, N); b.arrow(22, 42, E); b.arrow(34, 37.5, E);
-  // Radiology (keycard on the scanner console), off the ER's south wall.
+  // Radiology, off the ER's south wall: an optional side room.
   b.carve(25, 49, 27, 51, F.TILES);
   b.carve(22, 52, 31, 61, F.TILES);
   b.prop('bed', 24, 55, 3, 1, { color: 0xffffff }); b.prop('pillar', 23, 54, 1, 3, { color: 0xb8d8e8 });   // the scanner
   b.prop('counter', 28, 59, 3, 1, { color: 0x9aa6b8 }); b.prop('terminal', 31, 58);
-  b.item('keycard', 'keycard', 30, 60, 'staff keycard');
+  b.pick('medkit', 30, 60); b.pick('ammo', 29, 60);
   b.label('RADIOLOGY', 26.5, 53, 16, SKY); b.label('X-RAY: LEAD LINED', 26.5, 57.6, 11, GOLD);
   b.lamp(27, 58);
 
@@ -209,7 +209,7 @@ export function build() {
   b.arrow(89, 51, S);
 
   // ------------------------------------------------------------------
-  // 5. Staff corridor and staff rooms (keycard sweep), under the wards
+  // 5. Staff corridor and staff rooms (one of the two keycards), under the wards
   // ------------------------------------------------------------------
   b.carve(4, 16, 79, 19, F.TILES);
   b.label('STAFF ONLY', 40, 17.5, 22, RED);
@@ -225,12 +225,11 @@ export function build() {
   b.prop('shelf', 4, 5, 1, 8); b.prop('shelf', 7, 5, 6, 1); b.prop('shelf', 14, 5, 1, 6);
   b.pick('medkit', 6, 9); b.pick('medkit', 12, 12);
   b.label('SUPPLIES', 9, 11, 14, MINT);
-  // On-call room (keycard under a pillow).
+  // On-call room: an optional side room at the far end.
   b.carve(24, 15, 26, 15, F.TILES); b.carve(17, 4, 34, 14, F.TILES);
   for (const x of [18, 22, 29, 33]) b.prop('bed', x, 5, 1, 2, { color: 0xfff1f0 });
   b.prop('desk', 18, 12, 2, 1); b.prop('shelf', 33, 10, 1, 4);
-  b.item('keycard', 'keycard', 30, 5, 'staff keycard');
-  b.pick('ammo', 19, 10);
+  b.pick('medkit', 30, 5); b.pick('ammo', 19, 10);
   b.label('ON-CALL', 25.5, 9, 18, MINT);
   b.lamp(25.5, 7);
   // Quiet room (chapel): dark, a little ammo.
@@ -559,7 +558,7 @@ export function build() {
   wallUp(85, 4, 88, 6, TERRACE);                                          // the elevator shaft
   b.label('FLOOR 2', 90, 12, 40, SOUP); b.label('ELEVATOR: FAULT', 86.5, 7.8, 12, RED);
   b.label('MMM... SOUP', 83, 25, 12, SOUP);
-  b.label('STAIRS TO FLOOR 3: WEST END', 84, 18.6, 11, GOLD);
+  b.label('STAIRS TO FLOOR 3: DAY ROOM', 84, 18.6, 11, GOLD);
   gurney(90, 25); b.prop('bench', 96, 14, 1, 3); b.prop('shelf', 97, 30, 1, 3);
   b.pick('ammo', 96, 34); b.pick('medkit', 81, 8);
   b.lamp(90, 8); b.lamp(90, 20); b.lamp(90, 31);
@@ -572,15 +571,17 @@ export function build() {
   // Fire exit onto the lobby roof (locked until the roof doors give).
   const fireExit = b.door(88, 36, 89, 36, 'shutter', 'FIRE EXIT');
   b.label('FIRE EXIT', 88.5, 34.6, 10, RED);
-  // Corridor A runs west the whole length of the floor.
+  // Corridor A runs west the whole length of the floor. The way on is only halfway: the day room,
+  // whose stairs come up among the Sleep Clinic's pods. The west half (wards 2A-2C, patient rooms,
+  // the west stair hall) is an optional loop with its own way up.
   b.carve(9, 20, 79, 23, F.TILES);
   gurney(62, 20); gurney(52, 23); gurney(33, 20); gurney(18, 23);
   b.prop('bench', 40, 23, 2, 1); b.prop('bench', 24, 20, 2, 1);
   for (const x of [12, 24, 36, 48, 60, 72]) b.lamp(x, 21.5);
-  b.arrow(66, 21.5, WEST); b.arrow(42, 21.5, WEST); b.arrow(20, 21.5, WEST);
-  // IV stands and wheelchairs dragged toward the west stairs (wordless arrows).
-  for (const x of [74, 56, 38, 22]) b.prop('barrier', x, 23, 1, 1);
-  zz(46, 21.5, WEST); zz(28, 22.5, WEST);
+  b.arrow(66, 21.5, WEST); b.arrow(50, 21, N);
+  // IV stands and wheelchairs dragged toward the day room (wordless arrows).
+  for (const x of [74, 64, 57]) b.prop('barrier', x, 23, 1, 1);
+  zz(46, 20.5, N);
 
   // ------------------------------------------------------------------
   // 11. Floor 2: wards, patient rooms, day room and the soup, nurses' post
@@ -609,6 +610,12 @@ export function build() {
   b.pick('medkit', 59, 17); b.pick('ammo', 57, 6);
   b.label('DAY ROOM', 46, 11, 22, MINT); b.label('SOUP', 57.5, 12.5, 18, SOUP);
   b.lamp(46, 10.5); b.lamp(57, 14);
+  // The main stairs up to Floor 3, against the day room's west wall: they come up in the pod ward.
+  b.fill(42, 14, 42, 16);
+  b.stairs(40, 14, 41, 16, '-z', F.TILES);
+  b.label('STAIRS UP', 40.5, 18.2, 12, GOLD, N); b.label('FLOOR 3: SLEEP CLINIC', 44.5, 17.4, 8, LAV, N);
+  b.lamp(41, 18);
+  b.arrow(44, 17, WEST);
   // Floor 2 nurses' post, with roof access E in its corner.
   b.carve(70, 19, 71, 19, F.TILES); b.carve(79, 12, 79, 14, F.TILES);
   b.carve(63, 5, 78, 18, F.TILES);
@@ -783,6 +790,7 @@ export function build() {
   for (const z of [7, 14, 21, 28]) for (const x of [24, 28, 32, 36, 40, 44]) {
     pod++;
     if (pod === 20) continue;                                             // a gap in the rows: bed 20 got up and left
+    if (pod === 11) continue;                                             // the day-room stairs come up here
     b.prop('bed', x, z, 2, 3, { color: 0xe8dcff });
   }
   b.prop('pillar', 34, 5, 2, 1, { color: 0xf4f0e0 });                    // the wall clock

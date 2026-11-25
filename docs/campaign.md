@@ -379,8 +379,8 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Taro: "Haven't we all."
 - **Flags:** none
 
-**2.3 · `collect` (4 keycards) · Sweep**
-- **Where:** Ground-floor staff areas: on-call room (under a pillow), nurses' station, pharmacy counter (Nori's old desk), radiology.
+**2.3 · `collect` (2 keycards) · Sweep**
+- **Where:** The pharmacy counter (Nori's old desk) off the main lobby, and the nurses' station in the staff corridor, by the coffee machine. Radiology, the on-call room and the rest of the staff wing are optional side rooms with loot.
 - **HUD:** `Find staff keycards`
 - **Radio:**
   - Dot: "Elevators need staff cards. Nurses hide them in the darnedest places."
@@ -397,7 +397,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 - **Flags:** horde · holdout 60 s · opens: elevator doors, fire stairs
 
 **2.5 · `reach` · Clue room**
-- **Where:** Up the fire stairs to the Floor 2 east hall (storey 1), where the elevator sits stuck. West the length of corridor A, past the wards and the day room where the soup is, to the west stair hall, then up to Floor 3 (storey 2), the Dreamwell Sleep Clinic: rows of empty, perfectly made sleep pods (one gap where bed 20 got up and left), sheep murals on the walls, and a wall clock stopped at 3:00.
+- **Where:** Up the fire stairs to the Floor 2 east hall (storey 1), where the elevator sits stuck. West along corridor A to the day room where the soup is, then up its stairs to Floor 3 (storey 2). They come up among the pods of the Dreamwell Sleep Clinic. The rest of the floor (the west wards, the patient rooms and the west stair hall, which also climbs to the clinic's reception) is an optional loop. The clinic has rows of empty, perfectly made sleep pods (one gap where bed 20 got up and left), sheep murals on the walls, and a wall clock stopped at 3:00.
 - **HUD:** `Search the Sleep Clinic`
 - **Radio:**
   - Mochi: "It came all the way down just to get stuck. Relatable."
@@ -583,7 +583,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
 | 9 | Usher's clipboard, Cineplex lobby | Midnight Marathon, Screen 2: 212 tickets. Everybody dozed off in part 2. I stayed up on pick-n-mix. At 3 they all stood up at once, humming. Benji |
 | 10 | MBPD clipboard, parking office | EVAC POINT 2, Galleria dock. 61 awake folks down the freight lift to the rail yard. Last car 4:15. Lift cells flat, spares stashed round the dock. Pod in the nest by the lift, leave it. The lift CHIMES all the way up. They come for the chime. Face the bays, mind the corridor. Sgt. Tuttle |
 
-**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the west stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign. In Screen 2 only the exit signs are lit; the house is packed (double sleeper density). Keep the evacuation point's sandbags low and broken, and the middle of the dock clear for the pod, which sits in the south-east corner facing south-west over the bays and the dock. Light each bay from the yard side so the lanes read from the nest. The police corridor gets a red POLICE CORRIDOR sign and a lamp: it's the team's to watch, not the pod's. Each spare cell has a gold SPARE CELL label and a lamp in its pocket, and the lift wall says NEEDS 4 POWER CELLS.
+**Map designer notes:** Drag IV stands and wheelchairs along corridor A toward the day-room stairs as direction arrows. Make the helicopter tail in the skylight visible from the skybridge so it works as a landmark pulling players to the food court. Stack Snoozle plush displays in the toy store. Give the arcade "INSERT COIN" glow a strong colour so it leads to Security. Use soup-coloured lighting on the Floor 2 sign. In Screen 2 only the exit signs are lit; the house is packed (double sleeper density). Keep the evacuation point's sandbags low and broken, and the middle of the dock clear for the pod, which sits in the south-east corner facing south-west over the bays and the dock. Light each bay from the yard side so the lanes read from the nest. The police corridor gets a red POLICE CORRIDOR sign and a lamp: it's the team's to watch, not the pod's. Each spare cell has a gold SPARE CELL label and a lamp in its pocket, and the lift wall says NEEDS 4 POWER CELLS.
 
 ---
 
