@@ -692,11 +692,14 @@ export class Room implements CombatHost {
   private spawnZombie(type: number, x: number, y: number, z: number, dormant = false): Zombie {
     const T = ZTYPES[type];
     if (!dormant && this.holdout >= 0 && this.hs.big && isCommon(type)) this.hs.stat.spawned++;
+    // Where in each flow-field tile it heads: off centre so a horde fans out, but never so far that its
+    // body would overlap the next tile over (collision is per tile), or a big one jams on corners.
+    const off = Math.max(0, Math.min(0.55, TILE / 2 - T.radius - 0.05));
     const zb: Zombie = {
       id: this.nextZid++, type, x, y, z, ry: rand(0, Math.PI * 2), st: dormant ? ZSTATE.IDLE : ZSTATE.RUN,
       hp: type === ZT.BRUTE ? Math.round((T.hp + BRUTE_HP_PER * (this.players.size - 1)) * this.diff.bruteHp)
         : isCommon(type) ? T.hp : Math.round(T.hp * this.diff.spHp),
-      speed: T.speed * rand(0.86, 1.14), offX: rand(-0.55, 0.55), offZ: rand(-0.55, 0.55),
+      speed: T.speed * rand(0.86, 1.14), offX: rand(-1, 1) * off, offZ: rand(-1, 1) * off,
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
       sp: rand(1.5, 3), flee: 0, pinT: 0, acc: 0, pinHit: 0, hunt: 0, gunner: 0, hold: 0, wave: 0, region: -1, sit: false, anger: 0, run: false, runT: 0, runTgt: 0,
     };
@@ -2517,7 +2520,8 @@ export class Room implements CombatHost {
         z.runTgt = target.id;
       }
     } else z.run = false;
-    if (z.run || (d < 6 && c.level && this.sees(c))) { dx = target.x - z.x; dz = target.z - z.z; }
+    // Only along a line its body can walk: seeing them over a barrier or past a corner isn't enough.
+    if (z.run) { dx = target.x - z.x; dz = target.z - z.z; }
     else {
       if (field[zn] >= INF) { z.st = ZSTATE.IDLE; return; }
       // No better neighbour (it is in the target's node): settle on its own spot in this one.
