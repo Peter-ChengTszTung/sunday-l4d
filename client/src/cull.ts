@@ -29,11 +29,19 @@
 // can reach any box of it. Doors count as open, props never block, and a camera inside a wall shows
 // everything.
 //
+// One thing is not a sight line. An ink hull is its solid a few centimetres bigger, so the hull of
+// something standing on an upper floor hangs 3 cm under the floor line: its bottom edge lies exactly in
+// the plane of the ceiling of a room below, and where two surfaces meet in one plane the depth test
+// lets a row of the later one's pixels through. Such a "lip" (see `DIP`) therefore also counts as in
+// sight wherever the ceiling it touches is: from the storey below, over any tile in sight there that
+// has no slab under the floor.
+//
 // The table is only right for the geometry it was baked from, so it carries a hash of everything the
 // rules read (the parts, their boxes, the walls and floors). When that does not match (a map or a
 // builder changed and nobody ran the bake), or the camera is somewhere the bake did not cover (high
-// up: the spectator and ride cameras), the same rules are worked out on the spot for the tile the
-// camera enters, and kept. `npm run check:cull` casts rays at everything hidden, either way.
+// up: the ride camera, and the spectator's over a jumping teammate), the same rules are worked out on
+// the spot for the tile the camera enters (1 to 4 ms), and kept. `npm run check:cull` casts rays at
+// everything hidden, either way.
 import * as pc from 'playcanvas';
 import { TILE, STOREY } from '../../shared/constants';
 import { F, isIndoor, type Level } from '../../shared/level';
@@ -60,19 +68,30 @@ const FOG_MARGIN = 8;
 const SLACK = 0.72;
 /** Boxes are tested this much (m) bigger than they are. */
 const EPS = 0.05;
-/** A triangle may dip this far (m) under its own storey's floor line (ink hulls do) and still count as standing on it. */
+/**
+ * A triangle may dip this far (m) under its own storey's floor line (ink hulls do) and still count as standing on
+ * it: its box starts at the line. What hangs under the line is the box's "lip", tested apart (see `lipSeen`).
+ */
 const DIP = 0.035;
 /**
  * Eye heights above the camera storey's floor line, lowest to highest (m), that a tile's answer is worked out
- * for; each band includes the ones before it. 0: on foot (downed 0.42, standing 1.22, the top of a jump 2.3).
+ * for; each band includes the ones before it. 0: on foot (downed 0.42, standing 1.22, the top of a jump 2.3), and
+ * the spectator camera 2.6 over a teammate's feet (with room for rounding: on an upper storey it is not 2.6 to the bit).
  * 1: anything under the slab above (the ride and spectator cameras; stairs, ladders and falls). 2: the eye is
  * within the thickness of the floor above (a stair's last steps, the first of a fall): little is hidden.
  */
-const BANDS: readonly (readonly [number, number])[] = [[0, 2.6], [0, STOREY - SLAB_T - 0.05], [0, STOREY]];
+const BANDS: readonly (readonly [number, number])[] = [[0, 2.65], [0, STOREY - SLAB_T - 0.05], [0, STOREY]];
+const bandOf = (h: number): number => (h <= BANDS[0][1] ? 0 : h <= BANDS[1][1] ? 1 : 2);
+/**
+ * The lobby's backdrop camera (main.ts, the loop's `else`): it drifts within `r` metres (in x and in z) of the first
+ * step's waypoint, or of the checkpoint picked to start from, `lift` above it. That is over the heads the bake
+ * covers, and the first thing a chapter shows: its squares are baked as well.
+ */
+const LOBBY = { r: 4, lift: 3.2 };
 /** How far (tiles) from a floor's edge a jump can carry a player out over a drop: those tiles are baked for a falling eye. */
 const DROP_REACH = 3;
 /** Bump when the rules above or the table's layout change: older bakes then read as stale. */
-const VERSION = 1, MAGIC = 0x31535650, HEAD = 28;
+const VERSION = 2, MAGIC = 0x31535650, HEAD = 28;
 /** Tiles per side of the squares the baked table has an answer for (the union over every eye in the square). */
 const CELL = 2;
 
@@ -178,9 +197,11 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
 
   /** Six numbers a box (x0, y0, z0, x1, y1, z1). */
   let boxes = new Float32Array(6 * 4096), nb = 0;
+  /** Per box: the storey whose floor line some of its triangles hang under by up to DIP (0: none do), and the rectangle (x0, z0, x1, z1) round those. */
+  let lipS = new Uint8Array(4096), lips = new Float32Array(4 * 4096);
   let totalTris = 0, sealed = false;
   // (Scratch for put(): triangles per box, each box's bounds, and where its triangles go.)
-  const bCount = new Int32Array(nBox), bAt = new Int32Array(nBox), bBounds = new Float32Array(nBox * 6);
+  const bCount = new Int32Array(nBox), bAt = new Int32Array(nBox), bBounds = new Float32Array(nBox * 6), bLip = new Float32Array(nBox * 4);
   let triBox = new Int32Array(1 << 16);
 
   function batch(g: Geo, mat: pc.Material, n: number): pc.MeshInstance[] {
@@ -231,16 +252,25 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
       if (cy < y0) y0 = cy; else if (cy > y1) y1 = cy;
       if (bz < z0) z0 = bz; else if (bz > z1) z1 = bz;
       if (cz < z0) z0 = cz; else if (cz > z1) z1 = cz;
-      const yFloor = s * STOREY;
-      if (y0 < yFloor && y0 >= yFloor - DIP) y0 = y1 < yFloor ? y1 : yFloor;
-      if (!bCount[k]++) { bBounds[o] = x0; bBounds[o + 1] = y0; bBounds[o + 2] = z0; bBounds[o + 3] = x1; bBounds[o + 4] = y1; bBounds[o + 5] = z1; }
-      else {
+      const yFloor = s * STOREY, dips = y0 < yFloor && y0 >= yFloor - DIP;
+      if (dips) y0 = y1 < yFloor ? y1 : yFloor;
+      if (!bCount[k]++) {
+        bBounds[o] = x0; bBounds[o + 1] = y0; bBounds[o + 2] = z0; bBounds[o + 3] = x1; bBounds[o + 4] = y1; bBounds[o + 5] = z1;
+        bLip[k * 4] = bLip[k * 4 + 1] = Infinity; bLip[k * 4 + 2] = bLip[k * 4 + 3] = -Infinity;
+      } else {
         if (x0 < bBounds[o]) bBounds[o] = x0;
         if (y0 < bBounds[o + 1]) bBounds[o + 1] = y0;
         if (z0 < bBounds[o + 2]) bBounds[o + 2] = z0;
         if (x1 > bBounds[o + 3]) bBounds[o + 3] = x1;
         if (y1 > bBounds[o + 4]) bBounds[o + 4] = y1;
         if (z1 > bBounds[o + 5]) bBounds[o + 5] = z1;
+      }
+      if (dips) {
+        const l = k * 4;
+        if (x0 < bLip[l]) bLip[l] = x0;
+        if (z0 < bLip[l + 1]) bLip[l + 1] = z0;
+        if (x1 > bLip[l + 2]) bLip[l + 2] = x1;
+        if (z1 > bLip[l + 3]) bLip[l + 3] = z1;
       }
       triBox[t] = k;
     }
@@ -252,8 +282,15 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
         const k = (s * nbz + j) * nbx + i;
         if (!bCount[k]) continue;
         bAt[k] = at; at += bCount[k] * 3;
-        if ((nb + 1) * 6 > boxes.length) { const n = new Float32Array(boxes.length * 2); n.set(boxes); boxes = n; }
+        if ((nb + 1) * 6 > boxes.length) {
+          const n = new Float32Array(boxes.length * 2), ns = new Uint8Array(lipS.length * 2), nl = new Float32Array(lips.length * 2);
+          n.set(boxes); ns.set(lipS); nl.set(lips); boxes = n; lipS = ns; lips = nl;
+        }
         for (let q = 0; q < 6; q++) boxes[nb * 6 + q] = bBounds[k * 6 + q];
+        // (Under the ground floor there is nobody to see a lip.)
+        const lip = s > 0 && bLip[k * 4] <= bLip[k * 4 + 2];
+        lipS[nb] = lip ? s : 0;
+        for (let q = 0; q < 4; q++) lips[nb * 4 + q] = lip ? bLip[k * 4 + q] : 0;
         nb++;
       }
       if (at > from) { pBase.push(from); pCount.push(at - from); pBox.push(nb); pBatch.push(batches.length); }
@@ -280,7 +317,7 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
   const shy = (x: number, z: number, k: number): boolean => { if (!inb(x, z)) return false; const n = k * WH + z * W + x, y = (k + 1) * STOREY; return wall[n] === 1 && top[n] < y - 1e-3 && top[n] >= y - 0.06; };
   const byShy = (x: number, z: number, k: number): boolean => shy(x + 1, z, k) || shy(x - 1, z, k) || shy(x, z + 1, k) || shy(x, z - 1, k);
   /** Wall from the floor of storey k right up to the next floor line (off the map counts: no line of sight leaves it). */
-  const fullAt = (x: number, z: number, k: number): boolean => { if (!inb(x, z)) return true; const n = k * WH + z * W + x; return wall[n] === 1 && top[n] >= (k + 1) * STOREY - 1e-3 && !byShy(x, z, k); };
+  const fullAtK = (x: number, z: number, k: number): boolean => { if (!inb(x, z)) return true; const n = k * WH + z * W + x; return wall[n] === 1 && top[n] >= (k + 1) * STOREY - 1e-3 && !byShy(x, z, k); };
   /** Per storey: the blocking rectangles of each tile (x0, z0, x1, z1), `rs[c]..rs[c + 1]`; and 0 for tiles deep inside a wall mass, which the sweep can skip. */
   const rects: Float64Array[] = [], rs: Int32Array[] = [], rim: Uint8Array[] = [];
   /**
@@ -300,18 +337,23 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
   };
   /** Tiles of the camera's storey some sight line reaches, and the open plane tiles among them above and below. */
   let seen!: Uint8Array, tmp!: Uint8Array, seenSat!: Int32Array, aboveA!: Int32Array, aboveB!: Int32Array, belowSat!: Int32Array;
-  let blockers = false;
-  /** Only a tile worked out on the spot needs these (a chapter with a good bake never does). */
+  /**
+   * Only a tile worked out on the spot needs these, and a chapter with a good bake has few of those (the ride and
+   * spectator cameras). But they take some 20 ms to make, a dropped frame if left to the first such tile: made
+   * with the world instead (see the end of `buildCull`), a tile then costs 1 to 4 ms.
+   */
   function buildBlockers(): void {
-    if (blockers) return;
-    blockers = true;
     seen = new Uint8Array(WH); tmp = new Uint8Array(WH);
     seenSat = new Int32Array(SW * (H + 1)); aboveA = new Int32Array(SW * (H + 1)); aboveB = new Int32Array(SW * (H + 1)); belowSat = new Int32Array(SW * (H + 1));
     for (let k = 0; k < levels; k++) {
       const r: number[] = [], start = new Int32Array(WH + 1), edge = new Uint8Array(WH).fill(1);
+      // (Each tile is asked about nine times over: looked up, not worked out again.)
+      const fu = new Uint8Array(WH);
+      for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) fu[z * W + x] = fullAtK(x, z, k) ? 1 : 0;
+      const fullAt = (x: number, z: number, _k: number): boolean => x < 0 || z < 0 || x >= W || z >= H || fu[z * W + x] === 1;
       for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
         start[z * W + x] = r.length / 4;
-        if (!fullAt(x, z, k)) continue;
+        if (!fu[z * W + x]) continue;
         // Walled in on all eight sides: nothing of it faces the open, and the walls round it shut it in.
         if (fullAt(x - 1, z, k) && fullAt(x + 1, z, k) && fullAt(x, z - 1, k) && fullAt(x, z + 1, k) && fullAt(x - 1, z - 1, k) && fullAt(x + 1, z - 1, k) && fullAt(x - 1, z + 1, k) && fullAt(x + 1, z + 1, k)) { edge[z * W + x] = 0; continue; }
         // The wall mass shrunk by SLACK, as two rectangles per tile: one as wide as it can be, one as deep. A
@@ -341,8 +383,8 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
       }
       while (todo.length) {
         const c = todo.pop()!, x = c % W, z = (c / W) | 0;
-        for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const ax = x + ox, az = z + oz, m = az * W + ax;
+        for (let q = 0; q < 4; q++) {
+          const ax = x + (q === 0 ? 1 : q === 1 ? -1 : 0), az = z + (q === 2 ? 1 : q === 3 ? -1 : 0), m = az * W + ax;
           if (inb(ax, az) && !h[m] && wall[k * WH + m]) { h[m] = 1; todo.push(m); }
         }
       }
@@ -487,6 +529,18 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
     return false;
   }
 
+  /**
+   * Is the lip of a box of storey s (what of it hangs under that storey's floor line, over the rectangle given) in
+   * sight? From the storey right under it: where its rectangle touches a tile in sight that is open at the slab
+   * undersides (`openA`): a room, whose ceiling it lies against, or open air; under a slab it is inside the slab.
+   * From anywhere else (further down; or its own storey or above, past the floor's edge and back in under it):
+   * as a box of the top few centimetres of the storey below its own.
+   */
+  function lipSeen(s: number, x0: number, z0: number, x1: number, z1: number): boolean {
+    if (slab === s - 1) return x0 < 0 || z0 < 0 || x1 > mapX || z1 > mapZ || count(aboveA, x0, z0, x1, z1) > 0;
+    return visible(x0, s * STOREY - DIP, z0, x1, s * STOREY - 2e-4, z1);
+  }
+
   // ------------------------------------------------------------------ per tile
   const far = fogFar + FOG_MARGIN, far2 = far * far;
   let vis = new Uint8Array(0);
@@ -496,7 +550,7 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
   function compute(tx: number, tz: number, n: number, k: number, band: number): void {
     ex0 = tx * T; ex1 = Math.min(W, tx + n) * T; ez0 = tz * T; ez1 = Math.min(H, tz + n) * T;
     ey0 = k * STOREY + BANDS[band][0]; ey1 = k * STOREY + BANDS[band][1]; slab = k;
-    if (occl) { buildBlockers(); sweep(tx, tz, n, k); }
+    if (occl) sweep(tx, tz, n, k);
     const b = boxes, hard = MODE === 'hard';
     for (let p = 0; p < vis.length; p++) {
       const fog = hard || batches[pBatch[p]].deco;
@@ -507,6 +561,7 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
           if (dx * dx + dy * dy + dz * dz > far2) continue;
         }
         if (!occl || visible(b[i], b[i + 1], b[i + 2], b[i + 3], b[i + 4], b[i + 5])) show = 1;
+        else { const j = i / 6, l = j * 4; if (lipS[j] && lipSeen(lipS[j], lips[l], lips[l + 1], lips[l + 2], lips[l + 3])) show = 1; }
       }
       vis[p] = show;
     }
@@ -604,10 +659,10 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
   function hashOf(): [number, number] {
     const h = new Hash();
     h.all([VERSION, SUB, BLK, CELL, W, H, levels, pBase.length, nb]);
-    h.floats(Float32Array.of(T, STOREY, SLAB_T, far, SLACK, EPS, DIP, ...BANDS.flat()));
+    h.floats(Float32Array.of(T, STOREY, SLAB_T, far, SLACK, EPS, DIP, LOBBY.r, LOBBY.lift, ...BANDS.flat()));
     h.all(pBase); h.all(pCount); h.all(pBox); h.all(pBatch);
     for (const b of batches) h.add(b.deco ? 1 : 0);
-    h.floats(boxes.subarray(0, nb * 6));
+    h.floats(boxes.subarray(0, nb * 6)); h.all(lipS.subarray(0, nb)); h.floats(lips.subarray(0, nb * 4));
     h.all(wall); h.floats(base); h.floats(top); h.all(look); h.all(def.floor); h.all(def.ramp); h.all(def.air);
     return [h.a >>> 0, h.b >>> 0];
   }
@@ -663,6 +718,14 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
     }
     everything = drawList(vis);
     if (off) return;
+    if (occl) {
+      // One tile worked out now, while the chapter is still coming up, and thrown away: the first one costs several
+      // times what the rest do (the code is cold), and would otherwise be paid when a ride or a spectator camera starts.
+      const at = def.spawns[0];
+      compute(Math.max(0, Math.min(W - 1, Math.floor(at.x / T))), Math.max(0, Math.min(H - 1, Math.floor(at.z / T))), 1, Math.max(0, Math.min(levels - 1, Math.floor((at.y ?? 0) / STOREY))), 1);
+      drawList(vis);
+      sweptAt = -1;
+    }
     if (!occl || MODE === 'live' || MODE === 'hard') { stale = true; return; }
     const load = PVS[def.id];
     if (!load) { adopt(undefined); return; }
@@ -705,8 +768,7 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
     let key = -1, tx = 0, tz = 0, k = 0, band = 0;
     if (camX >= 0 && camZ >= 0 && camX < mapX && camZ < mapZ && camY >= 0 && camY < levels * STOREY) {
       k = Math.floor(camY / STOREY); tx = Math.floor(camX / T); tz = Math.floor(camZ / T);
-      const h = camY - k * STOREY;
-      band = h <= BANDS[0][1] ? 0 : h <= BANDS[1][1] ? 1 : 2;
+      band = bandOf(camY - k * STOREY);
       if (!wall[k * WH + tz * W + tx]) key = (band * levels + k) * WH + tz * W + tx;
     }
     if (key === lastKey) return;
@@ -744,6 +806,15 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
         }
         falls = air && (falls || drop[n] === 1);
       }
+    }
+    // The lobby camera: every tile it can drift over, in the band it is in there.
+    const first = def.steps[0]?.at ?? def.spawns[0];
+    for (const at of [first, ...def.steps.filter((s) => s.checkpoint).map((s) => s.at)]) {
+      const y = (at.y ?? 0) + LOBBY.lift, k = Math.floor(y / STOREY);
+      if (k < 0 || k >= levels) continue;
+      const bit = 1 << bandOf(y - k * STOREY);
+      const xa = Math.max(0, Math.floor((at.x - LOBBY.r) / T)), xb = Math.min(W - 1, Math.floor((at.x + LOBBY.r) / T)), za = Math.max(0, Math.floor((at.z - LOBBY.r) / T)), zb = Math.min(H - 1, Math.floor((at.z + LOBBY.r) / T));
+      for (let z = za; z <= zb; z++) for (let x = xa; x <= xb; x++) if (!wall[k * WH + z * W + x]) out[k * WH + z * W + x] |= bit;
     }
     return out;
   }
@@ -814,6 +885,8 @@ export function buildCull(L: Level, S: Storeys, fogFar: number, add: (e: pc.Enti
     console.log(`cull bake ${def.id}: ${list.length} squares, ${C} classes of ${P} parts`);
     return out;
   }
+
+  if (occl) buildBlockers();
 
   return {
     put, update, bake,

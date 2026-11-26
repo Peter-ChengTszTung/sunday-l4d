@@ -4,7 +4,12 @@
 //      of its draw ranges, against every opaque triangle of the world as drawn (back faces culled). A
 //      sample nothing covers is a point you could see of something that is not drawn: an error. (Ink
 //      past the fog distance is skipped: it is still "visible", as fog-coloured ink on a fog-coloured wall.)
+//      Besides points inside the triangles, the "lips" are cast at: the very corners and edges that hang
+//      a few centimetres under a floor line (an upstairs prop's ink hull does). Those can lie exactly in
+//      the plane of the ceiling below, where the depth test lets a row of pixels through: a ray that is
+//      only stopped within 3 mm of its end counts as arriving.
 //   2. counts what the engine would draw of the world from a few fixed spots (eight headings each).
+//   3. times the first frames of a chapter: the lobby's backdrop camera, then the spawn.
 // It also fails when a chapter's baked table (client/src/pvs/) is not the one for its geometry: run
 // `npm run bake:cull` then. cull.ts mirrors what arch.ts, storeys.ts and ground.ts draw across each
 // floor line: run this after changing any of them. Exit code 1 on errors.
@@ -17,13 +22,19 @@ await import('./headless');
 // Only now the client modules: gfx.ts starts the engine on import.
 const pc = await import('playcanvas');
 const { getLevel, chapterCount } = await import('../shared/chapters');
-const { TILE, STOREY } = await import('../shared/constants');
+const { TILE, STOREY, PLAYER } = await import('../shared/constants');
 const { buildWorld } = await import('../client/src/world');
 const gfx = await import('../client/src/gfx');
 
 const only = process.argv[2] !== undefined ? Number(process.argv[2]) : -1, EYES = Number(process.argv[3] ?? 150);
-/** Triangles sampled per hidden mesh, and the eye height. */
+/** Triangles sampled per hidden mesh, and the eye height the counts are taken at. */
 const PER = 60, EYE = 1.6;
+/** Eye heights the rays are cast from: standing (PLAYER.eye), the counts' own, downed. */
+const HEIGHTS = [PLAYER.eye, EYE, PLAYER.eye, 0.42];
+/** Lip points cast at per hidden part at most, and how far under a floor line counts as a lip (m: cull.ts `DIP`, and a little). */
+const LIPS = 240, LIP = 0.05;
+/** The lobby camera (main.ts): this far round the first step's waypoint, this high over it. */
+const LOBBY = { r: 4, lift: 3.2 };
 let seed = 20261126;
 const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 type Kind = 'solid' | 'line' | 'hull';
@@ -39,6 +50,19 @@ for (let ch = 0; ch < chapterCount(); ch++) {
   await world.cull.ready; // (the baked table)
   const buildMs = performance.now() - t0, mode = world.culled().mode;
   console.log(`ch${ch + 1}: built in ${buildMs.toFixed(0)} ms (no GPU), culling ${mode}`);
+  {
+    // The first frames, as main.ts has them: the lobby camera where it starts, a minute of its drift, then the spawn.
+    const look = L.def.steps[0]?.at ?? L.def.spawns[0], sp = L.def.spawns[0], c0 = world.culled().sweeps;
+    const lobby = (o: number): number => { const t = performance.now(); world.cull.update(look.x + Math.sin(o) * LOBBY.r, (look.y ?? 0) + LOBBY.lift, look.z + Math.cos(o * 0.7) * LOBBY.r); return performance.now() - t; };
+    const first = lobby(0), c1 = world.culled().sweeps;
+    let worst = 0;
+    for (let o = 0; o < 7.2; o += 0.002) worst = Math.max(worst, lobby(o));
+    const c2 = world.culled().sweeps, t = performance.now();
+    world.cull.update(sp.x, (sp.y ?? 0) + PLAYER.eye, sp.z);
+    const spawn = performance.now() - t, c3 = world.culled().sweeps;
+    console.log(`ch${ch + 1}: first frame (lobby camera) ${first.toFixed(2)} ms, ${c1 - c0} tiles worked out on the spot; its drift ${worst.toFixed(2)} ms at most, ${c2 - c1} on the spot; the spawn ${spawn.toFixed(2)} ms, ${c3 - c2} on the spot`);
+    if (c3 > c0 && mode === 'baked') { console.log(`   ERROR the lobby camera or the spawn is somewhere the baked table does not cover`); failed = true; }
+  }
   if (mode === 'live' && !process.env.CULL) { console.log(`   ERROR the baked table in client/src/pvs/ is missing or not for this geometry: run \`npm run bake:cull\``); failed = true; }
   // The culled meshes: each is drawn as up to two ranges of one index buffer (mesh instances sharing it).
   const cullParts = world.cull.debugParts(), ranges = new Set<PC.MeshInstance>();
@@ -53,6 +77,38 @@ for (let ch = 0; ch < chapterCount(); ch++) {
     parts.push({ mi, pos: Float32Array.from(pos), idx: Uint32Array.from(idx), kind });
   }
   const partOf = new Map(parts.map((m) => [m.mi, m]));
+  /**
+   * Per culled part, the points of its lips (x, y, z, and the normal of the triangle each is of): of every triangle
+   * that stands on a floor line and hangs under it, the corners that do, and the middle of an edge between two.
+   */
+  const lipCache = new Map<number, Float32Array>();
+  const lipsOf = (ci: number, m: Part, base: number, count: number): Float32Array => {
+    let out = lipCache.get(ci);
+    if (out) return out;
+    const pts: number[] = [], p = m.pos;
+    for (let i = base; i < base + count; i += 3) {
+      const v = [m.idx[i] * 3, m.idx[i + 1] * 3, m.idx[i + 2] * 3];
+      const line = Math.floor((p[v[0] + 1] + p[v[1] + 1] + p[v[2] + 1]) / 3 / STOREY + 1e-3 / STOREY) * STOREY;
+      if (line <= 0) continue;
+      const low = v.map((a) => p[a + 1] < line - 1e-4 && p[a + 1] >= line - LIP);
+      if (!low[0] && !low[1] && !low[2]) continue;
+      const [a, b, c] = v;
+      const nx = (p[b + 1] - p[a + 1]) * (p[c + 2] - p[a + 2]) - (p[b + 2] - p[a + 2]) * (p[c + 1] - p[a + 1]);
+      const ny = (p[b + 2] - p[a + 2]) * (p[c] - p[a]) - (p[b] - p[a]) * (p[c + 2] - p[a + 2]);
+      const nz = (p[b] - p[a]) * (p[c + 1] - p[a + 1]) - (p[b + 1] - p[a + 1]) * (p[c] - p[a]);
+      for (let q = 0; q < 3; q++) {
+        const u = v[q], w = v[(q + 1) % 3];
+        if (low[q]) pts.push(p[u], p[u + 1], p[u + 2], nx, ny, nz);
+        if (low[q] && low[(q + 1) % 3]) pts.push((p[u] + p[w]) / 2, (p[u + 1] + p[w + 1]) / 2, (p[u + 2] + p[w + 2]) / 2, nx, ny, nz);
+      }
+    }
+    // (Too many: an even spread of them.)
+    const n = pts.length / 6, take = Math.min(n, LIPS);
+    out = new Float32Array(take * 6);
+    for (let i = 0; i < take; i++) { const j = Math.floor(i * n / take) * 6; for (let q = 0; q < 6; q++) out[i * 6 + q] = pts[j + q]; }
+    lipCache.set(ci, out);
+    return out;
+  };
 
   // ---------------------------------------------------------------- counts
   const proj = new pc.Mat4().setPerspective(74, 2867 / 1516, 0.08, 600), steps = L.def.steps;
@@ -162,14 +218,14 @@ for (let ch = 0; ch < chapterCount(); ch++) {
     if (edge) edgy.push(n);
   }
   const far = L.def.theme.fogFar + 8;
-  let rays = 0, bad = 0, hidden = 0, upMs = 0, upMax = 0, ups = 0;
+  let rays = 0, lipRays = 0, bad = 0, hidden = 0, upMs = 0, upMax = 0, ups = 0;
   const lives0 = world.culled().sweeps;
   const where = new Map<string, number>();
   for (let e = 0; e < EYES; e++) {
     const pool = e % 2 && edgy.length ? edgy : nodes, n = pool[Math.floor(rnd() * pool.length)], lv = L.lvOf(n);
     const bx = (L.nodeX(n) + 0.3 + rnd() * 0.4) * TILE, bz = (L.nodeZ(n) + 0.3 + rnd() * 0.4) * TILE;
     // (Every eighth eye off a stair is a ride or spectator camera: anywhere up to just under the slab above.)
-    const feet = L.groundY(bx, lv * STOREY, bz), lift = e % 8 === 7 && !L.def.ramp[n] ? 2.6 + rnd() * (STOREY - 0.36 - 2.6) : EYE + (rnd() < 0.3 ? rnd() : 0);
+    const feet = L.groundY(bx, lv * STOREY, bz), lift = e % 8 === 7 && !L.def.ramp[n] ? 2.6 + rnd() * (STOREY - 0.36 - 2.6) : HEIGHTS[(e >> 3) % HEIGHTS.length] + (rnd() < 0.3 ? rnd() : 0);
     // (Timed: the culling's own share of world.update().)
     let tu = performance.now();
     world.cull.update(bx, feet + lift, bz);
@@ -186,7 +242,21 @@ for (let ch = 0; ch < chapterCount(); ch++) {
     du = performance.now() - tu;
     upMs += du; upMax = Math.max(upMax, du); ups++;
     world.update(0.016, 0.016, x, y, z);
-    for (const cp of cullParts) {
+    /** Casts at a point of a hidden part (with its triangle's normal); `lip`: one of its lip points. */
+    const probe = (m: Part, deco: boolean, qx: number, qy: number, qz: number, nx: number, ny: number, nz: number, lip: boolean): void => {
+      const facing = nx * (qx - x) + ny * (qy - y) + nz * (qz - z);
+      // Solids show their fronts, hulls their backs, ink strokes both.
+      if ((m.kind === 'solid' && facing >= 0) || (m.kind === 'hull' && facing <= 0)) return;
+      if (deco && (qx - x) ** 2 + (qy - y) ** 2 + (qz - z) ** 2 > far * far) return;
+      rays++; if (lip) lipRays++;
+      if (blocked(x, y, z, qx, qy, qz, 1 - 0.003 / Math.hypot(qx - x, qy - y, qz - z))) return;
+      bad++;
+      const key = `${m.kind}${lip ? ' lip' : ''} on storey ${Math.floor((qy + (lip ? LIP : 0.001)) / STOREY)} from storey ${Math.floor(y / STOREY)}`;
+      where.set(key, (where.get(key) ?? 0) + 1);
+      if (bad <= 8) console.log(`   ERROR hidden but in sight: eye (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}) -> ${m.kind}${lip ? ' lip' : ''} at (${qx.toFixed(3)}, ${qy.toFixed(3)}, ${qz.toFixed(3)})`);
+    };
+    for (let ci = 0; ci < cullParts.length; ci++) {
+      const cp = cullParts[ci];
       // Drawn: inside a range that is on.
       if (cp.mis.some((mi) => { const pr = mi.mesh!.primitive[0]; return mi.visible && pr.base <= cp.base && cp.base + cp.count <= pr.base + pr.count; })) continue;
       const m = partOf.get(cp.mis[0]);
@@ -199,22 +269,14 @@ for (let ch = 0; ch < chapterCount(); ch++) {
         const ny = (p[ib + 2] - p[ia + 2]) * (p[ic] - p[ia]) - (p[ib] - p[ia]) * (p[ic + 2] - p[ia + 2]);
         const nz = (p[ib] - p[ia]) * (p[ic + 1] - p[ia + 1]) - (p[ib + 1] - p[ia + 1]) * (p[ic] - p[ia]);
         for (const [wa, wb, wc] of [[1 / 3, 1 / 3, 1 / 3], [0.8, 0.1, 0.1], [0.1, 0.8, 0.1], [0.1, 0.1, 0.8]]) {
-          const qx = p[ia] * wa + p[ib] * wb + p[ic] * wc, qy = p[ia + 1] * wa + p[ib + 1] * wb + p[ic + 1] * wc, qz = p[ia + 2] * wa + p[ib + 2] * wb + p[ic + 2] * wc;
-          const facing = nx * (qx - x) + ny * (qy - y) + nz * (qz - z);
-          // Solids show their fronts, hulls their backs, ink strokes both.
-          if ((m.kind === 'solid' && facing >= 0) || (m.kind === 'hull' && facing <= 0)) continue;
-          if (cp.deco && (qx - x) ** 2 + (qy - y) ** 2 + (qz - z) ** 2 > far * far) continue;
-          rays++;
-          if (blocked(x, y, z, qx, qy, qz, 1 - 0.003 / Math.hypot(qx - x, qy - y, qz - z))) continue;
-          bad++;
-          const key = `${m.kind} on storey ${Math.floor((qy + 0.001) / STOREY)} from storey ${Math.floor(y / STOREY)}`;
-          where.set(key, (where.get(key) ?? 0) + 1);
-          if (bad <= 8) console.log(`   ERROR hidden but in sight: eye (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}) -> ${m.kind} at (${qx.toFixed(3)}, ${qy.toFixed(3)}, ${qz.toFixed(3)})`);
+          probe(m, cp.deco, p[ia] * wa + p[ib] * wb + p[ic] * wc, p[ia + 1] * wa + p[ib + 1] * wb + p[ic + 1] * wc, p[ia + 2] * wa + p[ib + 2] * wb + p[ic + 2] * wc, nx, ny, nz, false);
         }
       }
+      const lp = lipsOf(ci, m, cp.base, cp.count);
+      for (let i = 0; i < lp.length; i += 6) probe(m, cp.deco, lp[i], lp[i + 1], lp[i + 2], lp[i + 3], lp[i + 4], lp[i + 5], true);
     }
   }
-  console.log(`ch${ch + 1}: ${EYES} eyes, ${Math.round(hidden / EYES)} of ${cullParts.length} parts hidden on average, ${rays} rays, ${bad} in sight${bad ? ': ' + [...where].map(([k, v]) => `${k} x${v}`).join(', ') : ''}; culling update avg ${(upMs / ups).toFixed(3)} ms max ${upMax.toFixed(2)} ms over ${ups} jumps to somewhere else, ${world.culled().sweeps - lives0} tiles worked out on the spot`);
+  console.log(`ch${ch + 1}: ${EYES} eyes, ${Math.round(hidden / EYES)} of ${cullParts.length} parts hidden on average, ${rays} rays (${lipRays} at lips), ${bad} in sight${bad ? ': ' + [...where].map(([k, v]) => `${k} x${v}`).join(', ') : ''}; culling update avg ${(upMs / ups).toFixed(3)} ms max ${upMax.toFixed(2)} ms over ${ups} jumps to somewhere else, ${world.culled().sweeps - lives0} tiles worked out on the spot`);
   if (bad) failed = true;
   world.dispose();
 }
