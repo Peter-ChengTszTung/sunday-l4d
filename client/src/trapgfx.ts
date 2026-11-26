@@ -34,7 +34,7 @@ const PALE_GLASS = 0xeefaff;
 const LED = 0xff2a3c, HEAD = 0xfffbe0, TAIL = 0xff6a78, AMBER = 0xffb52e;
 const CONE = 0xffe9a6;
 /** Seconds between a ringing car's pulses (the jingle's bar, traps.ts CAR_PULSE), and between an armed car's blinks. */
-const PULSE = 0.5, BLINK = 1, BLINK_ON = 0.16;
+const PULSE = 0.5, BLINK = 1, BLINK_ON = 0.3;
 /** The cone's light lies this far above the floor (a decal: nearer, it flickers from across a room). */
 const CONE_Y = 0.03;
 
@@ -109,18 +109,18 @@ function coneGeo(L: Level, tr: Trap, yaw: number): [Geo, number[]] {
     for (let i = 0; i < 4; i++) { g.pos.push(p[i * 2], y, p[i * 2 + 1]); g.col.push(c[0], c[1], c[2]); alpha.push(Math.round(a * 255)); }
     g.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
   };
-  const BANDS = [[0, 0.36, 0.34], [0.36, 0.7, 0.24], [0.7, 1, 0.15]];
+  const BANDS = [[0, 0.36, 0.58], [0.36, 0.7, 0.41], [0.7, 1, 0.26]];
   for (let i = 0; i < N; i++) {
     const p0 = -half + (i / N) * 2 * half, p1 = -half + ((i + 1) / N) * 2 * half, pm = (p0 + p1) / 2;
     const reach = Math.min(R, L.ray(ox, tr.y + PLAYER.eye, oz, Math.sin(yaw + pm), 0, Math.cos(yaw + pm), R, -1));
     const s0 = Math.sin(p0), c0 = Math.cos(p0), s1 = Math.sin(p1), c1 = Math.cos(p1);
     const slice = (r0: number, r1: number, a: number): void => { if (r1 > r0 + 1e-3) quad([s0 * r0, c0 * r0, s0 * r1, c0 * r1, s1 * r1, c1 * r1, s1 * r0, c1 * r0], a); };
     for (const [a, b, k] of BANDS) slice(Math.min(a * R, reach), Math.min(b * R, reach), k);
-    slice(Math.max(0, reach - 0.08), reach, 0.4);
+    slice(Math.max(0, reach - 0.08), reach, 0.65);
     // The fan's two straight sides, drawn in so the wedge reads on a pale floor.
     if (i === 0 || i === N - 1) {
       const sp = i === 0 ? p0 : p1, sx = Math.sin(sp), cz = Math.cos(sp), w = (i === 0 ? 1 : -1) * 0.05, r0 = Math.min(0.2, reach);
-      quad([sx * r0, cz * r0, sx * reach, cz * reach, sx * reach + cz * w, cz * reach - sx * w, sx * r0 + cz * w, cz * r0 - sx * w], 0.3);
+      quad([sx * r0, cz * r0, sx * reach, cz * reach, sx * reach + cz * w, cz * reach - sx * w, sx * r0 + cz * w, cz * r0 - sx * w], 0.5);
     }
   }
   return [g, alpha];
@@ -153,15 +153,17 @@ export function buildTrapLooks(L: Level): TrapLooks {
   const haloMat = makeGlow(1);
   const coneMat = makeUnlit({ blend: 'normal', vertexAlpha: true, cull: 'none' });
   const part = (parent: pc.Entity, m: pc.Mesh, mat: pc.Material): pc.Entity => { const e = meshEntity(m, mat); e.enabled = false; parent.addChild(e); return e; };
-  const show = (e: pc.Entity, on: boolean): void => { if (e.enabled !== on) e.enabled = on; };
+  // Always assign: `enabled` reads false under a hidden parent (a culled trap), so a compare would skip the change.
+  // The setter itself does nothing when the value is unchanged.
+  const show = (e: pc.Entity, on: boolean): void => { e.enabled = on; };
   const still = new Batch();
 
   // ------------------------------------------------------------------ alarm car
   // The car's own frame, as world.ts draws it: the floor under its middle, its nose toward -z.
   // The cabin's glass is a box 1.45 wide from z = -0.8 to 1.1 and y = 0.95 to 1.55, whatever the car's length.
-  const LED_AT: [number, number, number][] = [[-0.36, 1.045, -0.87], [0.36, 1.045, 1.17]];
-  const ledMesh = mesh(merge(LED_AT.map(([x, y, z]) => make(cube, LED, trs(x, y, z, 0, 0, 0, 0.07, 0.05, 0.07)))));
-  const ledHalo = haloMesh(LED_AT.map(([x, y, z]): Spot => [x, y + 0.01, z, 0.3, LED, 1.5]));
+  const LED_AT: [number, number, number][] = [[-0.36, 1.07, -0.9], [0.36, 1.07, 1.2]];
+  const ledMesh = mesh(merge(LED_AT.map(([x, y, z]) => make(cube, LED, trs(x, y, z, 0, 0, 0, 0.14, 0.1, 0.14)))));
+  const ledHalo = haloMesh(LED_AT.map(([x, y, z]): Spot => [x, y + 0.01, z, 0.5, LED, 1.5]));
   const flashMeshes = new Map<number, [pc.Mesh, pc.Mesh]>();
   /** Headlamps, tail lamps and the four indicators of a car `l` long, lit; and their halos. */
   const flashFor = (l: number): [pc.Mesh, pc.Mesh] => {
@@ -197,7 +199,7 @@ export function buildTrapLooks(L: Level): TrapLooks {
       dot(0x6a5796, 0, -0.035, 0.06, 4);
     }
     // The alarm light's housing, at the foot of the windscreen and on the shelf behind the rear glass.
-    for (const [x, , z] of LED_AT) still.add(cube, DARK, at(trs(x, 0.995, z, 0, 0, 0, 0.11, 0.05, 0.1)), 'box', 0.012);
+    for (const [x, , z] of LED_AT) still.add(cube, DARK, at(trs(x, 0.995, z, 0, 0, 0, 0.2, 0.05, 0.18)), 'box', 0.012);
 
     const group = new pc.Entity(`trap-car-${tr.id}`);
     group.setPosition(tr.x, tr.y, tr.z); group.setEulerAngles(0, (ry * 180) / Math.PI, 0);

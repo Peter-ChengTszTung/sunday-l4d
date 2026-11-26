@@ -6,7 +6,7 @@ import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLA
 import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Trap, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, TRAP_HORDE, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
@@ -614,7 +614,9 @@ export class Room implements CombatHost, TrapHost {
       this.L.distanceField([node], this.doors, field);
       this.lures.push({ x: at.x, y: at.y, z: at.z, t: TRAP.car.ring, by: 0, w: -1, field, tiles: TRAP.car.lureTiles });
     }
-    const n = Math.round(tr.kind === 'car' ? (HORDE.base + HORDE.per * this.players.size) * H.car : H.base + H.per * this.players.size);
+    // A car's horde is H.car full hordes for a team of four; a smaller team gets less (TRAP_TEAM), so one car can't wipe a solo player.
+    const team = this.players.size;
+    const n = Math.round(tr.kind === 'car' ? (HORDE.base + HORDE.per * team) * H.car * TRAP_TEAM[Math.min(team, 4)] : H.base + H.per * team);
     if (n <= 0) return;
     const from = this.spawnWave(n, { noise: node });
     this.events.push(from ? ['horde', r2(from.x), r2(from.z)] : ['horde']);

@@ -308,3 +308,5 @@ export const TRAP_HORDE: Record<DifficultyId, { car: number; base: number; per: 
   hard: { car: 1.6, base: 16, per: 4 },
   nightmare: { car: 2, base: 20, per: 4 },
 };
+/** A car's horde scale by survivors in the room (index = team size): 1.2x on Normal becomes 0.8x for one or two. */
+export const TRAP_TEAM = [2 / 3, 2 / 3, 2 / 3, 5 / 6, 1];
