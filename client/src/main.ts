@@ -23,6 +23,7 @@ import { castShot, spreadDir, type AimBasis, type V3 } from './shots';
 import { rangePanelHtml } from './rangepanel';
 import { rangeLevel } from '../../shared/range';
 import { t, tMsg, translatePage } from './i18n';
+import { initGraphicsUi } from './gfxui';
 
 translatePage();
 
@@ -1050,6 +1051,8 @@ net.onClose = () => {
 // --------------------------------------------------------------------- lobby
 const lobby = initLobby({ net, sfx, params, chapter: () => chapter, level: () => L, loadChapter, inGame: () => inGame });
 $('pause').addEventListener('mousedown', () => { lockPointer(); });
+// Graphics settings: the same section on the lobby card and (open) on the pause card.
+initGraphicsUi([{ host: $('lobbygfx') }, { host: $('pausegfx'), open: true, leaves: true }]);
 
 function enterGame(): void {
   inGame = true; ended = false; vm.visible = me.st === PSTATE.ALIVE || me.st === PSTATE.DOWN;
@@ -1541,8 +1544,7 @@ app.on('update', (dt: number) => {
   fx.update(dt, cam.rot);
 });
 app.start();
-// `?debug`: frame time, CPU/GPU and draw-call graphs in the corner.
-if (DEBUG) new pc.MiniStats(app);
+// The stats panel (frame time, CPU/GPU, draw calls) is a Graphics setting, always on under `?debug`: see gfxui.ts.
 
 // Debug: `?debug&step=N` jumps the room to quest step N after joining (dev server only).
 const jump = (n: number) => { if (debugServer) net.send({ t: 'dbg', step: n }); };

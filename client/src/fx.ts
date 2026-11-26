@@ -3,7 +3,7 @@ import { DROOLER, FIRE } from '../../shared/constants';
 // Particles shrink instead of fading so they stay opaque and cel-flat.
 import * as pc from 'playcanvas';
 import { box, sphere, ring, make, merge, toMesh, trs } from './geo';
-import { app, device, meshEntity, makeUnlit, toonMat, outlineMat, tintOf, toonInstMat, unlitInstMat, INST_FORMAT, INST_FLOATS } from './gfx';
+import { app, device, DRAW, drawAs, meshEntity, makeUnlit, toonMat, outlineMat, tintOf, toonInstMat, unlitInstMat, INST_FORMAT, INST_FLOATS } from './gfx';
 import { STAR_MESH } from './viewmodel';
 
 interface Particle {
@@ -42,7 +42,7 @@ const BLOB_MESH = toMesh(device, make(sphere(8, 6)));
 // Unit box stretched along -Z so lookAt() points it at the target.
 const TRACER_MESH = toMesh(device, make(box(), undefined, trs(0, 0, -0.5)));
 const WHITE: readonly number[] = [1, 1, 1];
-const tracerMat = makeUnlit({ color: 0xfff1a8, fog: false });
+const tracerMat = drawAs(DRAW.SPARK, makeUnlit({ color: 0xfff1a8, fog: false }));
 // Launcher grenade: a chunky candy-pink egg with a yellow band.
 const SHELL_MESH = toMesh(device, make(sphere(10, 8), 0xff6fae, trs(0, 0, 0, 0, 0, 0, 0.09, 0.09, 0.13)));
 const SHELL_BAND = toMesh(device, make(sphere(10, 4), 0xffd43b, trs(0, 0, 0, 0, 0, 0, 0.095, 0.095, 0.05)));
@@ -66,9 +66,9 @@ const SCORCH_MESH = toMesh(device, merge([
 ]));
 const FLAME_COLORS = [0xff5a1f, 0xff922b, 0xffd43b, 0xfff1a8];
 const ROPE_COLORS = [0xff8fab, 0xfff5f5];
-const ropeMats = ROPE_COLORS.map((color) => makeUnlit({ color, fog: false }));
+const ropeMats = ROPE_COLORS.map((color) => drawAs(DRAW.SPARK, makeUnlit({ color, fog: false })));
 // Throw preview: pale dashes and a ring where it lands.
-const arcMat = makeUnlit({ color: 0xfff1a8, fog: false });
+const arcMat = drawAs(DRAW.SPARK, makeUnlit({ color: 0xfff1a8, fog: false }));
 const ARC_RING = toMesh(device, make(ring(0.78, 1, 28), 0xffd43b));
 
 export class FX {

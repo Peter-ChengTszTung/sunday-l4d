@@ -3,23 +3,20 @@
 // small custom shaders (GLSL, WebGL2). Colours are authored and lit in sRGB.
 import * as pc from 'playcanvas';
 import { type Geo, box, make, merge, inflateBox, inflateSmooth, toMesh, quatXYZ, unionHull, trimHulls, trs } from './geo';
+import { antialias, renderScale } from './gfxsettings';
 
 export const INK = 0x1a1226;
 const canvas = document.getElementById('game') as HTMLCanvasElement;
-export const app = new pc.Application(canvas, { graphicsDeviceOptions: { antialias: true, alpha: false, powerPreference: 'high-performance' } });
+/** Anti-aliasing (4x MSAA) asked for at start-up: the sample count is fixed when the device is created, so a change needs a reload. */
+export const AA_REQUESTED = antialias();
+export const app = new pc.Application(canvas, { graphicsDeviceOptions: { antialias: AA_REQUESTED, alpha: false, powerPreference: 'high-performance' } });
 app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(pc.RESOLUTION_AUTO);
-/**
- * Render scale cap: the engine takes min(this, the live devicePixelRatio) on every resize, so a window
- * dragged to a sharper screen follows it. Override with `?scale=1` (or 1.5, 2) or localStorage
- * `chibi.scale` to trade sharpness for speed on weak GPUs.
- */
-function renderScale(): number {
-  let v = Number(new URLSearchParams(location.search).get('scale'));
-  if (!(v > 0)) { try { v = Number(localStorage.getItem('chibi.scale')); } catch { v = 0; } }
-  return v > 0 ? Math.min(v, 3) : 2;
-}
+// Render scale cap (see gfxsettings.ts): a player setting, applied live by setRenderScale. Never changed automatically.
 app.graphicsDevice.maxPixelRatio = renderScale();
+app.resizeCanvas(); // size the backbuffer to the cap now, so the settings readout is right from the start
+/** Change the render scale cap now (the engine still takes min(cap, devicePixelRatio)) and resize the backbuffer to match. */
+export function setRenderScale(cap: number): void { app.graphicsDevice.maxPixelRatio = cap; app.resizeCanvas(); }
 window.addEventListener('resize', () => app.resizeCanvas());
 // Longest step any update sees (after a hitch or a background tab), so nothing tunnels or overshoots.
 app.maxDeltaTime = 0.05;
@@ -39,6 +36,73 @@ export function pixelAngle(): number {
 }
 
 export const rgb = (c: number): [number, number, number] => [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
+
+// --------------------------------------------------------------- draw order
+/**
+ * The order of the opaque draws of a frame, top to bottom: what hides the most goes first, so the pixels
+ * behind it are thrown out by the depth test before they are shaded (the GPU's time goes on pixels, not
+ * triangles). A material is given its row with `drawAs`, and `draw`/`meshEntity` hand it on to the mesh
+ * instance as the engine's `drawBucket`: the layers sort by SORTMODE_MATERIALMESH, which draws the HIGHER
+ * bucket first, then the newer material, then the newer mesh (check with `npm run check:order`).
+ *
+ *   bucket      tie  what                                                             material
+ *   ITEM   250  <=   guns in hands, pick-up models, mounted guns (ink in the mesh)    toonInkMat
+ *   SOLID  240  <=   walls, props, slab edges, stairs, clutter: the big occluders     toonMat
+ *   DOOR   230  <    doors                                                            a chapter's makeToon
+ *   GOO_INK 220 <    the ink hull of a goo glob                                       outlineMat
+ *   CHAR   210  <    survivors, and zombies drawn one by one                          toonPartsMat
+ *   CHAR_INK 200 <   their ink hulls                                                  outlinePartsMat
+ *   HORDE  190  <    the instanced horde                                              hordeToonMat
+ *   HORDE_INK 180 <  its ink hulls                                                    hordeInkMat
+ *   FLOOR  170  <    ground and upper floors (the 16x anisotropic texture)            toonTexMat
+ *   CEIL   160  <    ceilings                                                         ceilMat
+ *   PANE   150  <    lit window panes and signs laid on the walls                     flatMat
+ *   LINE   140  <    architecture ink strokes (beams)                                 inkLineMat
+ *   HULL   130  <    ink hulls of props and clutter (back faces, inflated)            inkBack
+ *         (127)      the engine's default: anything not given a row, and every blended draw
+ *   PUFF   120  <    instanced lit blobs                                              toonInstMat
+ *   SPARK  110  <    comic stars, tracers, ropes, the throw arc                       unlitInstMat, fx.ts
+ *   WATER  100  <    water                                                            ground.ts
+ *   GLOW    90  <    lamp bulbs and tubes                                             world.ts
+ *   MARK    80  <    objective arrow and beacon, notes                                world.ts
+ *   SKY     70  <    the skyline round the map                                        atmo.ts
+ *   PIECE   65  <    set pieces (the lift's panel, the tram)                          setpieces.ts
+ *   VM_SOLID 60 <=   the first-person weapon and hands (their own layer)              toonVM
+ *   VM_HULL 50  <    their ink hulls                                                  inkBackVM
+ *
+ * `tie`: what shows where two surfaces have the very same depth (strokes and hulls lying in a wall's
+ * plane, a floor against a slab edge, a hand on a gun). "<=" rows test "less or equal": the later draw
+ * wins. "<" rows test "less": the earlier draw wins. Before these buckets the frame ran the other way
+ * (the engine's order alone: newest material first, so sky, hulls, strokes, ceilings, floors, characters,
+ * guns, walls) with "less or equal" throughout; the rows from DOOR down are that order reversed, and a
+ * reversed pair with "less" on the later one gives the same pixel as before, tie or no tie. So:
+ *   - a new opaque material that may lie in the plane of something else goes in the row of what it is,
+ *     never between ITEM and SOLID, and keeps "<";
+ *   - two draws of one "<" row now settle a tie between themselves the other way round (first wins):
+ *     fine for flat ink, and none of the other rows has two surfaces in one plane (check:order looks,
+ *     in each chapter's still geometry and in the characters' parts). `toonMat` has thousands (trim on
+ *     a wall) and `toonInkMat` some (a stripe on a gun): those two stay "<=" and in their old order.
+ *     For the same reason the layers stay on SORTMODE_MATERIALMESH: sorted front to back, which of two
+ *     wall meshes wins such a tie would change as the camera moves (and lower buckets would draw first);
+ *   - DOOR is the one row moved out of line (doors were drawn first of all, they now come straight after
+ *     the walls they close): a door still loses a tie to a wall, and now wins one against the rows below.
+ *     A closed door has no surface in the plane of anything in those rows (check:order looks).
+ * Blended draws are sorted back to front by the engine and must stay on the default bucket.
+ */
+export const DRAW = { ITEM: 250, SOLID: 240, DOOR: 230, GOO_INK: 220, CHAR: 210, CHAR_INK: 200, HORDE: 190, HORDE_INK: 180, FLOOR: 170, CEIL: 160, PANE: 150, LINE: 140, HULL: 130, PUFF: 120, SPARK: 110, WATER: 100, GLOW: 90, MARK: 80, SKY: 70, PIECE: 65, VM_SOLID: 60, VM_HULL: 50 } as const;
+const drawRows = new WeakMap<pc.Material, number>();
+/** Puts an opaque material in a row of the draw order (see `DRAW`), with the row's depth test. */
+export function drawAs<M extends pc.Material>(bucket: number, m: M): M {
+  drawRows.set(m, bucket);
+  m.depthFunc = bucket === DRAW.ITEM || bucket === DRAW.SOLID || bucket === DRAW.VM_SOLID ? pc.FUNC_LESSEQUAL : pc.FUNC_LESS;
+  return m;
+}
+/** A mesh instance in its material's row of the draw order: use this rather than `new pc.MeshInstance`. */
+export function draw(mesh: pc.Mesh, material: pc.Material): pc.MeshInstance {
+  const mi = new pc.MeshInstance(mesh, material), bucket = drawRows.get(material);
+  if (bucket !== undefined) mi.drawBucket = bucket;
+  return mi;
+}
 
 // ------------------------------------------------------------------ shaders
 const ATTR = { aPosition: pc.SEMANTIC_POSITION, aNormal: pc.SEMANTIC_NORMAL, aColor: pc.SEMANTIC_COLOR };
@@ -239,22 +303,23 @@ export function makeOutline(thickness: number, fog = true, parts = false): pc.Sh
   return m;
 }
 
-export const toonMat = makeToon();
+export const toonMat = drawAs(DRAW.SOLID, makeToon());
 
 /**
  * Toon material for small models that carry their ink hull in the same mesh, so each is one draw: hull
  * vertices have colour alpha 0, are wound inside-out, and come out as flat fogged ink exactly like `inkBack`.
- * (Opaque draws are ordered by material creation, newest first, and that order settles depth ties where a
- * teammate's hand meets the gun: this is created straight after `toonMat` so guns still draw after characters.)
+ * (Where a teammate's hand meets the gun at the same depth the gun shows: see `DRAW`.)
  */
 export const toonInkMat = new pc.ShaderMaterial({ uniqueName: 'ToonInk', attributes: ATTR, vertexGLSL: toonVS(false, false, true), fragmentGLSL: toonFS(false, true) });
 toonInkMat.setParameter('uTint', [1, 1, 1]); toonInkMat.setParameter('uFogOn', 1); toonInkMat.setParameter('uTorchUse', 1); toonInkMat.setParameter('uCeil', 0); toonInkMat.setParameter('uInk', rgb(INK)); toonInkMat.update();
-export const toonVM = makeToon({ fog: false, torch: false });
-export const outlineMat = makeOutline(0.022);
+drawAs(DRAW.ITEM, toonInkMat);
+export const toonVM = drawAs(DRAW.VM_SOLID, makeToon({ fog: false, torch: false }));
+export const outlineMat = drawAs(DRAW.GOO_INK, makeOutline(0.022));
 /** Character materials: one merged mesh per chibi, limbs posed per instance via `uParts` (see chibi.ts). */
 export const toonPartsMat = new pc.ShaderMaterial({ uniqueName: 'ToonParts', attributes: ATTR, vertexGLSL: toonVS(false, true), fragmentGLSL: toonFS(false) });
 toonPartsMat.setParameter('uTint', [1, 1, 1]); toonPartsMat.setParameter('uFogOn', 1); toonPartsMat.setParameter('uTorchUse', 1); toonPartsMat.setParameter('uCeil', 0); toonPartsMat.update();
-export const outlinePartsMat = makeOutline(0.022, true, true);
+drawAs(DRAW.CHAR, toonPartsMat);
+export const outlinePartsMat = drawAs(DRAW.CHAR_INK, makeOutline(0.022, true, true));
 /**
  * The same two, drawn instanced for the zombie horde (see horde.ts): every zombie of one look in a single draw.
  * Per instance (HORDE_FORMAT): the model and normal matrices the engine would have set as uniforms, and the row
@@ -274,20 +339,24 @@ export const POSE_TEXELS = CHIBI_PARTS * 3;
 const HORDE_ATTR = { aI0: pc.SEMANTIC_ATTR11, aI1: pc.SEMANTIC_ATTR12, aI2: pc.SEMANTIC_ATTR13, aI3: pc.SEMANTIC_ATTR14, aN0: pc.SEMANTIC_ATTR8, aN1: pc.SEMANTIC_ATTR9, aN2: pc.SEMANTIC_ATTR10 };
 export const hordeToonMat = new pc.ShaderMaterial({ uniqueName: 'ToonHorde', attributes: { ...ATTR, ...HORDE_ATTR }, vertexGLSL: toonVS(false, true, false, false, true), fragmentGLSL: toonFS(false) });
 hordeToonMat.setParameter('uTint', [1, 1, 1]); hordeToonMat.setParameter('uFogOn', 1); hordeToonMat.setParameter('uTorchUse', 1); hordeToonMat.setParameter('uCeil', 0); hordeToonMat.update();
+drawAs(DRAW.HORDE, hordeToonMat);
 export const hordeInkMat = new pc.ShaderMaterial({ uniqueName: 'OutlineHorde', attributes: { ...ATTR, ...HORDE_ATTR }, vertexGLSL: outlineVS(true, true), fragmentGLSL: outlineFS });
 hordeInkMat.setParameter('uTint', rgb(INK)); hordeInkMat.setParameter('uThickness', 0.022); hordeInkMat.setParameter('uFogOn', 1); hordeInkMat.cull = pc.CULLFACE_FRONT; hordeInkMat.update();
+drawAs(DRAW.HORDE_INK, hordeInkMat);
 /** Shared textured toon material: set `uTex` per mesh instance. */
 export const toonTexMat = new pc.ShaderMaterial({ uniqueName: 'ToonTex', attributes: ATTR_UV, vertexGLSL: toonVS(true), fragmentGLSL: toonFS(true) });
 toonTexMat.setParameter('uTint', [1, 1, 1]); toonTexMat.setParameter('uFogOn', 1); toonTexMat.setParameter('uTorchUse', 1); toonTexMat.setParameter('uCeil', 0); toonTexMat.update();
+drawAs(DRAW.FLOOR, toonTexMat);
 /** Textured toon material for ceilings: flat lit, ignores the lamp pools of the light map. Set `uTex` per mesh instance. */
 export const ceilMat = new pc.ShaderMaterial({ uniqueName: 'ToonTex', attributes: ATTR_UV, vertexGLSL: toonVS(true), fragmentGLSL: toonFS(true) });
 ceilMat.setParameter('uTint', [1, 1, 1]); ceilMat.setParameter('uFogOn', 1); ceilMat.setParameter('uTorchUse', 1); ceilMat.setParameter('uCeil', 1); ceilMat.update();
+drawAs(DRAW.CEIL, ceilMat);
 /** Shared flat (unlit, fogged) vertex-colour material and the double-sided ink used for beam strokes. */
-export const flatMat = makeUnlit({});
-export const inkLineMat = makeUnlit({ color: INK, cull: 'none' });
+export const flatMat = drawAs(DRAW.PANE, makeUnlit({}));
+export const inkLineMat = drawAs(DRAW.LINE, makeUnlit({ color: INK, cull: 'none' }));
 /** Back-face ink for hulls whose geometry is already inflated. */
-export const inkBack = makeUnlit({ color: INK, cull: 'front' });
-export const inkBackVM = makeUnlit({ color: INK, cull: 'front', fog: false });
+export const inkBack = drawAs(DRAW.HULL, makeUnlit({ color: INK, cull: 'front' }));
+export const inkBackVM = drawAs(DRAW.VM_HULL, makeUnlit({ color: INK, cull: 'front', fog: false }));
 
 // ---------------------------------------------------------------- instancing
 /** Per-instance data for the instanced materials: the model matrix (four columns) then an RGB tint (+ pad). */
@@ -303,9 +372,11 @@ const INST_ATTR = { aI0: pc.SEMANTIC_ATTR11, aI1: pc.SEMANTIC_ATTR12, aI2: pc.SE
 /** `toonMat` drawn instanced: many small lit shapes of one mesh in a single draw. */
 export const toonInstMat = new pc.ShaderMaterial({ uniqueName: 'ToonInst', attributes: { ...ATTR, ...INST_ATTR }, vertexGLSL: toonVS(false, false, false, true), fragmentGLSL: toonFS(false, false, true) });
 toonInstMat.setParameter('uFogOn', 1); toonInstMat.setParameter('uTorchUse', 1); toonInstMat.setParameter('uCeil', 0); toonInstMat.update();
+drawAs(DRAW.PUFF, toonInstMat);
 /** Double-sided fogged unlit vertex colour, drawn instanced (comic stars). */
 export const unlitInstMat = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
 unlitInstMat.setParameter('uAlpha', 1); unlitInstMat.setParameter('uFogOn', 1); unlitInstMat.cull = pc.CULLFACE_NONE; unlitInstMat.update();
+drawAs(DRAW.SPARK, unlitInstMat);
 /** `makeUnlit`'s blended, fogged vertex colour drawn instanced (the horde's ring shadows): `alpha` for all, the colour per instance. */
 export function makeUnlitInst(alpha: number): pc.ShaderMaterial {
   const m = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
@@ -376,7 +447,7 @@ export function setTorch(on: boolean, x: number, y: number, z: number, dx: numbe
 export function meshEntity(mesh: pc.Mesh | pc.Mesh[], mats: pc.Material | pc.Material[], layer = WORLD, name?: string): pc.Entity {
   const e = new pc.Entity(name);
   const ms = Array.isArray(mats) ? mats : [mats];
-  const meshInstances = ms.map((m, i) => new pc.MeshInstance(Array.isArray(mesh) ? mesh[i] : mesh, m));
+  const meshInstances = ms.map((m, i) => draw(Array.isArray(mesh) ? mesh[i] : mesh, m));
   e.addComponent('render', { meshInstances, castShadows: false, receiveShadows: false, layers: [layer] });
   return e;
 }

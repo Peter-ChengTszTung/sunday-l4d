@@ -9,7 +9,7 @@ import * as pc from 'playcanvas';
 import { TILE, CEIL_H, STOREY } from '../../shared/constants';
 import { type Level, type Step } from '../../shared/level';
 import { box, make, trs, toMesh } from './geo';
-import { app, device, makeUnlit, meshEntity, canvasTexture, freeTexture, setTint } from './gfx';
+import { app, device, DRAW, drawAs, makeUnlit, meshEntity, canvasTexture, freeTexture, setTint } from './gfx';
 import type { Sfx } from './audio';
 import type { FX } from './fx';
 
@@ -40,7 +40,7 @@ export function buildSetPieces(L: Level, sfx: Sfx, fx: FX): SetPieces {
   app.root.addChild(root);
   const meshes: pc.Mesh[] = [], materials: pc.Material[] = [], textures: pc.Texture[] = [];
   const boxMesh = (m: pc.Mat4) => { const me = toMesh(device, make(box(), undefined, m)); meshes.push(me); return me; };
-  const unlit = (color: number, tex?: pc.Texture) => { const m = makeUnlit({ color, fog: true, tex }); materials.push(m); return m; };
+  const unlit = (color: number, tex?: pc.Texture) => { const m = drawAs(DRAW.PIECE, makeUnlit({ color, fog: true, tex })); materials.push(m); return m; };
   const pieces: ((t: number, dt: number, step: number, hold: boolean) => void)[] = [];
 
   def.steps.forEach((s, i) => {

@@ -187,3 +187,17 @@ label.check input { width: 18px; height: 18px; }
 #rangepanel b { color: var(--yellow); margin-right: 6px; }
 #leaverange { margin-top: 12px; }
 
+
+/* Graphics settings: a fold-out section on the lobby card and the pause card. */
+#pause .card { max-height: calc(100vh - 32px); overflow: auto; }
+.gfxset { margin-top: 14px; text-align: left; background: rgba(26, 18, 38, 0.06); border: 3px solid var(--ink); border-radius: 16px; padding: 8px 14px; }
+.gfxset summary { cursor: pointer; font-size: 18px; border-radius: 8px; }
+.gfxset .gfxbody { display: grid; gap: 8px; padding: 10px 0 4px; }
+#lobbygfx .gfxbody { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: end; }
+#lobbygfx .gfxres, #lobbygfx .gfxnote { grid-column: 1 / -1; }
+.gfxset select { width: 100%; min-width: 0; }
+.gfxset .gfxres { font-size: 14px; font-weight: 700; opacity: 0.75; }
+.gfxset label.check { min-height: 44px; cursor: pointer; }
+.gfxset .gfxnote { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; font-weight: 700; }
+.gfxset .gfxnote .btn { font-size: 15px; padding: 4px 12px; }
+.gfxset summary:focus-visible, .gfxset select:focus-visible, .gfxset input:focus-visible, .gfxset .btn:focus-visible { outline: 3px solid var(--pink); outline-offset: 2px; }

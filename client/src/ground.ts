@@ -5,7 +5,7 @@ import * as pc from 'playcanvas';
 import { TILE, STOREY } from '../../shared/constants';
 import { F, isIndoor, hash2, type PropType } from '../../shared/level';
 import { type Geo } from './geo';
-import { Batch, device, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
+import { Batch, DRAW, drawAs, device, meshEntity, toonTexMat, canvasTexture, freeTexture, whiteTex, pixelAngle, rgb, type V3 } from './gfx';
 import { type Ctx, CHUNK, newGeo, quad, aabb, mul, mix3, css, storeyOfY } from './worldkit';
 import { t } from './i18n';
 
@@ -78,6 +78,7 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
   const waterMat = ctx.mat(new pc.ShaderMaterial({ uniqueName: 'Water', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR }, vertexGLSL: waterVS, fragmentGLSL: waterFS }));
   waterMat.setParameter('uTint', floorBase(F.WATER)); waterMat.setParameter('uSkyTint', skyTint); waterMat.setParameter('uBandTint', mix3(floorBase(F.WATER), mix3(rgb(theme.sky[1]), rgb(theme.fog), 0.5), 0.5));
   waterMat.update();
+  drawAs(DRAW.WATER, waterMat);
 
   /** Paints the ground of one chunk (tile rect). Deterministic, so a chunk can be repainted at any time. */
   const paintChunk = (cx0: number, cz0: number, cx1: number, cz1: number): HTMLCanvasElement => {

@@ -4,7 +4,7 @@ import * as pc from 'playcanvas';
 import { TILE, CEIL_H, STOREY, WEAPONS } from '../../shared/constants';
 import { F, hash2, isIndoor, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
 import { type Geo, box, sphere, cylinder, ring, make, merge, trs, toMesh } from './geo';
-import { app, device, Batch, toonMat, inkBack, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
+import { app, device, Batch, DRAW, drawAs, toonMat, inkBack, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
 import { buildCull, type CullStats, type WorldCull } from './cull';
 import { worldGun } from './viewmodel';
 import { inkGeo, pickupGeo } from './pickups';
@@ -108,7 +108,7 @@ export function buildWorld(L: Level): World {
     if (solids.length) cull.put(merge(solids), toonMat);
     if (hulls.length) cull.put({ ...merge(hulls), nor: [] }, inkBack, true);
   }
-  if (glows.length) add(meshEntity(mesh(merge(glows)), mat(makeUnlit({ fog: false }))));
+  if (glows.length) add(meshEntity(mesh(merge(glows)), mat(drawAs(DRAW.GLOW, makeUnlit({ fog: false })))));
 
   function drawProp(b: Batch, p: Prop): void {
     const cx = (p.x + p.w / 2) * T, cz = (p.z + p.d / 2) * T, r = hash2(p.x * 5 + 3, p.z * 7 + 1);
@@ -399,9 +399,9 @@ export function buildWorld(L: Level): World {
     return cv;
   };
   const doorTex = new Map<string, pc.Texture>();
-  // One textured toon material for every door of the chapter; each door sets its own `uTex`. (It is made
-  // here rather than shared with the ground so doors keep their place in the draw order.)
-  const doorMat = mat(makeToon({ tex: whiteTex }));
+  // One textured toon material for every door of the chapter; each door sets its own `uTex`. (Its own,
+  // not the ground's: doors have their own row of the draw order, straight after the walls. See gfx.ts `DRAW`.)
+  const doorMat = mat(drawAs(DRAW.DOOR, makeToon({ tex: whiteTex })));
   const texFor = (kind: string): pc.Texture => {
     let tex = doorTex.get(kind);
     if (!tex) { tex = canvasTexture(() => paintDoor(kind)); doorTex.set(kind, tex); textures.push(tex); }
@@ -513,7 +513,7 @@ export function buildWorld(L: Level): World {
   /** Ground ring colour: fixed for supplies, by tier for weapons (blue = basic, orange-gold = tier 2). */
   const ringColor = (kind: string): number => RING[kind] ?? ((WEAPONS.find((w) => w.id === kind)?.tier ?? 1) >= 2 ? 0xffa53a : 0x74c0fc);
   const arrowMesh = mesh(make(cylinder(4, 0, 1), undefined, trs(0, 0, 0, Math.PI, 0, 0, 0.28, 0.5, 0.28)));
-  const objMat = mat(makeUnlit({ color: 0xffd43b, fog: false }));
+  const objMat = mat(drawAs(DRAW.MARK, makeUnlit({ color: 0xffd43b, fog: false })));
   // Pickup models (pickups.ts) are one mesh each, shared by every pickup of that kind.
   const floatCache = new Map<string, pc.Mesh>();
   const floatMesh = (key: string): pc.Mesh => {
@@ -553,7 +553,7 @@ export function buildWorld(L: Level): World {
   }
   const pickups = def.pickups.map(buildPickup);
 
-  const noteMat = mat(makeUnlit({ color: 0xfff6e0 }));
+  const noteMat = mat(drawAs(DRAW.MARK, makeUnlit({ color: 0xfff6e0 })));
   const paperMesh = mesh(make(box(), undefined, trs(0, 0, 0, 0, 0, 0, 0.42, 0.02, 0.55)));
   const notes: NoteView[] = def.notes.map((n) => {
     const group = new pc.Entity('note');
@@ -589,7 +589,7 @@ export function buildWorld(L: Level): World {
   }
 
   // Beacon light that blinks over the active objective machine.
-  const beacon = add(meshEntity(mesh(make(ball)), mat(makeUnlit({ fog: false }))));
+  const beacon = add(meshEntity(mesh(make(ball)), mat(drawAs(DRAW.MARK, makeUnlit({ fog: false })))));
   beacon.setLocalScale(0.16, 0.16, 0.16);
   beacon.enabled = false;
   let activeObj = -1;

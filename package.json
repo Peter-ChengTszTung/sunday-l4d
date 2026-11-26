@@ -17,6 +17,7 @@
     "check:cull": "tsx scripts/check-cull.ts",
     "bake:cull": "tsx scripts/bake-cull.ts",
     "check:horde": "tsx scripts/check-horde.ts",
+    "check:order": "tsx scripts/check-order.ts",
     "check:i18n": "tsx scripts/i18n.ts"
   },
   "dependencies": {

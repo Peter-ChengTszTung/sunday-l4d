@@ -8,7 +8,7 @@
 // The engine cannot cull single instances, so the frustum test it ran per zombie is run here instead (the same
 // test on the same box), which also tells remotes.ts which zombies were on screen.
 import * as pc from 'playcanvas';
-import { app, device, WORLD, rgb, hordeToonMat, hordeInkMat, makeUnlitInst, HORDE_FORMAT, HORDE_FLOATS, POSE_TEXELS, INST_FORMAT, INST_FLOATS } from './gfx';
+import { app, device, draw, WORLD, rgb, hordeToonMat, hordeInkMat, makeUnlitInst, HORDE_FORMAT, HORDE_FLOATS, POSE_TEXELS, INST_FORMAT, INST_FLOATS } from './gfx';
 
 /** What the horde draws of one zombie (a Chibi built `instanced`). */
 export interface HordeItem {
@@ -65,7 +65,7 @@ export class Horde {
     let L = this.looks.get(it.mesh);
     if (!L) {
       const ent = new pc.Entity('horde');
-      const draws = [new pc.MeshInstance(it.mesh, hordeToonMat), new pc.MeshInstance(it.mesh, hordeInkMat)];
+      const draws = [draw(it.mesh, hordeToonMat), draw(it.mesh, hordeInkMat)];
       ent.addComponent('render', { meshInstances: draws, castShadows: false, receiveShadows: false, layers: [WORLD] });
       app.root.addChild(ent);
       L = { list: [], cap: 0, vb: null as unknown as pc.VertexBuffer, data: new Float32Array(0), ent, draws };

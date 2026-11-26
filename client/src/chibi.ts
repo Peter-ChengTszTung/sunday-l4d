@@ -6,7 +6,7 @@
 // vertex shader poses the parts from a small per-instance uniform array.
 import * as pc from 'playcanvas';
 import { type Geo, box, sphere, cylinder, capsule, ring, quad, make, merge, trs, toMesh } from './geo';
-import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, freeTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
+import { device, draw, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, freeTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
 import { Horde, type HordeItem } from './horde';
 
@@ -703,7 +703,7 @@ export class Chibi implements HordeItem {
     this.legL.setLocalPosition(-lx, 0.33, 0); this.legR.setLocalPosition(lx, 0.33, 0);
     this.mesh = mesh;
     if (!instanced) {
-      const meshInstances = [new pc.MeshInstance(mesh, toonPartsMat), new pc.MeshInstance(mesh, outlinePartsMat)];
+      const meshInstances = [draw(mesh, toonPartsMat), draw(mesh, outlinePartsMat)];
       for (const mi of meshInstances) mi.setParameter('uParts[0]', this.parts);
       this.draws = meshInstances;
       this.root.addComponent('render', { meshInstances, castShadows: false, receiveShadows: false, layers: [WORLD] });
