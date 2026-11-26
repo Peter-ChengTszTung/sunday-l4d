@@ -10,7 +10,7 @@
 // can be looked down on, and a roof over rooms with nothing built on them.
 import { TILE, CEIL_H, STOREY } from '../../shared/constants';
 import { F, WALL, isIndoor, hash2 } from '../../shared/level';
-import { meshEntity, toonMat, ceilMat, flatMat, inkLineMat, canvasTexture, rgb, type V3 } from './gfx';
+import { toonMat, ceilMat, flatMat, inkLineMat, canvasTexture, rgb, type V3 } from './gfx';
 import { type Ctx, newGeo, beam, quad, sideQuad, aabb, mul, mix3, ROOF_T } from './worldkit';
 import type { GlowSpot } from './atmo';
 
@@ -328,6 +328,7 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
       const f = look[nd], yb = k * STOREY, yc = yb + CEIL_H, ramp = def.ramp[nd] !== 0;
       const indoor = isIndoor(f);
       // Stairs and ladders have the hole above them instead of a ceiling.
+      // (cull.ts counts on these: a ceiling over every indoor tile that is not a stair, a roof over the `roofed` ones.)
       if (indoor && !ramp) {
         const c = mix3(rgb(CEILING[f] ?? 0xbcb8d4), rgb(theme.fog), f === F.INTERIOR ? 0.12 : 0.04);
         const b = ceil.pos.length / 3, x0 = x * T, x1 = x0 + T, z0 = z * T, z1 = z0 + T;
@@ -457,9 +458,10 @@ export function buildArchitecture(ctx: Ctx, glows: GlowSpot[]): void {
       }
     }
 
-    if (walls.idx.length) ctx.add(meshEntity(ctx.mesh(walls), toonMat));
-    if (flat.idx.length) ctx.add(meshEntity(ctx.mesh(flat), flatMat));
-    if (ink.idx.length) ctx.add(meshEntity(ctx.mesh(ink), inkLineMat));
-    if (ceil.idx.length) { const e = ctx.add(meshEntity(ctx.mesh(ceil), ceilMat)); e.render!.meshInstances[0].setParameter('uTex', ceilTex); }
+    // Lit panes and ink strokes lie on the wall faces (within a few centimetres): "deco", dropped once in the fog.
+    ctx.put(walls, toonMat);
+    ctx.put(flat, flatMat, true);
+    ctx.put(ink, inkLineMat, true);
+    for (const mi of ctx.put(ceil, ceilMat)) mi.setParameter('uTex', ceilTex);
   });
 }

@@ -14,6 +14,12 @@ Maps can stack up to 4 storeys. The engine lives in `shared/level.ts`. Its file 
 - **Stairs and ladders are ramps.** Ramp cells sit on storey `k`, and their floor rises along `ramp` dir (`RAMP.PX/NX/PZ/NZ`, see `RAMP_DX/DZ`) from `rampLo` to `rampHi` (relative to `k * STOREY`). Walking off the high end puts you on storey `k+1`. The cells above a ramp are air (the stairwell hole). A ladder is a one-tile ramp with `def.ladder[n]` = 1, climbed at `LADDER_SPEED`. `def.ramps` lists every flight and ladder as a rect plus `lv`, `dir` and `ladder`, for rendering.
 - Positions carry **y = the floor height a thing stands on** (absolute metres). A player's network `y` is feet height: floor plus any jump. Pickups, notes, labels, arrows, lamps, spawns and step waypoints (`at.y`) carry y. Props and doors carry `lv`, and step areas (`Rect.lv`) carry their storey.
 
+## What gets drawn
+
+`client/src/cull.ts` hides scenery the camera cannot see: rooms behind walls on its own storey, and other storeys except through stairwells, drops and open air. It works from the same facts as above (a wall that fills its storey blocks; a floor, ceiling or slab underside closes its tile of the floor line), so it repeats a few of the drawing rules in `arch.ts`, `storeys.ts` and `ground.ts`. After changing what those draw across a floor line, run `npm run check:cull`: it casts rays at everything hidden and fails if any of it was in sight. `?cull=off` in the URL turns the culling off for comparison.
+
+What is in sight from each 4 m square of each storey is worked out ahead of time and kept in `client/src/pvs/` (one generated file per chapter, fetched with the chapter), so at run time the culling is a table lookup. **After changing a map, or anything the world builders draw, run `npm run bake:cull`** (a minute or two). A table that no longer matches the geometry is never used: the game notices at load, warns in the console and works each tile out as the camera enters it instead (correct, but a few milliseconds per new tile), and `npm run check:cull` fails. `?cull=live` forces that mode.
+
 ## Level API (all positions in metres)
 
 | Call | What it does |

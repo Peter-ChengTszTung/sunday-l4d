@@ -315,6 +315,7 @@ export function buildGround(ctx: Ctx, batchFor: (x: number, z: number) => Batch)
   // -------------------------------------------------------------- upper floors
   // Every floor above the ground in a chunk shares one mesh and one texture: each storey's floor
   // cells get a box in an atlas (their bounding rect plus half a tile of painted gutter all round).
+  // (cull.ts counts on a quad under every floor cell: it is what stops a sight line from above.)
   if (levels > 1) ctx.chunks((cx0, cz0, cx1, cz1) => {
     const boxes: { lv: number; x0: number; z0: number; x1: number; z1: number; oy: number }[] = [];
     let aw = 0, ah = 0;

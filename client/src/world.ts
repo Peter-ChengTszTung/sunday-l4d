@@ -4,7 +4,8 @@ import * as pc from 'playcanvas';
 import { TILE, CEIL_H, STOREY, WEAPONS } from '../../shared/constants';
 import { F, hash2, isIndoor, type Level, type Pickup, type Note, type Prop } from '../../shared/level';
 import { type Geo, box, sphere, cylinder, ring, make, merge, trs, toMesh } from './geo';
-import { app, device, Batch, toonMat, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
+import { app, device, Batch, toonMat, inkBack, makeToon, makeUnlit, meshEntity, canvasTexture, freeTexture, whiteTex, setTint } from './gfx';
+import { buildCull, type CullStats, type WorldCull } from './cull';
 import { worldGun } from './viewmodel';
 import { inkGeo, pickupGeo } from './pickups';
 import { type Ctx, CHUNK, lampIndoor, nightOf, storeysOf, storeyOfY } from './worldkit';
@@ -21,6 +22,8 @@ export interface NoteView { def: Note; group: pc.Entity; read: boolean }
 export interface World {
   L: Level;
   /** Set-dressing counts for the debug overlay and tuning. */ dressing: DressStats;
+  /** Debug: how much of the static scenery is being drawn (cull.ts). */ culled(): CullStats;
+  /** Dev scripts (bake-cull.ts, check-cull.ts). */ cull: WorldCull;
   pickups: PickupView[];
   notes: NoteView[];
   setDoors(mask: number, instant?: boolean): void;
@@ -48,7 +51,8 @@ export function buildWorld(L: Level): World {
   const chunks = (fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void) => {
     for (let cz = 0; cz < H; cz += CHUNK) for (let cx = 0; cx < W; cx += CHUNK) fn(cx, cz, Math.min(W, cx + CHUNK), Math.min(H, cz + CHUNK));
   };
-  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, mat, add: (e) => add(e), floorOf, isWall, chunks, S };
+  const cull = buildCull(L, S, theme.fogFar, (e) => add(e), mesh);
+  const ctx: Ctx = { L, def, W, H, theme, night: nightOf(theme), root, textures, mesh, mat, add: (e) => add(e), floorOf, isWall, chunks, S, put: cull.put };
   /** Additive halos (lamps, neon, shop windows), drawn as one mesh by the atmosphere. */
   const glowSpots: GlowSpot[] = [];
 
@@ -98,7 +102,12 @@ export function buildWorld(L: Level): World {
   }
   // Decorative clutter goes into the same per-chunk batches (no extra draw calls).
   const dressing = buildDressing(ctx, batchFor, glows, glowSpots);
-  for (const b of batches.values()) add(b.build(undefined, false, meshes));
+  for (const b of batches.values()) {
+    // As Batch.build() would, but through the culling: the hulls are the solids a few centimetres bigger.
+    const { solids, hulls } = b.take();
+    if (solids.length) cull.put(merge(solids), toonMat);
+    if (hulls.length) cull.put({ ...merge(hulls), nor: [] }, inkBack, true);
+  }
   if (glows.length) add(meshEntity(mesh(merge(glows)), mat(makeUnlit({ fog: false }))));
 
   function drawProp(b: Batch, p: Prop): void {
@@ -588,7 +597,7 @@ export function buildWorld(L: Level): World {
   const atmo = buildAtmosphere(ctx, glowSpots); // light map, sky, skyline, glows, weather
 
   const world: World = {
-    L, dressing, pickups, notes,
+    L, dressing, pickups, notes, culled: cull.stats, cull,
     setDoors(mask, instant) {
       for (const v of doorViews) {
         v.open = !!(mask & (1 << v.d.id));
@@ -636,12 +645,14 @@ export function buildWorld(L: Level): World {
         setTint(beacon, used ? (blink ? 0x7dff8a : 0x1f6a34) : blink ? 0xff4d5e : 0x6a1f2a);
       }
       for (const n of notes) n.group.enabled = Math.abs(n.def.x - camX) < far && Math.abs(n.def.z - camZ) < far;
+      cull.update(camX, camY, camZ);
       ground.update(camX, camY, camZ);
       atmo.update(t, dt, camX, camY, camZ);
     },
     dispose() {
       atmo.dispose();
       ground.dispose();
+      cull.dispose();
       root.destroy();
       for (const t of textures) freeTexture(t);
       for (const m of meshes) m.destroy();

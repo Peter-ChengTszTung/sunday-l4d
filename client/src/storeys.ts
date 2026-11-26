@@ -90,6 +90,7 @@ export function buildStoreys(ctx: Ctx, batchFor: (x: number, z: number) => Batch
   // ---------------------------------------------------------------- undersides
   // Under a slab that hangs over the open (a skybridge, a balcony), and under an upstairs wall that
   // stands over one. Over a room, the room's ceiling is the underside.
+  // (cull.ts repeats this test to know where a sight line from below is stopped: keep the two in step.)
   const underC = rgb(UNDER);
   for (let lv = 1; lv < levels; lv++) for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
     const n = lv * WH + z * W + x, yb = lv * STOREY, upWall = wall[n] === 1 && base[n] === yb;

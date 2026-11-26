@@ -24,6 +24,8 @@ export interface Ctx {
   isWall(x: number, z: number, lv?: number): boolean;
   /** Per-node render facts for multi-storey maps (wall stacks, looks). */ S: Storeys;
   chunks(fn: (cx0: number, cz0: number, cx1: number, cz1: number) => void): void;
+  /** Static scenery goes in through here, so what cannot be seen is not drawn (cull.ts). `deco`: ink and paint lying on solid geometry. */
+  put(g: Geo, mat: pc.Material, deco?: boolean): pc.MeshInstance[];
 }
 
 export const newGeo = (): Geo => ({ pos: [], nor: [], col: [], uv: [], idx: [] });

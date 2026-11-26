@@ -140,6 +140,8 @@ docs/     campaign.md — story bible and per-chapter quest briefs
 npm run typecheck
 npm test           # boots a server, joins two bots, plays join → combat → revive → chapter 1's whole quest
 npm run check:maps # validates every chapter (reachability per door state, pacing estimate)
+npm run check:cull # scenery culling: nothing hidden that is in sight, and draw/triangle counts (client/src/cull.ts)
+npm run bake:cull  # after changing a map or the world builders: rebuilds the visibility tables in client/src/pvs/
 ```
 
 **Guide:** with `npm run dev`, open <http://localhost:3000/tools/guide.html>. Three tabs, in English or
