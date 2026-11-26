@@ -252,4 +252,7 @@ export default {
   "Smooth edges change after a reload. Reloading leaves this game.": "平滑邊緣需重新載入後才會生效。重新載入會離開這場遊戲。",
   "This browser cannot smooth edges.": "此瀏覽器不支援平滑邊緣。",
   "RELOAD NOW": "立即重新載入",
+  "TIMER STOPPED!": "計時停止了！",
+  "{who} is on it… {p}%": "{who} 正在處理…{p}%",
+  "You're on it… {p}%": "你正在處理…{p}%",
 } satisfies Record<string, string>;

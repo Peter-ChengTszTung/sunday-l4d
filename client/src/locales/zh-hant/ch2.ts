@@ -292,4 +292,7 @@ export default {
   "ROOF": "屋頂",
   "SNOOZLE SAYS: SLEEP TIGHT, MALLOW BAY!": "打盹樂說：睡個好覺，棉花糖灣！",
   "RAMP DOWN: LEVEL 1": "坡道往下：1層",
+  "LIFT STOPPED! Bring a power cell!": "電梯停了！快拿電池來！",
+  "MIND THE GLASS": "小心玻璃",
+  "STAIRS TO FLOOR 3: DAY ROOM": "往三樓樓梯：交誼廳",
 } satisfies Record<string, string>;

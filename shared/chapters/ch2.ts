@@ -1214,10 +1214,10 @@ export function build() {
       { kind: 'final', secs: 35, lanes: ['A', 'B'], specials: 2, msg: 'Every bay at once! Hold on!' },
     ],
     gates: [
-      { at: 10, items: 1, msg: 'The lift needs power! Find a cell!' },
-      { at: 45, items: 2, msg: 'The lift stalled! Second cell!' },
-      { at: 85, items: 3, msg: 'Stalled again! Third cell!' },
-      { at: 125, items: 4, msg: 'One last cell and we\'re up!' },
+      { at: 10, items: 1, msg: 'The lift needs power! Find a cell!', hud: 'LIFT STOPPED! Bring a power cell!' },
+      { at: 45, items: 2, msg: 'The lift stalled! Second cell!', hud: 'LIFT STOPPED! Bring a power cell!' },
+      { at: 85, items: 3, msg: 'Stalled again! Third cell!', hud: 'LIFT STOPPED! Bring a power cell!' },
+      { at: 125, items: 4, msg: 'One last cell and we\'re up!', hud: 'LIFT STOPPED! Bring a power cell!' },
     ],
     radio: [
       ['Dot', 'That lift chimes the whole way up. Every sleeper in the Galleria will come to listen.'],

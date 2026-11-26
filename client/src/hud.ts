@@ -168,8 +168,21 @@ export class Hud {
     this.el.notetitle.textContent = title; this.el.notetext.textContent = text;
   }
   get noteOpen(): boolean { return !this.el.notecard.hidden; }
-  setHoldout(seconds: number): void {
-    this.set('ho', String(seconds), () => { this.el.holdout.hidden = seconds < 0; this.el.holdout.textContent = t('HOLD OUT! {s}s', { s: seconds }); });
+  /**
+   * The holdout timer pill. `stall`: a HoldGate has stopped the timer: its text replaces the countdown, the pill
+   * turns red and pulses, and `p` (0-1, an area gate's progress) fills it, with `who` on the spot ('me': this player).
+   */
+  setHoldout(seconds: number, stall: { text: string; p: number; who: string } | null = null): void {
+    const key = stall ? `${seconds}|${stall.text}|${stall.p}|${stall.who}` : String(seconds);
+    this.set('ho', key, () => {
+      const el = this.el.holdout;
+      el.hidden = seconds < 0;
+      el.classList.toggle('stall', !!stall);
+      el.style.setProperty('--p', stall ? `${Math.round(stall.p * 100)}%` : '0%');
+      el.textContent = !stall ? t('HOLD OUT! {s}s', { s: seconds })
+        : stall.who === 'me' ? t("You're on it… {p}%", { p: Math.round(stall.p * 100) })
+        : stall.who ? t('{who} is on it… {p}%', { who: stall.who, p: Math.round(stall.p * 100) }) : stall.text;
+    });
   }
 
   feed(text: string): void {

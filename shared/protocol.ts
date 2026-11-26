@@ -92,7 +92,9 @@ export type ServerMsg =
   | { t: 'ro'; players: RosterEntry[] }
   | { t: 'err'; msg: string }
   // g = open door mask, ho = holdout seconds left (-1 none), q = active step, qc = collected items for a collect step.
-  | { t: 's'; st: 'play' | 'won' | 'lost'; g: number; ho: number; q: number; qc: number; p: PlayerSnap[]; z: ZombieSnap[]; ev: GameEvent[] };
+  // gt = the HoldGate stopping the holdout timer right now (absent: none): [gate index into Step.gates, progress 0-1 for an
+  // area gate, id of the survivor on its spot (0 = nobody)].
+  | { t: 's'; st: 'play' | 'won' | 'lost'; g: number; ho: number; gt?: [number, number, number]; q: number; qc: number; p: PlayerSnap[]; z: ZombieSnap[]; ev: GameEvent[] };
 
 export type ClientMsg =
   // room '' = quick play; create = open a new room on chapter `ch` starting at checkpoint step `cp` (-1 = chapter start).

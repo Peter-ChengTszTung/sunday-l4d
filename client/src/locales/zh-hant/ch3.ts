@@ -263,4 +263,5 @@ export default {
   "CRANK": "曲柄",
   "GUARD SUPPLY": "國民兵補給",
   "LADDER": "梯子",
+  "BERTHA STALLED! Crank her!": "伯莎熄火了！快搖曲柄！",
 } satisfies Record<string, string>;

@@ -19,7 +19,8 @@
     "check:horde": "tsx scripts/check-horde.ts",
     "check:order": "tsx scripts/check-order.ts",
     "check:i18n": "tsx scripts/i18n.ts",
-    "check:traps": "tsx scripts/check-traps.ts"
+    "check:traps": "tsx scripts/check-traps.ts",
+    "check:gates": "tsx scripts/check-gates.ts"
   },
   "dependencies": {
     "ws": "^8.23.0"

@@ -6,7 +6,7 @@ import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLA
 import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Trap, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, GATE_NAG, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
@@ -436,16 +436,36 @@ export class Room implements CombatHost, TrapHost {
    */
   private gateHolds(s: Step, stand: Player[], dt: number): boolean {
     const hs = this.hs, g = s.gates?.[hs.gate];
+    hs.stall = false; hs.stallBy = 0;
     if (!g || hs.total - this.holdout < g.at * HOLD_SCALE) return false;
-    if (hs.gateSaid !== hs.gate) { hs.gateSaid = hs.gate; hs.gateT = 0; if (g.msg) this.events.push(['msg', g.msg]); }
+    if (hs.gateSaid !== hs.gate) {
+      hs.gateSaid = hs.gate; hs.gateT = 0; hs.nag = GATE_NAG;
+      if (g.msg) this.events.push(['msg', g.msg]);
+      // While it stalls, the script may finish the stage the gate fell in but not start the next (a Brute, the
+      // final): a team that hasn't found the crank yet gets the same wave, not ever harder ones.
+      const at = g.at * HOLD_SCALE;
+      hs.stallCap = hs.ends.find((e) => e > at) ?? Infinity;
+    }
     let ok = false;
     if (g.items !== undefined) ok = this.collected >= g.items;
     else if (g.area) {
-      hs.gateT = stand.some((p) => this.L.inRect(p.x, p.y, p.z, g.area!)) ? hs.gateT + dt : 0;
+      const by = stand.find((p) => this.L.inRect(p.x, p.y, p.z, g.area!));
+      // Off the spot (grabbed, knocked away) the progress drains rather than resets: an interruption costs time, not the lot.
+      hs.gateT = by ? hs.gateT + dt : Math.max(0, hs.gateT - dt);
+      hs.stallBy = by?.id ?? 0;
       ok = hs.gateT >= (g.secs ?? 0);
     } else ok = true;
     if (ok) { hs.gate++; return false; }
+    hs.stall = true;
+    // Say it again now and then while nobody is on it: one feed line scrolls away in a fight.
+    if ((hs.nag -= dt) <= 0) { hs.nag = GATE_NAG; if (g.msg && !hs.stallBy) this.events.push(['msg', g.msg]); }
     return true;
+  }
+
+  /** The HoldGate stopping the timer, for the HUD: [gate index, progress 0-1 (area gates), survivor on it (0 = none)]. */
+  private gateSnap(): [number, number, number] {
+    const hs = this.hs, g = this.cur?.gates?.[hs.gate];
+    return [hs.gate, g?.secs ? r2(Math.min(1, hs.gateT / g.secs)) : 0, hs.stallBy];
   }
 
   /** A holdout's timer ran out: log its summary (dev servers) and, after a Big Hold On, start the escape trickle. */
@@ -1685,7 +1705,7 @@ export class Room implements CombatHost, TrapHost {
   private freshHold() {
     return {
       stages: [] as HoldStage[], ends: [] as number[], total: 0, i: -1, drip: 0, bruteWant: false, bruteTry: 0, big: false,
-      lanes: {} as Record<string, number[]>, zone: [] as number[], zoneSets: [] as number[][], gate: 0, gateT: 0, gateSaid: -1, left: 0, per: 0, acc: 0, run: 0,
+      lanes: {} as Record<string, number[]>, zone: [] as number[], zoneSets: [] as number[][], gate: 0, gateT: 0, gateSaid: -1, stall: false, stallBy: 0, stallCap: Infinity, nag: 0, left: 0, per: 0, acc: 0, run: 0,
       stat: { spawned: 0, peak: 0, downs: 0, deaths: 0, gunKills: 0, kills: 0, t0: 0 },
     };
   }
@@ -1798,8 +1818,10 @@ export class Room implements CombatHost, TrapHost {
   private updateHoldout(dt: number, room: number, specials: number, brute: boolean): void {
     const H = DIRECTOR.holdout, hs = this.hs, n = this.players.size;
     if (!hs.stages.length) return;
-    // Stages run on real time: a timer stopped at a HoldGate does not stop the script.
+    // Stages run on real time: a timer stopped at a HoldGate does not stop the script, but it can't run past
+    // the end of the stage the gate stopped in (gateHolds) until the timer goes again.
     hs.run += dt;
+    if (hs.stall) hs.run = Math.min(hs.run, hs.stallCap - 1e-3);
     const el = hs.run;
     let i = hs.i;
     while (i + 1 < hs.stages.length && el >= hs.ends[i]) i++;
@@ -2787,7 +2809,7 @@ export class Room implements CombatHost, TrapHost {
     }
     const z: ZombieSnap[] = [];
     for (const q of this.zombies.values()) z.push([q.id, q.type, r2(q.x), r2(q.z), r2(q.ry), q.st, r2(q.y)]);
-    this.broadcast({ t: 's', st: this.state, g: this.doors, ho: this.holdout >= 0 ? Math.ceil(this.holdout) : -1, q: this.step, qc: this.collected, p, z, ev: this.events });
+    this.broadcast({ t: 's', st: this.state, g: this.doors, ho: this.holdout >= 0 ? Math.ceil(this.holdout) : -1, gt: this.holdout >= 0 && this.hs.stall ? this.gateSnap() : undefined, q: this.step, qc: this.collected, p, z, ev: this.events });
     this.events = [];
   }
 }

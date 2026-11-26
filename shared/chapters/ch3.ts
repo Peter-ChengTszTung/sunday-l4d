@@ -1180,8 +1180,8 @@ export function build() {
     // A restart finale (L4D2 Hard Rain): Bertha stalls at the start of wave 2 and of the final, and
     // the timer stops until someone has held her crank, on the nose, for 4 s.
     gates: [
-      { at: 45, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'Bertha stalled! Crank her at the nose!' },
-      { at: 115, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'She stalled again! Back to the crank!' },
+      { at: 45, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'Bertha stalled! Crank her at the nose!', hud: 'BERTHA STALLED! Crank her!' },
+      { at: 115, area: { x0: 13, z0: 153, x1: 16, z1: 154 }, secs: 4, msg: 'She stalled again! Back to the crank!', hud: 'BERTHA STALLED! Crank her!' },
     ],
     holdScript: [
       { kind: 'wave', secs: 35, lanes: ['A'], msg: 'Here they come! Down off the bridge!' },

@@ -174,6 +174,8 @@ const rescueIn = (secs: number): string => (Number.isFinite(secs) ? t('rescue in
 const remotes = new Remotes({ fx, sfx, hud, me, inRange: () => range !== null });
 const mates = remotes.mates, zeds = remotes.zeds;
 let inGame = false, locked = false, ended = false;
+/** The HoldGate stopping the holdout timer (snapshot `gt`), or null. */
+let gate: [number, number, number] | null = null;
 let doors = 0, step = 0, qc = 0, holdout = -1, serverState: 'play' | 'won' | 'lost' = 'play', debugServer = false;
 /** The offline shooting range, while you are in it (it stands in for the server). */
 let range: ShootingRange | null = null;
@@ -1059,6 +1061,7 @@ net.onMessage = (m: ServerMsg) => {
     case 'err': lobby.message(tMsg(m.msg)); break;
     case 's':
       serverState = m.st; holdout = m.ho; qc = m.qc;
+      setGate(m.gt ?? null);
       if (m.g !== doors) { doors = m.g; world.setDoors(doors); }
       for (const ev of m.ev) onEvent(ev);
       applyPlayers(m.p);
@@ -1123,7 +1126,7 @@ function enterRange(): void {
   vm.setWeapon(0);
   range = new ShootingRange(L, RANGE_PID, (m) => net.onMessage(m));
   net.local = (m) => range?.handle(m);
-  serverState = 'play'; holdout = -1;
+  serverState = 'play'; holdout = -1; gate = null;
   world.setDoors(0, true);
   enterStep(0, false);
   hud.radio([], true);
@@ -1185,11 +1188,33 @@ function enterStep(i: number, announce: boolean): void {
   if (announce && s.kind === 'holdout' && s.big) hud.banner(t('THE BIG HOLD ON! Man the guns!'), true);
 }
 
+/** The HoldGate stopping the timer, if one is: its def. */
+function stalledGate() { return gate ? L.def.steps[step]?.gates?.[gate[0]] ?? null : null; }
+/** Where a stalled HoldGate is dealt with: the middle of its area. (An item gate: the nearest item, see waypointTarget.) */
+function gateSpot(): { x: number; z: number; y: number } | null {
+  const a = stalledGate()?.area;
+  return a ? { x: ((a.x0 + a.x1 + 1) / 2) * TILE, z: ((a.z0 + a.z1 + 1) / 2) * TILE, y: (a.lv ?? 0) * STOREY } : null;
+}
+/** Snapshot `gt`: a HoldGate started or stopped holding the timer. Sound it, and say it big once. */
+function setGate(g: [number, number, number] | null): void {
+  const was = gate;
+  gate = g;
+  if (!!was === !!g) return;
+  const at = gateSpot() ?? L.def.steps[step]?.at;
+  if (g) {
+    const def = stalledGate();
+    hud.banner(t(def?.hud ?? 'TIMER STOPPED!'), true);
+    if (at) sfx.at(at.y ?? 0).liftFault(at.x, at.z);
+  } else if (holdout > 0 && at) sfx.at(at.y ?? 0).tramPower(at.x, at.z);
+}
+
 /** Where the quest marker should point right now (world metres; `y` = the floor height there). */
 function waypointTarget(): { x: number; z: number; y?: number } | null {
   const s = L.def.steps[step];
   if (!s || serverState !== 'play') return null;
-  if (s.kind === 'collect') {
+  const sg = stalledGate();
+  if (sg?.area) return gateSpot();
+  if (s.kind === 'collect' || sg?.items !== undefined) {
     let best: { x: number; z: number; y?: number } | null = null, bd = Infinity;
     for (const pv of world.pickups) {
       if (pv.def.kind !== 'item' || pv.def.group !== s.group || pv.taken) continue;
@@ -1499,7 +1524,8 @@ function updateHud(dt: number): void {
   }
   team.length = n;
   hud.setTeam(team);
-  hud.setHoldout(holdout);
+  const sg = stalledGate();
+  hud.setHoldout(holdout, gate && sg ? { text: t(sg.hud ?? 'TIMER STOPPED!'), p: gate[1], who: gate[2] ? (gate[2] === me.id ? 'me' : roster.get(gate[2])?.name ?? '') : '' } : null);
   const s = L.def.steps[step];
   hud.setObjective(serverState !== 'play' || !s ? '—' : s.kind === 'collect' || s.count ? `${t(s.objective)} ${qc}/${s.count}` : t(s.objective));
   updateWaypoint();

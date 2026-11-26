@@ -137,7 +137,11 @@ export interface HoldStage {
  * step's items (Step.group) collected; `area` + `secs`: a standing survivor has stayed in the area
  * that long (the clock resets if it is left empty).
  */
-export interface HoldGate { at: number; items?: number; area?: Rect; secs?: number; /** Feed line when the timer stops. */ msg?: string }
+export interface HoldGate {
+  at: number; items?: number; area?: Rect; secs?: number;
+  /** Feed line when the timer stops (repeated while nobody deals with it). */ msg?: string;
+  /** HUD text in place of the timer while it is stopped (default 'TIMER STOPPED!'). */ hud?: string;
+}
 export interface Step {
   kind: StepKind;
   /** HUD text. Collect steps get " 2/4" appended. */ objective: string;

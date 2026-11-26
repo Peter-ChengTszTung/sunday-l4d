@@ -244,6 +244,8 @@ export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline:
 export const BIG_HOLD = { base: [44, 60, 80, 100] as const, open: 0.6, brute: 0.4, cap: [60, 80, 110, 140] as const, drain: 0.08, escapeEvery: 0.55 };
 /** Brute health: base + this per survivor beyond the first (before difficulty). */
 export const BRUTE_HP_PER = 1100;
+/** Seconds between repeats of a stalled HoldGate's feed line while nobody is on it. */
+export const GATE_NAG = 12;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */
 export const BRUTE_CATCHUP = { mult: 1.3, far: 9 };
 /** A full horde: base + per survivor walkers (before difficulty). Solo gets a smaller one, a full squad the same as before. */
