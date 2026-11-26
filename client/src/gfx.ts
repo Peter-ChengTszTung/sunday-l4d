@@ -52,26 +52,35 @@ const FOG = /* glsl */ `
 // transform as three row vec4s. Normals use the cofactor matrix (the inverse
 // transpose up to scale), so squashed parts light exactly as separate entities did.
 export const CHIBI_PARTS = 6;
-const PARTS = /* glsl */ `
-  uniform vec4 uParts[${CHIBI_PARTS * 3}];
-  int partIndex() { return int(aColor.a * 255.0 + 0.5) * 3; }
-  vec3 partPos(int i, vec3 p) { vec4 q = vec4(p, 1.0); return vec3(dot(uParts[i], q), dot(uParts[i + 1], q), dot(uParts[i + 2], q)); }
+// `horde`: the instanced form (see horde.ts). The rows come from one texel row of the pose texture `uPose`
+// (three texels a part, the row index riding in aN0.w) instead of a uniform array; the maths is the same text.
+const PARTS = (horde = false) => { const a = horde ? 'hParts' : 'uParts'; return /* glsl */ `
+  ${horde ? `uniform highp sampler2D uPose; vec4 hParts[3];
+  int partIndex() {
+    ivec2 at = ivec2(int(aColor.a * 255.0 + 0.5) * 3, int(aN0.w + 0.5));
+    hParts[0] = texelFetch(uPose, at, 0); hParts[1] = texelFetch(uPose, at + ivec2(1, 0), 0); hParts[2] = texelFetch(uPose, at + ivec2(2, 0), 0);
+    return 0;
+  }` : `uniform vec4 uParts[${CHIBI_PARTS * 3}];
+  int partIndex() { return int(aColor.a * 255.0 + 0.5) * 3; }`}
+  vec3 partPos(int i, vec3 p) { vec4 q = vec4(p, 1.0); return vec3(dot(${a}[i], q), dot(${a}[i + 1], q), dot(${a}[i + 2], q)); }
   vec3 partNormal(int i, vec3 n) {
-    vec3 a = vec3(uParts[i].x, uParts[i + 1].x, uParts[i + 2].x), b = vec3(uParts[i].y, uParts[i + 1].y, uParts[i + 2].y), c = vec3(uParts[i].z, uParts[i + 1].z, uParts[i + 2].z);
+    vec3 a = vec3(${a}[i].x, ${a}[i + 1].x, ${a}[i + 2].x), b = vec3(${a}[i].y, ${a}[i + 1].y, ${a}[i + 2].y), c = vec3(${a}[i].z, ${a}[i + 1].z, ${a}[i + 2].z);
     return cross(b, c) * n.x + cross(c, a) * n.y + cross(a, b) * n.z;
-  }`;
+  }`; };
+// Per-instance model matrix (four columns) and normal matrix (three columns; aN0.w = pose texture row) of a horde draw.
+const HORDE_VS = /* glsl */ `attribute vec4 aI0; attribute vec4 aI1; attribute vec4 aI2; attribute vec4 aI3; attribute vec4 aN0; attribute vec4 aN1; attribute vec4 aN2;`;
 // `ink`: vertices whose colour alpha is 0 are an ink hull baked into the same mesh (see toonInkMat).
 // `inst`: hardware-instanced (see INST_FORMAT): the model matrix and tint come per instance, not as uniforms.
 // Instances are scaled uniformly, so the model matrix's upper 3x3 serves for normals.
 const INST_VS = /* glsl */ `attribute vec4 aI0; attribute vec4 aI1; attribute vec4 aI2; attribute vec4 aI3; attribute vec4 aITint; varying vec3 vTint;`;
-const toonVS = (uv: boolean, parts = false, ink = false, inst = false) => /* glsl */ `
+const toonVS = (uv: boolean, parts = false, ink = false, inst = false, horde = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform mat3 matrix_normal;
   varying vec3 vN; varying vec3 vW; varying vec3 vC; ${ink ? 'varying float vInk;' : ''}
-  ${parts ? PARTS : ''} ${inst ? INST_VS : ''}
+  ${horde ? HORDE_VS : ''} ${parts ? PARTS(horde) : ''} ${inst ? INST_VS : ''}
   void main(void) {
     ${parts ? 'int pi = partIndex(); vec3 p = partPos(pi, aPosition), nrm = partNormal(pi, aNormal);' : 'vec3 p = aPosition, nrm = aNormal;'}
-    ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(model); vTint = aITint.rgb;' : 'mat4 model = matrix_model; mat3 nmat = matrix_normal;'}
+    ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(model); vTint = aITint.rgb;' : horde ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(aN0.xyz, aN1.xyz, aN2.xyz);' : 'mat4 model = matrix_model; mat3 nmat = matrix_normal;'}
     vec4 w = model * vec4(p, 1.0);
     vW = w.xyz; vN = normalize(nmat * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} ${ink ? 'vInk = 1.0 - aColor.a;' : ''}
     gl_Position = matrix_viewProjection * w;
@@ -143,15 +152,15 @@ const unlitFS = (uv: boolean, inst = false) => /* glsl */ `
     gl_FragColor = vec4(fogged(vC * ${inst ? 'vTint' : 'uTint'} * t.rgb, vW), uAlpha * t.a);
   }`;
 
-const outlineVS = (parts = false) => /* glsl */ `
+const outlineVS = (parts = false, horde = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; ${parts ? 'attribute vec4 aColor;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform float uThickness;
   varying vec3 vW;
-  ${parts ? PARTS : ''}
+  ${horde ? HORDE_VS : ''} ${parts ? PARTS(horde) : ''}
   void main(void) {
     vec3 p = aPosition + normalize(aNormal) * uThickness;
     ${parts ? 'p = partPos(partIndex(), p);' : ''}
-    vec4 w = matrix_model * vec4(p, 1.0); vW = w.xyz; gl_Position = matrix_viewProjection * w;
+    vec4 w = ${horde ? 'mat4(aI0, aI1, aI2, aI3)' : 'matrix_model'} * vec4(p, 1.0); vW = w.xyz; gl_Position = matrix_viewProjection * w;
   }`;
 const outlineFS = /* glsl */ `
   varying vec3 vW; uniform vec3 uTint;
@@ -246,6 +255,27 @@ export const outlineMat = makeOutline(0.022);
 export const toonPartsMat = new pc.ShaderMaterial({ uniqueName: 'ToonParts', attributes: ATTR, vertexGLSL: toonVS(false, true), fragmentGLSL: toonFS(false) });
 toonPartsMat.setParameter('uTint', [1, 1, 1]); toonPartsMat.setParameter('uFogOn', 1); toonPartsMat.setParameter('uTorchUse', 1); toonPartsMat.setParameter('uCeil', 0); toonPartsMat.update();
 export const outlinePartsMat = makeOutline(0.022, true, true);
+/**
+ * The same two, drawn instanced for the zombie horde (see horde.ts): every zombie of one look in a single draw.
+ * Per instance (HORDE_FORMAT): the model and normal matrices the engine would have set as uniforms, and the row
+ * of the pose texture `uPose` (RGBA32F, POSE_TEXELS wide) that holds what `uParts` held.
+ */
+export const HORDE_FLOATS = 28;
+export const HORDE_FORMAT = new pc.VertexFormat(device, [
+  { semantic: pc.SEMANTIC_ATTR11, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR12, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR13, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR14, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR8, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR9, components: 4, type: pc.TYPE_FLOAT32 },
+  { semantic: pc.SEMANTIC_ATTR10, components: 4, type: pc.TYPE_FLOAT32 },
+]);
+export const POSE_TEXELS = CHIBI_PARTS * 3;
+const HORDE_ATTR = { aI0: pc.SEMANTIC_ATTR11, aI1: pc.SEMANTIC_ATTR12, aI2: pc.SEMANTIC_ATTR13, aI3: pc.SEMANTIC_ATTR14, aN0: pc.SEMANTIC_ATTR8, aN1: pc.SEMANTIC_ATTR9, aN2: pc.SEMANTIC_ATTR10 };
+export const hordeToonMat = new pc.ShaderMaterial({ uniqueName: 'ToonHorde', attributes: { ...ATTR, ...HORDE_ATTR }, vertexGLSL: toonVS(false, true, false, false, true), fragmentGLSL: toonFS(false) });
+hordeToonMat.setParameter('uTint', [1, 1, 1]); hordeToonMat.setParameter('uFogOn', 1); hordeToonMat.setParameter('uTorchUse', 1); hordeToonMat.setParameter('uCeil', 0); hordeToonMat.update();
+export const hordeInkMat = new pc.ShaderMaterial({ uniqueName: 'OutlineHorde', attributes: { ...ATTR, ...HORDE_ATTR }, vertexGLSL: outlineVS(true, true), fragmentGLSL: outlineFS });
+hordeInkMat.setParameter('uTint', rgb(INK)); hordeInkMat.setParameter('uThickness', 0.022); hordeInkMat.setParameter('uFogOn', 1); hordeInkMat.cull = pc.CULLFACE_FRONT; hordeInkMat.update();
 /** Shared textured toon material: set `uTex` per mesh instance. */
 export const toonTexMat = new pc.ShaderMaterial({ uniqueName: 'ToonTex', attributes: ATTR_UV, vertexGLSL: toonVS(true), fragmentGLSL: toonFS(true) });
 toonTexMat.setParameter('uTint', [1, 1, 1]); toonTexMat.setParameter('uFogOn', 1); toonTexMat.setParameter('uTorchUse', 1); toonTexMat.setParameter('uCeil', 0); toonTexMat.update();
@@ -276,6 +306,14 @@ toonInstMat.setParameter('uFogOn', 1); toonInstMat.setParameter('uTorchUse', 1);
 /** Double-sided fogged unlit vertex colour, drawn instanced (comic stars). */
 export const unlitInstMat = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
 unlitInstMat.setParameter('uAlpha', 1); unlitInstMat.setParameter('uFogOn', 1); unlitInstMat.cull = pc.CULLFACE_NONE; unlitInstMat.update();
+/** `makeUnlit`'s blended, fogged vertex colour drawn instanced (the horde's ring shadows): `alpha` for all, the colour per instance. */
+export function makeUnlitInst(alpha: number): pc.ShaderMaterial {
+  const m = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
+  m.setParameter('uAlpha', alpha); m.setParameter('uFogOn', 1);
+  m.blendType = pc.BLEND_NORMAL; m.depthWrite = false; m.cull = pc.CULLFACE_BACK;
+  m.update();
+  return m;
+}
 
 // Scene-wide lighting/fog uniforms shared by every shader above.
 const scope = device.scope;

@@ -5,7 +5,7 @@ import * as pc from 'playcanvas';
 import { PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, isCommon } from '../../shared/constants';
 import { isIndoor, type Level } from '../../shared/level';
 import type { PlayerSnap, RosterEntry, ZombieSnap } from '../../shared/protocol';
-import { Chibi, survivorLook, zombieLook, nameTag, type Pose } from './chibi';
+import { Chibi, survivorLook, zombieLook, nameTag, type ChibiLook, type Pose } from './chibi';
 import { worldGun } from './viewmodel';
 import { app } from './gfx';
 import type { FX } from './fx';
@@ -23,7 +23,8 @@ export interface Mate {
   /** Mounted gun they man (ChapterDef.mounts index, -1 = none) and their look pitch (the gun follows both). */ mount: number; pitch: number;
 }
 /** `y`/`ty`: the floor height it stands on (shown / latest snapshot); `sfxT`: alarm-ring timer; `vox`: seconds until a special's next presence cue. */
-export interface Zed { id: number; type: number; chibi: Chibi; x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number; st: number; sfxT: number; vox: number }
+export interface Zed { id: number; type: number; chibi: Chibi; x: number; y: number; z: number; ry: number; tx: number; ty: number; tz: number; tr: number; st: number; sfxT: number; vox: number;
+  /** Drawn last frame (not fog-hidden), posed last frame (on screen), and seconds of animation skipped while asleep far off (see update). */ shown: boolean; seen: boolean; idleT: number }
 interface Corpse { chibi: Chibi; t: number; vx: number; vz: number; x: number; y: number; z: number; scale: number }
 
 /** You, as the remotes see you: where you stand (`y` feet, `gy` floor) and face. */
@@ -49,6 +50,10 @@ const lerpAngle = (a: number, b: number, k: number) => {
 const RIDE_BACK = 0.24;
 /** Chibis farther than this past the fog's far distance are fully fogged: not drawn (m). */
 const FOG_CULL = 2;
+/** Spare zombie chibis kept per look for reuse (a Big Hold On spawns and kills hundreds). */
+const POOL_MAX = 40;
+/** Asleep zombies farther than this (m) are posed at ASLEEP_HZ instead of every frame. */
+const ASLEEP_FAR = 18, ASLEEP_HZ = 12;
 // Indexed by ZSTATE.
 const POSE: Pose[] = ['idle', 'run', 'attack', 'stagger', 'windup', 'leap', 'charge', 'pin', 'ring'];
 /**
@@ -142,13 +147,12 @@ export class Remotes {
       seen.add(id);
       let zd = this.zeds.get(id);
       if (!zd) {
-        const chibi = new Chibi(zombieLook(type, id));
+        const chibi = this.takeChibi(zombieLook(type, id));
         chibi.group.name = `zed-${id}`;
         const sc = ZTYPES[type].scale;
         chibi.group.setLocalScale(sc, sc, sc);
         chibi.group.setPosition(x, y, z);
-        app.root.addChild(chibi.group);
-        zd = { id, type, chibi, x, y, z, ry, tx: x, ty: y, tz: z, tr: ry, st, sfxT: 0, vox: Math.random() * 3 };
+        zd = { id, type, chibi, x, y, z, ry, tx: x, ty: y, tz: z, tr: ry, st, sfxT: 0, vox: Math.random() * 3, shown: false, seen: false, idleT: 0 };
         this.zeds.set(id, zd);
       }
       zd.tx = x; zd.ty = y; zd.tz = z; zd.tr = ry;
@@ -167,7 +171,7 @@ export class Remotes {
       }
       zd.st = st;
     }
-    for (const [id, zd] of this.zeds) if (!seen.has(id)) { zd.chibi.dispose(); this.zeds.delete(id); }
+    for (const [id, zd] of this.zeds) if (!seen.has(id)) { this.releaseChibi(zd.chibi); this.zeds.delete(id); }
   }
 
   /** Zombie `id` died: it tumbles away from you as a corpse and pops. */
@@ -178,7 +182,7 @@ export class Remotes {
     this.zeds.delete(id);
     const dx = zd.x - me.x, dz = zd.z - me.z, d = Math.hypot(dx, dz) || 1;
     const s = ZTYPES[zd.type].scale;
-    zd.chibi.group.enabled = true; // a fog-culled one still pops
+    zd.chibi.visible = true; // a fog-culled one still pops
     this.corpses.push({ chibi: zd.chibi, t: 0, vx: (dx / d) * 3, vz: (dz / d) * 3, x: zd.x, y: zd.y, z: zd.z, scale: s });
     if (head) fx.burst({ x: zd.x, y: zd.y + 1.1 * s, z: zd.z }, 0xffd43b, 5, 4, 0.14, true, 0.4, 5);
     fx.burst({ x: zd.x, y: zd.y + 0.8 * s, z: zd.z }, 0xb4f05a, zd.type === ZT.BRUTE ? 16 : zd.type === ZT.CHARGER ? 9 : 4, 4, 0.1 * s);
@@ -195,11 +199,30 @@ export class Remotes {
 
   /** Drop every zombie and corpse on screen, and every hold. */
   clear(): void {
-    for (const z of this.zeds.values()) z.chibi.dispose();
+    for (const z of this.zeds.values()) this.releaseChibi(z.chibi);
     this.zeds.clear();
-    for (const c of this.corpses) c.chibi.dispose();
+    for (const c of this.corpses) this.releaseChibi(c.chibi);
     this.corpses.length = 0;
     this.pinned.clear(); this.pinBy.clear();
+  }
+
+  /** Spare zombie chibis by look: reused instead of building (and later destroying) a new one per spawn. */
+  private readonly pool = new Map<ChibiLook, Chibi[]>();
+  /** A zombie chibi for `look`, from the pool if one is spare: shown, in a fresh pose. */
+  private takeChibi(look: ChibiLook): Chibi {
+    const c = this.pool.get(look)?.pop();
+    if (!c) return new Chibi(look, true); // drawn by the horde (see horde.ts), so not in the scene graph
+    c.reset();
+    c.visible = true;
+    return c;
+  }
+  /** Done with a zombie chibi: hidden and kept for reuse (destroyed if that look's pool is full). */
+  private releaseChibi(c: Chibi): void {
+    let list = this.pool.get(c.look);
+    if (!list) this.pool.set(c.look, (list = []));
+    if (list.length >= POOL_MAX) { c.dispose(); return; }
+    c.visible = false;
+    list.push(c);
   }
 
   /** Bullets bouncing off a Tinpot: say why, once. */
@@ -270,8 +293,20 @@ export class Remotes {
       }
       // Out in the fog: not drawn (measured from its middle, so a Brute's head can't poke out).
       const p = g.getPosition();
-      g.enabled = !inFog(p.x, p.y + 0.75 * ZTYPES[z.type].scale, p.z);
-      z.chibi.animate(z.type === ZT.WEEPER && z.st === ZSTATE.IDLE ? 'sit' : POSE[z.st] ?? 'idle', time, dt);
+      const shown = (z.chibi.visible = !inFog(p.x, p.y + 0.75 * ZTYPES[z.type].scale, p.z));
+      // Pose it only when it can be seen: not fog-hidden, and on screen last frame (just shown again: always).
+      // Asleep far off, a few times a second is plenty. The pose eases toward its target, so a skipped
+      // stretch catches up in a frame or two.
+      const seen = shown && (!z.shown || z.chibi.onScreen);
+      if (seen) {
+        z.idleT += dt;
+        const lazy = z.st === ZSTATE.IDLE && z.shown && z.seen && (p.x - cam.x) ** 2 + (p.z - cam.z) ** 2 > ASLEEP_FAR * ASLEEP_FAR;
+        if (!lazy || z.idleT >= 1 / ASLEEP_HZ) {
+          z.chibi.animate(z.type === ZT.WEEPER && z.st === ZSTATE.IDLE ? 'sit' : POSE[z.st] ?? 'idle', time, z.idleT);
+          z.idleT = 0;
+        }
+      }
+      z.shown = shown; z.seen = seen;
       // A Snatcher's scarf, from its hands to whoever it has.
       if (z.type === ZT.SNATCHER && z.st === ZSTATE.PIN) {
         const pid = this.pinBy.get(z.id), v = pid === me.id ? me : pid !== undefined ? this.mates.get(pid) : undefined;
@@ -296,7 +331,7 @@ export class Remotes {
       c.chibi.tumble(Math.min(1.5, c.t * 6), Math.sin(Math.min(1, c.t / 0.4) * Math.PI) * 0.35, Math.min(1, c.t / 0.4), dt);
       if (c.t > 0.4) {
         fx.poof({ x: c.x, y: c.y + 0.2 * c.scale, z: c.z }, 0xf3f0ff, c.scale > 1.5 ? 14 : 6, 0.3 * c.scale);
-        c.chibi.dispose();
+        this.releaseChibi(c.chibi);
         this.corpses.splice(i, 1);
       }
     }

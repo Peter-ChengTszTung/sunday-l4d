@@ -8,6 +8,7 @@ import * as pc from 'playcanvas';
 import { type Geo, box, sphere, cylinder, capsule, ring, quad, make, merge, trs, toMesh } from './geo';
 import { device, meshEntity, toonPartsMat, outlinePartsMat, makeUnlit, canvasTexture, freeTexture, setRot, WORLD, CHIBI_PARTS } from './gfx';
 import { SURVIVORS, type SurvivorLook } from '../../shared/constants';
+import { Horde, type HordeItem } from './horde';
 
 export type HairStyle = SurvivorLook['style'] | 'bald' | 'mess' | 'hood';
 export type ZombieKind = 'walker' | 'leaper' | 'puffer' | 'brute' | 'charger' | 'drooler' | 'alarm' | 'snatcher' | 'piggyback' | 'weeper' | 'tinpot' | 'raincoat';
@@ -29,7 +30,12 @@ const cone = cylinder(8, 0, 1);
 const hoop = cylinder(12);
 const cube = box();
 const shadowMesh = toMesh(device, make(ring(0, 0.36, 16)));
-const shadowMat = makeUnlit({ color: 0x0a0614, alpha: 0.38, blend: 'normal' });
+const SHADOW_ALPHA = 0.38;
+const shadowMat = makeUnlit({ color: 0x0a0614, alpha: SHADOW_ALPHA, blend: 'normal' });
+/** The instanced zombie draws (see horde.ts); built with the first zombie. */
+let horde: Horde | null = null;
+/** The horde, once there has been a zombie (its `stats`: what it drew last frame). For checks and `?debug`. */
+export const zombieHorde = (): Horde | null => horde;
 const DARK = 0x1a1226, STEEL = 0xaab0c4, IRON = 0x7d8399, SLATE = 0x54506e, CREAM = 0xfff3d6, GOO = 0xb8ff6a, TEAR = 0x8fd8ff;
 
 /** `color` darkened (f < 1) or lightened (f > 1). */
@@ -629,9 +635,11 @@ const REST = {
 type Target = typeof REST;
 /** The eased values, in the order they are stepped. */
 const EASED = ['legL', 'legR', 'legZ', 'aL', 'aR', 'aLz', 'aRz', 'headX', 'headY', 'headZ', 'hs', 'lean', 'twist', 'bodyZ', 'bw', 'bh', 'rootX', 'rootY', 'rootZ', 'squash'] as const;
+/** The eased values at rest (a fresh chibi, and one reset for reuse). */
+const EASED_REST = { legL: 0, legR: 0, legZ: 0, aL: 0, aR: 0, aLz: 0, aRz: 0, headX: 0, headY: 0, headZ: 0, hs: 1, lean: 0, twist: 0, bodyZ: 0, bw: 1, bh: 1, rootX: 0, rootY: 0, rootZ: 0, squash: 1 };
 const sin = Math.sin, cos = Math.cos, abs = Math.abs, pos = (v: number) => Math.max(0, v);
 
-export class Chibi {
+export class Chibi implements HordeItem {
   readonly group = new pc.Entity('chibi');
   readonly root = new pc.Entity('root'); // tilts/squashes without touching the shadow; draws the merged mesh
   // Transform-only part nodes (not in the scene graph): their local transforms,
@@ -643,7 +651,7 @@ export class Chibi {
   readonly legL = new pc.GraphNode();
   readonly legR = new pc.GraphNode();
   private readonly nodes = [this.body, this.head, this.armL, this.armR, this.legL, this.legR];
-  private readonly parts = new Float32Array(CHIBI_PARTS * 12);
+  readonly parts = new Float32Array(CHIBI_PARTS * 12);
   phase = Math.random() * 10;
   punch = 0; // hit squash, decays to 0
   private readonly headBaseY: number;
@@ -656,9 +664,23 @@ export class Chibi {
   private readonly loll = (Math.random() - 0.5) * 0.5;
   private readonly tgt: Target = { ...REST };
   // Smoothed pose values (kept here so we never read rotations back from the engine).
-  private p = { legL: 0, legR: 0, legZ: 0, aL: 0, aR: 0, aLz: 0, aRz: 0, headX: 0, headY: 0, headZ: 0, hs: 1, lean: 0, twist: 0, bodyZ: 0, bw: 1, bh: 1, rootX: 0, rootY: 0, rootZ: 0, squash: 1 };
+  private p = { ...EASED_REST };
+  /** The toon and ink draws (see `onScreen`); none when the horde draws it. */
+  private readonly draws: pc.MeshInstance[] | null = null;
+  readonly mesh: pc.Mesh;
+  /** Where the ring shadow lies (a transform only when the horde draws it). */
+  readonly shadowNode: pc.GraphNode;
+  // Horde bookkeeping (see HordeItem).
+  private _visible = true;
+  drawn = false;
+  hordeAt = -1;
 
-  constructor(readonly look: ChibiLook) {
+  /**
+   * `instanced` (zombies): drawn by the horde, in a handful of draws for the whole crowd, rather than by
+   * render components of its own. Such a chibi stays out of the scene graph: `group` and `root` only carry
+   * its transforms, and `visible` (not `group.enabled`) shows and hides it.
+   */
+  constructor(readonly look: ChibiLook, readonly instanced = false) {
     const k = [look.skin, look.shirt, look.pants, look.hair, look.style, look.zombie ?? 'p', look.eye ?? 0, look.extra ?? ''].join('|');
     const z = look.zombie;
     const armR = z === 'brute' ? 0.11 : z === 'drooler' ? 0.055 : 0.065;
@@ -679,16 +701,28 @@ export class Chibi {
     this.armX = z === 'brute' ? 0.4 : z === 'puffer' ? 0.37 : z === 'charger' ? 0.33 : 0.25;
     const lx = z === 'brute' ? 0.17 : 0.11;
     this.legL.setLocalPosition(-lx, 0.33, 0); this.legR.setLocalPosition(lx, 0.33, 0);
-    const meshInstances = [new pc.MeshInstance(mesh, toonPartsMat), new pc.MeshInstance(mesh, outlinePartsMat)];
-    for (const mi of meshInstances) mi.setParameter('uParts[0]', this.parts);
-    this.root.addComponent('render', { meshInstances, castShadows: false, receiveShadows: false, layers: [WORLD] });
+    this.mesh = mesh;
+    if (!instanced) {
+      const meshInstances = [new pc.MeshInstance(mesh, toonPartsMat), new pc.MeshInstance(mesh, outlinePartsMat)];
+      for (const mi of meshInstances) mi.setParameter('uParts[0]', this.parts);
+      this.draws = meshInstances;
+      this.root.addComponent('render', { meshInstances, castShadows: false, receiveShadows: false, layers: [WORLD] });
+    }
     this.place(0);
-    const shadow = meshEntity(shadowMesh, shadowMat);
+    const shadow = this.shadowNode = instanced ? new pc.GraphNode('shadow') : meshEntity(shadowMesh, shadowMat);
     const ss = z === 'brute' || z === 'puffer' ? 1.5 : z === 'charger' ? 1.3 : 1;
     shadow.setLocalPosition(0, 0.03, 0);
     shadow.setLocalScale(ss, 1, ss);
     this.group.addChild(this.root);
     this.group.addChild(shadow);
+    if (instanced) (horde ??= new Horde(shadowMesh, SHADOW_ALPHA)).add(this);
+  }
+
+  /** Shown or hidden (a pooled spare, one out in the fog). The horde's zombies use this; others may too. */
+  get visible(): boolean { return this._visible; }
+  set visible(v: boolean) {
+    this._visible = v;
+    if (!this.instanced) this.group.enabled = v;
   }
 
   /** Procedural pose. `t` is seconds, `dt` frame delta. */
@@ -1029,7 +1063,22 @@ export class Chibi {
     this.place(0);
   }
 
-  dispose(): void { this.group.destroy(); }
+  /**
+   * Whether the camera drew this one last frame (frustum culling sets it; for the horde's, its own copy of
+   * that test). A part-hidden or disabled chibi keeps a stale value, so callers only trust it while the
+   * chibi stays shown.
+   */
+  get onScreen(): boolean { return this.draws ? this.draws[0].visibleThisFrame : this.drawn; }
+
+  /** Back to a fresh standing pose, for reuse from a pool after a death tumble. */
+  reset(): void {
+    Object.assign(this.p, EASED_REST);
+    this.punch = 0;
+    this.root.setLocalEulerAngles(0, 0, 0); this.root.setLocalPosition(0, 0, 0); this.root.setLocalScale(1, 1, 1);
+    this.place(0);
+  }
+
+  dispose(): void { horde?.remove(this); this.group.destroy(); }
 }
 
 export function survivorLook(i: number): ChibiLook {
