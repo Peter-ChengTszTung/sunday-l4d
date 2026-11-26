@@ -265,6 +265,20 @@ export const FIRE = { r: 3.6, life: 9, dps: 90, ff: 9, tick: 0.25, max: 3 };
  * doing and crowds the rattle (sleepers within `wake` m wake up to join in); then it goes off (its `blast`).
  */
 export const LURE = { time: 5, tiles: 14, wake: 16 };
+/**
+ * Booby traps (docs/booby-traps.html; shared/level.ts Trap). Car alarm: rings `ring` s, pulling commons
+ * within `lureTiles` path tiles to the car and waking sleepers within `wake` m; a shot ending within `pad`
+ * m of the car's body (0.2 to `top` m above its floor, so not the pavement beside it) or a blast reaching it sets it off, and so does fire burning
+ * on it for `burn` s. Nightlight: a survivor inside its cone (`range` m, `half` rad either side, on its
+ * storey and in sight) for `warn` s sets it off (it chirps first); it plays `ring` s and wakes sleepers within `wake` m.
+ * A hit within `pad` m of it breaks it silently. Horde sizes per difficulty live in server/tuning.ts TRAP_HORDE.
+ */
+export const TRAP = {
+  car: { ring: 15, lureTiles: 15, wake: 24, pad: 0.15, top: 1.6, burn: 1 },
+  light: { range: 6, half: Math.PI / 6, warn: 0.6, ring: 4, wake: 20, pad: 0.6, height: 1.0 },
+} as const;
+/** Trap states ('trap' event, 'w' tr). WARN: a nightlight's chirp before it plays. */
+export const TRAP_ST = { ARMED: 0, WARN: 1, RING: 2, SPENT: 3 } as const;
 /** Pillow Vest: armour points a vest gives, and the share of each bite/hit it soaks up while any is left (not goo, fire or bleeding). */
 export const ARMOR = { max: 50, absorb: 0.5 };
 /**

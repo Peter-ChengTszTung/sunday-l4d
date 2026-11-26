@@ -2,14 +2,15 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, MOUNT, type DifficultyId, type ZombieDef } from '../shared/constants';
-import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Vec2 } from '../shared/level';
+import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, TRAP, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, MOUNT, type DifficultyId, type ZombieDef } from '../shared/constants';
+import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Trap, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, TRAP_HORDE, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
+import { Traps, type TrapHost } from './traps';
 
 const enum Phase { BUILD_UP, SUSTAIN, FADE, RELAX }
 const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
@@ -33,7 +34,7 @@ interface ZCtx {
   z: Zombie; T: ZombieDef; zn: number; tgt: Player; d: number; hd: number; level: boolean; field: Int16Array; seen: number;
 }
 
-export class Room implements CombatHost {
+export class Room implements CombatHost, TrapHost {
   players = new Map<number, Player>();
   zombies = new Map<number, Zombie>();
   private nextPid = 1;
@@ -82,6 +83,8 @@ export class Room implements CombatHost {
   private nextPuddle = 1;
   private fires: Fire[] = [];
   private lures: Lure[] = [];
+  /** Booby traps (server/traps.ts). */
+  readonly traps = new Traps(this);
   /** Route point where this attempt's Weeper sits (-1 = none/placed). */
   private weeperAt = -1;
   /** Earliest `time` the director may send another Alarm Clock. */
@@ -356,7 +359,7 @@ export class Room implements CombatHost {
       this.events.push(['tp', p.id, p.x, p.z, mate.ry, r2(p.y)]);
       p.freeAt = this.time + TP_GRACE;
     }
-    this.send(p, { t: 'w', id: p.id, room: this.code, ch: this.ch, step: this.step, taken: [...this.taken], doors: this.doors, x: p.x, z: p.z, y: r2(p.y), debug: this.allowDebug ? 1 : 0, diff: this.difficulty });
+    this.send(p, { t: 'w', id: p.id, room: this.code, ch: this.ch, step: this.step, taken: [...this.taken], doors: this.doors, x: p.x, z: p.z, y: r2(p.y), debug: this.allowDebug ? 1 : 0, diff: this.difficulty, tr: this.traps.states(), ton: this.traps.live ? 1 : 0 });
     this.broadcastRoster();
     this.events.push(['msg', `${p.name} joined the squad`]);
     return p;
@@ -592,6 +595,32 @@ export class Room implements CombatHost {
     }
   }
   /** A firebomb burst at (x, z) on the floor at height y: a patch that burns for FIRE.life (the oldest goes out past FIRE.max). */
+  // ------------------------------------------------- booby traps (TrapHost; server/traps.ts)
+  /** Traps go dark through a holdout and while a Brute is up. */
+  trapsDark(): boolean {
+    if (this.holdout >= 0) return true;
+    for (const z of this.zombies.values()) if (z.type === ZT.BRUTE && !z.dormant) return true;
+    return false;
+  }
+  /**
+   * Trap `tr` went off. A car's jingle is a lure (commons within TRAP.car.lureTiles flock to it while it
+   * rings); either kind brings its TRAP_HORDE wave from the hidden spawn nearest it. That wave is the next
+   * timed horde: the director's mob timer is pushed back, as after an anti-camping horde.
+   */
+  trapNoise(tr: Trap): void {
+    const at = this.nearestOpen(tr), node = this.nodeOf(at), H = TRAP_HORDE[this.difficulty];
+    if (tr.kind === 'car') {
+      const field = new Int16Array(this.L.N);
+      this.L.distanceField([node], this.doors, field);
+      this.lures.push({ x: at.x, y: at.y, z: at.z, t: TRAP.car.ring, by: 0, w: -1, field, tiles: TRAP.car.lureTiles });
+    }
+    const n = Math.round(tr.kind === 'car' ? (HORDE.base + HORDE.per * this.players.size) * H.car : H.base + H.per * this.players.size);
+    if (n <= 0) return;
+    const from = this.spawnWave(n, { noise: node });
+    this.events.push(from ? ['horde', r2(from.x), r2(from.z)] : ['horde']);
+    this.t.horde = Math.max(this.t.horde, roll(DIRECTOR.mobEvery) * this.diff.mobEvery);
+  }
+
   addFire(x: number, y: number, z: number, by: Player): void {
     if (this.fires.length >= FIRE.max) this.fires.shift();
     const f: Fire = { id: this.nextPuddle++, x, y, z, r: FIRE.r, life: FIRE.life, age: 0, tick: 0, by: by.id };
@@ -605,8 +634,9 @@ export class Room implements CombatHost {
     const c = this.nearestOpen({ x, y, z }), field = new Int16Array(this.L.N);
     this.L.distanceField([this.nodeOf(c)], this.doors, field);
     // A third rattle sets the oldest off early rather than cancelling it.
-    if (this.lures.length >= 2) this.popLure(this.lures.shift()!);
-    this.lures.push({ x, y, z, t: LURE.time, by: by.id, w, field });
+    const bombs = this.lures.filter((l) => l.w >= 0);
+    if (bombs.length >= 2) { this.lures.splice(this.lures.indexOf(bombs[0]), 1); this.popLure(bombs[0]); }
+    this.lures.push({ x, y, z, t: LURE.time, by: by.id, w, field, tiles: LURE.tiles });
     this.events.push(['lure', r2(x), r2(z), LURE.time, r2(y)]);
     this.alertNear(x, y, z, LURE.wake);
   }
@@ -850,6 +880,7 @@ export class Room implements CombatHost {
   // ------------------------------------------------- goo, pins and alarms
   private clearHazards(): void {
     this.globs = []; this.puddles = []; this.fires = []; this.lures = [];
+    this.traps.reset();
     for (const p of this.players.values()) p.pinned = 0;
   }
 
@@ -931,8 +962,8 @@ export class Room implements CombatHost {
 
   /** The lure a common at node `c` flocks to (the nearest within LURE.tiles), if any. */
   private lureFor(c: number): Lure | null {
-    let best: Lure | null = null, bd = LURE.tiles + 1;
-    for (const l of this.lures) if (l.field[c] < bd) { bd = l.field[c]; best = l; }
+    let best: Lure | null = null, bd = INF;
+    for (const l of this.lures) if (l.field[c] <= l.tiles && l.field[c] < bd) { bd = l.field[c]; best = l; }
     return best;
   }
 
@@ -2352,6 +2383,7 @@ export class Room implements CombatHost {
       // Ran into a wall: dazed for a good while (the big punish window).
       z.st = ZSTATE.STAGGER; z.stun = CHARGER.wallStun; z.vx = -z.lx * 2; z.vz = -z.lz * 2; z.sp = CHARGER.cooldown;
       this.events.push(['slam', z.id, r2(z.x), r2(z.z), r2(z.y)]);
+      this.traps.charge(z, T.radius);
     } else if (z.t <= 0) {
       z.st = ZSTATE.RUN; z.stun = CHARGER.skidStun; z.vx = z.lx * 5; z.vz = z.lz * 5; z.sp = CHARGER.cooldown;
     }
@@ -2728,6 +2760,7 @@ export class Room implements CombatHost {
       for (const p of this.players.values()) this.place(p);
       this.updatePlayers(dt);
       this.updateHazards(dt);
+      this.traps.update(dt, this.fires);
       this.t.flow -= dt;
       if (this.t.flow <= 0) { this.t.flow = 0.25; this.recomputeFlow(); this.recomputeFocus(); this.recomputeMarks(); this.recomputeWeeper(); this.updateLoner(0.25); }
       this.director(dt);

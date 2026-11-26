@@ -82,6 +82,7 @@ interface LotOpts {
   /** Gap in the side fence into the neighbouring backyard. */ sideGap?: boolean;
   /** Gap in the rear fence. */ rearGap?: boolean;
   /** Car parked on the driveway (paint colour). */ car?: number;
+  /** ...and it has a Snoozle alarm (a booby trap: docs/booby-traps.html). */ alarm?: boolean;
 }
 
 export function build() {
@@ -181,7 +182,10 @@ export function build() {
     propL('bush', 9, 15);
     if (!o.walkIn) propL('bush', 1, 5);
     if (h > 0.3) propL('barrier', 5, 3, 1, 1);                                       // a kid's bike dropped on the lawn
-    if (o.car !== undefined) propL('car', 8, 1, 1, 2, { color: o.car });
+    if (o.car !== undefined) {
+      if (o.alarm) { const r = R(8, 1, 8, 2); b.alarmCar(r[0], r[1], r[2] - r[0] + 1, r[3] - r[1] + 1, { color: o.car }); }
+      else propL('car', 8, 1, 1, 2, { color: o.car });
+    }
     const [lx, lz] = mid(4, 5); b.lamp(lx, lz);                                     // porch light
     const [sx, sz] = mid(5, 5); b.label('zZ', sx, sz, 10, PINK, face === 'S' ? N : face === 'N' ? 0 : face === 'E' ? WEST : E);   // Snoozle nightlight in the window
     return { P, mid, propL, carveL };
@@ -265,6 +269,9 @@ export function build() {
   lot(74, 5, 'S', { garage: true, sideGap: true, car: CARS[1] });
   const g88 = lot(88, 5, 'S', { sideGap: true, garage: true, car: CARS[2] });
   { const [x, z] = g88.P(8, 9); b.item('part', 'battery', x, z, 'car battery'); }   // open garage, last house before the bulb
+  // A Snoozle nightlight on the garage's back wall, shining out at the street: the battery lies in its
+  // cone. Shoot it from the driveway before you go in for the battery.
+  { const [x, z] = g88.P(8, 11); b.nightlight(x, z, '+z'); }
   { const [x, z] = g88.mid(8, 4); b.label('GARAGE SALE', x, z, 9, CREAM, 0); }
   { const [x, z] = kitchen.P(4, 8); b.note(x, z, 'Fridge note', 'Kids, trying the free Sweet Dreams fog tonight! Windows open, lights out by 11. Love you. Mum xx'); }
   { const [x, z] = kitchen.P(3, 10); b.pick('medkit', x, z); }
@@ -296,7 +303,11 @@ export function build() {
   for (let x = 8; x <= 96; x += 8) b.label('— —', x, 31.9, 16, '#f2e6c0', E);
   b.label('MAPLE LOOP', 24, 31.9, 20, PEACH, E);
   b.label('SCHOOL ZONE 20', 70, 30.2, 12, GOLD, E);
-  for (const [x, z, c] of [[34, 29, 0], [52, 34, 1], [66, 29, 2], [80, 34, 6], [92, 29, 7]]) b.prop('car', x, z, 2, 1, { color: CARS[c] });
+  // Two of the street's cars have Snoozle alarms: the first one you meet out of the car park, and the
+  // one by the school zone sign. Maple Loop is a long straight run for the horde.
+  for (const [x, z, c] of [[34, 29, 0], [52, 34, 1], [66, 29, 2], [80, 34, 6], [92, 29, 7]]) {
+    if (x === 34 || x === 66) b.alarmCar(x, z, 2, 1, { color: CARS[c] }); else b.prop('car', x, z, 2, 1, { color: CARS[c] });
+  }
   b.prop('van', 58, 33, 2, 1, { color: 0xffffff }); b.prop('barrier', 45, 31, 1, 2);
   for (const x of [18, 32, 46, 60, 74, 88]) { b.lamp(x, x % 28 === 4 ? 28.6 : 35.4); }
   b.pick('ammo', 62, 30); b.pick('medkit', 84, 33);
@@ -318,7 +329,8 @@ export function build() {
   b.carve(112, 30, 120, 34, F.GRASS);                                        // turning island
   b.prop('tree', 116, 32); b.prop('bush', 113, 31); b.prop('bush', 119, 33);
   b.label('MAPLE LOOP', 116, 29.4, 12, PEACH, E); b.label('CUL-DE-SAC', 116, 35.4, 10, CREAM, E);
-  b.prop('car', 104, 38, 2, 1, { color: CARS[3] }); b.prop('car', 127, 26, 1, 2, { color: CARS[0], rot: 0.4 });
+  b.alarmCar(104, 38, 2, 1, { color: CARS[3] }); b.prop('car', 127, 26, 1, 2, { color: CARS[0], rot: 0.4 });
+  b.pick('rattle', 106, 38);                                                 // in the alarm car's open boot
   b.label('BIRCH CT', 126, 38.5, 14, PEACH, 0);
   for (const [x, z] of [[106, 24.4], [128, 31], [110, 40.4]]) b.lamp(x, z);
   b.arrow(122, 37, S); b.arrow(108, 27, E);
@@ -329,7 +341,7 @@ export function build() {
   lot(100, 42, 'E', { car: CARS[1] });
   const w56 = lot(100, 56, 'E', { sideGap: true, garage: true });
   const w70 = lot(100, 70, 'E', { sideGap: true, walkIn: true });
-  lot(129, 42, 'W', { rearGap: true, car: CARS[2] });
+  lot(129, 42, 'W', { rearGap: true, car: CARS[2], alarm: true });          // Snoozle alarm car on the driveway
   const e56 = lot(129, 56, 'W', { sideGap: true, rearGap: true });
   const e70 = lot(129, 70, 'W', { sideGap: true, rearGap: true, garage: true });
   { const [x, z] = w56.P(8, 9); b.pick('ammo', x, z); }
@@ -355,7 +367,7 @@ export function build() {
   b.carve(128, 90, 136, 96, F.GRASS);
   b.prop('tree', 132, 93); b.prop('bush', 129, 91); b.prop('bush', 135, 95); b.prop('bench', 130, 96, 3, 1);
   b.label('BIRCH COURT', 132, 89.4, 12, PEACH, E); b.label('NO THRU ROAD', 132, 97.8, 9, CREAM, E);
-  b.prop('car', 140, 98, 2, 1, { color: CARS[6] }); b.prop('van', 121, 86, 1, 2, { color: 0xffffff });
+  b.alarmCar(140, 98, 2, 1, { color: CARS[6] }); b.prop('van', 121, 86, 1, 2, { color: 0xffffff });   // Snoozle alarm, by the camper battery
   b.pick('ammo', 142, 88); b.pick('medkit', 122, 100);
   for (const [x, z] of [[120, 92], [143, 93], [132, 101.6]]) b.lamp(x, z);
   // Camper pad and the riverside walk.
@@ -827,7 +839,7 @@ export function build() {
   b.label('MILL ROAD', 94, 186, 14, PEACH, N);
   for (let z = 192; z <= 232; z += 8) b.label('— —', 94, z, 16, '#f2e6c0', N);
   sleeper(97, 181, 1, 2); sleeper(91, 190, 1, 2);
-  b.prop('car', 92, 199, 1, 2, { color: CARS[6] }); b.prop('car', 96, 214, 1, 2, { color: CARS[2], rot: 0.3 }); b.prop('barrier', 94, 221, 2, 1);
+  b.alarmCar(92, 199, 1, 2, { color: CARS[6] }); b.prop('car', 96, 214, 1, 2, { color: CARS[2], rot: 0.3 }); b.prop('barrier', 94, 221, 2, 1);   // Mill Road's first car: a Snoozle alarm
   for (const z of [186, 202, 218]) b.prop(z === 202 ? 'tree' : 'pine', 91, z);
   b.pick('ammo', 95, 207);
   for (const z of [184, 198, 212, 226, 240]) b.lamp(z === 198 ? 97.6 : 91.4, z);
@@ -862,6 +874,7 @@ export function build() {
   b.prop('desk', 123, 235, 2, 1); b.prop('shelf', 121, 231);
   b.note(122, 231, 'Sawmill office whiteboard', 'MON: Dreamwell order, 400 bed frames. TUE: Dreamwell order, 400 more. WED: who is buying all these beds??');
   b.item('fuel', 'fuel', 124, 233, 'fuel can');
+  b.nightlight(125, 233, '-x');                                                  // Snoozle nightlight facing the door: the fuel can is in its cone
   b.pick('shotgun', 110, 230); b.pick('ammo', 114, 233); b.pick('ammo', 121, 234);
   b.label('SAWMILL', 117, 218.6, 14, PEACH, N); b.label('OFFICE', 119.4, 232.5, 8, CREAM, E);
   b.lamp(114, 228); b.lamp(123, 233);

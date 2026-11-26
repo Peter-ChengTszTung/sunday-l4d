@@ -296,3 +296,15 @@ export const TP_GRACE = 0.3;
 export const SLOTTED = (type: number) => !isCommon(type) && type !== ZT.BRUTE && type !== ZT.WEEPER;
 /** Zombies that hold a survivor without a wall (freed by shoving the victim, too). */
 export const GRABBER = (type: number) => type === ZT.SNATCHER || type === ZT.PIGGYBACK;
+
+/**
+ * Booby-trap hordes per difficulty (docs/booby-traps.html): an alarm car brings `car` x a full horde
+ * (HORDE.base + HORDE.per x survivors, no further difficulty scaling); a nightlight brings `base` + `per`
+ * x survivors walkers. Easy: the lure and the wake-up only.
+ */
+export const TRAP_HORDE: Record<DifficultyId, { car: number; base: number; per: number }> = {
+  easy: { car: 0, base: 0, per: 0 },
+  normal: { car: 1.2, base: 12, per: 2 },
+  hard: { car: 1.6, base: 16, per: 4 },
+  nightmare: { car: 2, base: 20, per: 4 },
+};

@@ -524,7 +524,11 @@ export function build() {
   for (const [x, z, c] of [[210, 70, 0xf4f4f4], [200, 78, 0xf4f4f4], [190, 86, 0xff6b6b], [214, 88, 0x3a5fd0]] as const) b.prop('van', x, z, 3, 1, { color: c });
   for (const x of [170, 173, 180, 183, 190, 199, 202, 209, 212]) b.prop('car', x, 56, 1, 2, { color: PASTEL[x % 5] });
   for (const x of [179, 182, 192, 195, 201, 211]) b.prop('car', x, 103, 1, 2, { color: PASTEL[(x + 2) % 5] });
-  for (const [x, z] of [[181, 69], [193, 69], [181, 79], [212, 79], [188, 97], [200, 97]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
+  // One Snoozle alarm car (docs/booby-traps.html) on the run west to the office: the last one on the decks.
+  for (const [x, z] of [[181, 69], [193, 69], [181, 79], [212, 79], [188, 97], [200, 97]]) {
+    const o = { color: PASTEL[(x + z) % 5] };
+    if (x === 188 && z === 97) b.alarmCar(x, z, 2, 1, o); else b.prop('car', x, z, 2, 1, o);
+  }
   b.prop('terminal', 178, 89); b.prop('barrier', 177, 86, 1, 3);           // pay machine, queue rail
   b.pick('ammo', 222, 75); b.pick('medkit', 205, 104); b.pick('ammo', 187, 104);
   b.label('LEVEL G', 205, 66, 22, CREAM, WEST); b.label('EVAC QUEUE', 196, 82, 12, RED, WEST);
@@ -617,6 +621,9 @@ export function build() {
   b.fill(42, 14, 42, 16);
   b.stairs(40, 14, 41, 16, '-z', F.TILES);
   b.label('STAIRS UP', 40.5, 18.2, 12, GOLD, N); b.label('FLOOR 3: SLEEP CLINIC', 44.5, 17.4, 8, LAV, N);
+  // A Snoozle nightlight at the foot of the stairs, on the day room's west wall: its cone lies across
+  // the bottom step, glowing at the team all the way in from the door. Shoot it before you climb.
+  b.nightlight(40, 17, '+x');
   b.lamp(41, 18);
   b.arrow(44, 17, WEST);
   // Floor 2 nurses' post, with roof access E in its corner.
@@ -759,7 +766,12 @@ export function build() {
   for (const [x, z] of [[176, 99], [184, 92], [192, 85], [200, 78], [208, 71]]) b.prop('van', x, z, 3, 1, { color: 0xf4f4f4 });   // the ambulance queue
   b.prop('van', 213, 66, 1, 3, { color: 0xff6b6b, rot: 0.4 }); b.prop('car', 203, 65, 2, 1, { color: 0x3a5fd0, rot: -0.3 });   // the crash
   for (const x of [178, 181, 188, 191, 194, 203, 210]) b.prop('car', x, 56, 1, 2, { color: PASTEL[(x + 1) % 5] });
-  for (const x of [180, 186, 193, 199, 205, 214]) b.prop('car', x, 103, 1, 2, { color: PASTEL[(x + 3) % 5] });
+  // A Snoozle alarm car in the dark half of the south row, a firebomb in its open boot (tail to the wall).
+  for (const x of [180, 186, 193, 199, 205, 214]) {
+    const o = { color: PASTEL[(x + 3) % 5] };
+    if (x === 205) b.alarmCar(x, 103, 1, 2, o); else b.prop('car', x, 103, 1, 2, o);
+  }
+  b.pick('firebomb', 205, 105);
   for (const [x, z] of [[214, 80], [214, 92], [182, 72], [190, 64]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
   b.pick('ammo', 172, 104); b.pick('medkit', 222, 72); b.pick('ammo', 216, 56);
   b.label('LEVEL 1', 190, 100, 22, CREAM, E); b.label('EVAC QUEUE: KEEP LEFT', 196, 90, 10, RED, E);
@@ -958,6 +970,9 @@ export function build() {
   b.carve(220, 28, 220, 29, F.INTERIOR); b.carve(221, 28, 222, 50, F.INTERIOR);
   b.pick('ammo', 222, 33);
   b.label('FIRE EXIT: CAR PARK', 221.5, 34, 8, RED, N);
+  // A Snoozle nightlight on the corridor's end wall, shining down it: Screen 2's packed house is right
+  // behind the exit door, and the cone fills the corridor a few steps in.
+  b.nightlight(221, 28, '+z');
   for (const z of [30, 39, 48]) b.lamp(221.5, z);
   b.arrow(221.5, 31, S); b.arrow(221.5, 42, S);
   // The footbridge over the service lane onto the car park roof.
@@ -974,7 +989,12 @@ export function build() {
   for (const [x, z] of [[191, 79], [193, 79], [195, 79], [197, 79]]) b.prop('barrel', x, z, 1, 1, { color: 0xb38fe0 });   // spent Hush canisters
   b.label('SWEET DREAMS NIGHT: FOG UNIT 7', 195, 74.2, 10, LAV, WEST);
   b.prop('van', 208, 90, 3, 1, { color: 0xf4f4f4 }); b.prop('van', 178, 66, 1, 3, { color: 0x3a5fd0 });   // a news van, a police van
-  for (const [x, z] of [[214, 62], [205, 68], [184, 62], [216, 82], [202, 98], [183, 88], [176, 78], [212, 72]]) b.prop('car', x, z, 2, 1, { color: PASTEL[(x + z) % 5] });
+  // Two Snoozle alarm cars at opposite corners of the rifle deck: one by the footbridge where the team
+  // comes on, one by the ramp down, 80 m apart (never both in view).
+  for (const [x, z] of [[214, 62], [205, 68], [184, 62], [216, 82], [202, 98], [183, 88], [176, 78], [212, 72]]) {
+    const o = { color: PASTEL[(x + z) % 5] };
+    if ((x === 214 && z === 62) || (x === 176 && z === 78)) b.alarmCar(x, z, 2, 1, o); else b.prop('car', x, z, 2, 1, o);
+  }
   for (const x of [172, 186, 200, 214]) b.prop('barrier', x, 104, 3, 1);
   b.pick('rifle', 222, 57); b.pick('ammo', 223, 57); b.pick('medkit', 186, 90); b.pick('ammo', 172, 92);
   b.label('ROOF', 205, 60, 26, CREAM, WEST); b.label('SNOOZLE SAYS: SLEEP TIGHT, MALLOW BAY!', 195, 102, 10, PINK, WEST);

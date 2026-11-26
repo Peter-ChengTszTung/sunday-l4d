@@ -6,6 +6,7 @@ import type { Level } from '../shared/level';
 import type { ClientMsg, GameEvent } from '../shared/protocol';
 import { r2, EYE, REACH_DY, BLAST_FF, GRABBER } from './tuning';
 import type { Player, Zombie } from './types';
+import type { Traps } from './traps';
 
 /** What claim validation needs from the room (Room implements it). */
 export interface CombatHost {
@@ -27,6 +28,8 @@ export interface CombatHost {
   addFire(x: number, y: number, z: number, by: Player): void;
   addLure(x: number, y: number, z: number, by: Player, w: number): void;
   unpin(p: Player): void;
+  /** Booby traps (server/traps.ts): shots, swings and blasts that reach one. */
+  readonly traps: Traps;
 }
 
 export function onFire(room: CombatHost, p: Player, m: Extract<ClientMsg, { t: 'f' }>): void {
@@ -62,13 +65,15 @@ export function onFire(room: CombatHost, p: Player, m: Extract<ClientMsg, { t: '
   p.lastFire = clock; p.fireW = wi; p.shotAt[wi] = clock;
   if (e) room.events.push(['shot', p.id, wi, r2(e[0]), r2(e[1]), r2(e[2])]);
   // A swing is quiet: it wakes nobody.
-  if (wp.melee) { if (Array.isArray(m.h)) meleeHits(room, p, wp, m.h); return; }
+  if (wp.melee) { room.traps.swing(p, wp.range); if (Array.isArray(m.h)) meleeHits(room, p, wp, m.h); return; }
   room.alertNear(p.x, p.gy, p.z, 22);
   if (wp.blast) {
     // Damage waits for the impact claim ('g'); remember where it was fired from.
     pushNade();
     return;
   }
+  // Where the bullet stopped: an alarm car or a nightlight there takes the hit.
+  if (e) room.traps.shot(p, e[0], e[1], e[2], wp.range);
   if (!Array.isArray(m.h)) return;
   if (wp.pierce > 1) { pierceHits(room, p, wi, m.h, e); return; }
   let budget = wp.pellets;
@@ -229,6 +234,7 @@ export function applyBlast(room: CombatHost, by: Player | null, B: BlastDef, bx:
     room.events.push(['kb', q.id, r2(((q.x - bx) / qd) * 6 * power), r2(((q.z - bz) / qd) * 6 * power)]);
   }
   room.alertNear(bx, gb, bz, 30);
+  room.traps.blast(bx, y, bz, R, by);
 }
 
 export function onShove(room: CombatHost, p: Player): void {

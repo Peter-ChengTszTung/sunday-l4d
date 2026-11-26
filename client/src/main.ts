@@ -1,7 +1,7 @@
 // Chibi Outbreak client: rendering, local player simulation, and reconciling
 // the server's authoritative zombies / health with what you see.
 import * as pc from 'playcanvas';
-import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, PSTATE, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, armoredFront, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, healAmount, MOUNT } from '../../shared/constants';
+import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, PSTATE, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, armoredFront, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, healAmount, MOUNT, TRAP_ST } from '../../shared/constants';
 import { isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
 import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg } from '../../shared/protocol';
@@ -14,6 +14,7 @@ import { app, setTorch, setNearShrink } from './gfx';
 import { quatYXZ } from './geo';
 import { FX } from './fx';
 import { Sfx } from './audio';
+import { buildTraps } from './traps';
 import { Hud, type MateView } from './hud';
 import { Net } from './net';
 import { ShootingRange } from './range';
@@ -59,6 +60,18 @@ const cam = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1, rot: new pc.Quat() };
 let chapter = Math.max(0, Math.min(CHAPTERS.length - 1, Number(params.get('ch') ?? localStorage.getItem('chibi.ch') ?? 0) || 0));
 let L: Level = getLevel(chapter);
 let world: World = buildWorld(L);
+/** Metres from (x, y, z) to the nearest booby trap (a car's footprint or a nightlight), Infinity if none. */
+function trapNear(x: number, y: number, z: number): number {
+  let best = Infinity;
+  for (const tr of L.def.traps) {
+    if (Math.abs(y - tr.y) > 3) continue;
+    const d = tr.kind === 'car'
+      ? Math.hypot(Math.max(tr.tx * TILE - x, 0, x - (tr.tx + tr.w) * TILE), Math.max(tr.tz * TILE - z, 0, z - (tr.tz + tr.d) * TILE))
+      : Math.hypot(x - tr.x, z - tr.z);
+    if (d < best) best = d;
+  }
+  return best;
+}
 /** Swap the rendered world when the room moves to another chapter. */
 function loadChapter(ch: number): void {
   if (ch === chapter && L === getLevel(ch)) return;
@@ -66,8 +79,8 @@ function loadChapter(ch: number): void {
   chapter = ch;
 }
 function useLevel(next: Level): void {
-  world.dispose(); pieces.dispose(); mounts.dispose();
-  L = next; world = buildWorld(L); pieces = buildSetPieces(L, sfx, fx); mounts = buildMounts(L);
+  world.dispose(); pieces.dispose(); mounts.dispose(); traps.dispose();
+  L = next; world = buildWorld(L); pieces = buildSetPieces(L, sfx, fx); mounts = buildMounts(L); traps = buildTraps(L, sfx);
   me.mount = -1;
   step = 0; qc = 0; doors = 0;
 }
@@ -77,6 +90,8 @@ const sfx = new Sfx();
 let pieces = buildSetPieces(L, sfx, fx);
 /** Mounted guns in the world. */
 let mounts = buildMounts(L);
+/** Booby traps: alarm cars and nightlights (client/src/traps.ts). */
+let traps = buildTraps(L, sfx);
 fx.onSplat = (x, y, z) => sfx.at(y).splat(x, z);
 fx.onCrackle = (x, y, z) => sfx.at(y).fireCrackle(x, z);
 fx.onRattle = (x, y, z) => sfx.at(y).rattle(x, z);
@@ -457,7 +472,8 @@ function fire(): void {
       spreadDir(b, spread, _d);
       const shot = castShot(L, doors, zeds.values(), cam, _d, w.range, w.pierce);
       _end.x = cam.x + _d.x * shot.t; _end.y = cam.y + _d.y * shot.t; _end.z = cam.z + _d.z * shot.t;
-      if (i === 0) first = [_end.x, _end.y, _end.z];
+      // The end point the server gets: pellet 0's, unless another pellet lands nearer a booby trap (that's the one that hit it).
+      if (i === 0 || (w.pellets > 1 && trapNear(_end.x, _end.y, _end.z) < trapNear(first[0], first[1], first[2]))) first = [_end.x, _end.y, _end.z];
       if (i < 4) ownTracers.push(_end.x, _end.y, _end.z, w.pellets > 1 ? 0.02 : w.pierce > 2 ? 0.05 : 0.032);
       for (const hit of shot.hits) {
         const p = { x: cam.x + _d.x * hit.t, y: cam.y + _d.y * hit.t, z: cam.z + _d.z * hit.t };
@@ -812,6 +828,7 @@ function onEvent(ev: GameEvent): void {
       }
       ended = false;
       doors = dm; world.setDoors(dm, true);
+      traps.rearm();
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
       for (const id of taken) world.setTaken(id, true);
       enterStep(st, false);
@@ -829,6 +846,13 @@ function onEvent(ev: GameEvent): void {
       break;
     }
     case 'msg': hud.feed(tMsg(ev[1])); break;
+    case 'trap': {
+      const tr = L.def.traps[ev[1]];
+      traps.set(ev[1], ev[2]);
+      if (tr && ev[2] === TRAP_ST.RING) hud.banner(tr.kind === 'car' ? t('CAR ALARM!') : t('NIGHTLIGHT!'), true);
+      break;
+    }
+    case 'traps': traps.setLive(ev[1] === 1); break;
     case 'heal': if (ev[1] === me.id) { sfx.heal(); if (MEDS[ev[2]]?.steady) me.lastLegs = false; if (range) rangeHeal(ev[2]); } break;
     case 'shot': {
       if (ev[1] === me.id) break;
@@ -1020,6 +1044,9 @@ net.onMessage = (m: ServerMsg) => {
       for (const pv of world.pickups) world.setTaken(pv.def.id, false);
       for (const id of m.taken) world.setTaken(id, true);
       doors = m.doors; world.setDoors(doors, true);
+      traps.rearm();
+      (m.tr ?? []).forEach((s, i) => traps.set(i, s, true));
+      traps.setLive(m.ton !== 0);
       debugServer = m.debug === 1;
       enterStep(m.step, false);
       showIntro();
@@ -1541,6 +1568,7 @@ app.on('update', (dt: number) => {
     mounts.update(dt, () => null);
   }
   world.update(time, dt, cam.x, cam.y, cam.z);
+  traps.update(time, dt, cam.x, cam.y, cam.z);
   pieces.update(time, dt, step, inGame && holdout >= 0);
   listen(dt);
   fx.update(dt, cam.rot);

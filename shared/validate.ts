@@ -48,6 +48,77 @@ function checkHoldScript(s: Step, where: string, errors: string[], warnings: str
   if (sc[sc.length - 1].kind !== 'final') warnings.push(`${where}: holdScript should end with a 'final' stage (the climax)`);
 }
 
+/** Booby traps (docs/booby-traps.html, "Placement"): two traps closer than this (m, straight line) get a warning. */
+export const TRAP_MIN_GAP = 30;
+/**
+ * A holdout's arena, for trap placement: the floor within this many path tiles of its stand (a Big Hold
+ * On's: BIG_ARENA_TILES), plus its lanes and its area.
+ */
+export const HOLD_ARENA_TILES = 12, BIG_ARENA_TILES = 20;
+
+/**
+ * Trap placement: none in a holdout arena or a safe room; a nightlight on walkable floor with a wall
+ * behind it; traps at least TRAP_MIN_GAP m apart (a warning).
+ */
+function checkTraps(L: Level, errors: string[], warnings: string[]): void {
+  const def = L.def, traps = def.traps ?? [];
+  if (!traps.length) return;
+  const INF_D = 32767;
+  const what = (t: (typeof traps)[number]) => `${t.kind === 'car' ? 'alarm car' : 'nightlight'} #${t.id} at tile ${t.tx},${t.tz}${L.storeyOf(t.y) ? ` (storey ${L.storeyOf(t.y)})` : ''}`;
+  /** The floor a trap stands on: a nightlight's tile; a car's walkable tiles round its footprint. */
+  const cellsOf = (t: (typeof traps)[number]): number[] => {
+    const lv = L.storeyOf(t.y);
+    if (t.kind === 'light') return L.inBounds(t.tx, t.tz) ? [L.node(t.tx, t.tz, lv)] : [];
+    const out: number[] = [];
+    for (let z = t.tz - 1; z <= t.tz + t.d; z++) for (let x = t.tx - 1; x <= t.tx + t.w; x++) {
+      if (L.inBounds(x, z) && L.walkable(L.node(x, z, lv)) && !(x >= t.tx && x < t.tx + t.w && z >= t.tz && z < t.tz + t.d)) out.push(L.node(x, z, lv));
+    }
+    return out;
+  };
+  const inRect = (c: number, r: Rect) => { const x = L.nodeX(c), z = L.nodeZ(c); return L.lvOf(c) === (r.lv ?? 0) && x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1; };
+  const cells = traps.map(cellsOf);
+
+  // Nightlights: on walkable floor, a wall (not a prop, a door, water or air) behind it.
+  for (const t of traps) {
+    if (t.kind !== 'light') continue;
+    const lv = L.storeyOf(t.y), bx = t.tx - Math.round(t.fx), bz = t.tz - Math.round(t.fz);
+    if (!L.inBounds(t.tx, t.tz) || !L.walkable(L.node(t.tx, t.tz, lv)) || def.doorCell[L.node(t.tx, t.tz, lv)] >= 0) { errors.push(`${what(t)}: its tile is not walkable floor`); continue; }
+    const b = L.inBounds(bx, bz) ? L.node(bx, bz, lv) : -1;
+    if (b < 0 || !def.solid[b] || def.propCell[b] || def.air[b] || def.doorCell[b] >= 0 || def.floor[b] !== F.NONE) errors.push(`${what(t)}: the tile behind it (${bx},${bz}) is not a wall`);
+  }
+
+  // Safe rooms: SAFE floor, the start room (shut doors) and every checkpoint's area.
+  const start = L.distanceField([L.node(cellOf(def.spawns[0].x), cellOf(def.spawns[0].z), L.storeyOf(def.spawns[0].y ?? 0))], 0);
+  const checkpoints = def.steps.filter((s) => s.kind === 'gather' && s.checkpoint && s.area).map((s) => s.area!);
+  traps.forEach((t, i) => {
+    if (cells[i].some((c) => def.floor[c] === F.SAFE || start[c] < INF_D || checkpoints.some((r) => inRect(c, r)))) errors.push(`${what(t)} is in a safe room`);
+  });
+
+  // Holdout arenas: near the stand, in a lane, in the step's area.
+  def.steps.forEach((s, i) => {
+    if (!s.hold) return;
+    const open = L.doorsAfter(i);
+    let stand: number[];
+    if (s.kind === 'use' && s.target !== undefined) {
+      const p = def.pickups[s.target], tx = cellOf(p.x), tz = cellOf(p.z), lv = L.storeyOf(p.y);
+      stand = [];
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (L.inBounds(tx + dx, tz + dz) && !L.blocked(L.node(tx + dx, tz + dz, lv), open)) stand.push(L.node(tx + dx, tz + dz, lv));
+    } else stand = [L.node(cellOf(s.at.x), cellOf(s.at.z), L.storeyOf(s.at.y ?? 0))];
+    const d = L.distanceField(stand, open), R = s.big ? BIG_ARENA_TILES : HOLD_ARENA_TILES;
+    const rects = [...Object.values(s.lanes ?? {}).flat(), ...(s.area ? [s.area] : [])];
+    traps.forEach((t, k) => {
+      if (cells[k].some((c) => d[c] <= R || rects.some((r) => inRect(c, r))))
+        errors.push(`${what(t)} is in the arena of step ${i + 1} ("${s.objective}"${s.big ? ', a Big Hold On' : ''})`);
+    });
+  });
+
+  // Spacing (straight line; the rule is along the path, which is never shorter).
+  for (let i = 0; i < traps.length; i++) for (let j = i + 1; j < traps.length; j++) {
+    const a = traps[i], b = traps[j], d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+    if (d < TRAP_MIN_GAP) warnings.push(`${what(a)} and ${what(b)} are ${d.toFixed(0)} m apart (keep traps at least ${TRAP_MIN_GAP} m apart)`);
+  }
+}
+
 export function validateChapter(L: Level): ChapterReport {
   const def = L.def, { W, H, N } = L;
   const errors: string[] = [], warnings: string[] = [];
@@ -266,6 +337,8 @@ export function validateChapter(L: Level): ChapterReport {
     }
   });
   if (!def.steps.some((s) => s.big)) warnings.push('no Big Hold On step (big: true) in this chapter');
+
+  checkTraps(L, errors, warnings);
 
   const usedDoors = new Set(def.steps.flatMap((s) => s.opens));
   // A lift may stay shut for good (a faulted car is set dressing); any other door that never opens is a mistake.

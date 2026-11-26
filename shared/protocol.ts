@@ -72,7 +72,12 @@ export type GameEvent =
   // The Weeper `zid` is stirring (stage 1) or awake and after survivor `pid` (stage 2).
   | ['weeper', zid: number, stage: number, pid: number]
   // Survivor `pid` manned mounted gun `mount` (ChapterDef.mounts index), or let go of it (-1). Manning, they stand at its seat.
-  | ['mount', pid: number, mount: number];
+  | ['mount', pid: number, mount: number]
+  // --- Booby traps (ChapterDef.traps; docs/booby-traps.html). Trap `id` is now in TRAP_ST `state`; `by`: the
+  // survivor who set it off (or broke it), 0 = nobody, -1 = a charging Charger.
+  | ['trap', id: number, state: number, by: number]
+  // Armed traps are live (1) or dark (0: a holdout or a Brute fight is on and they can't go off).
+  | ['traps', on: number];
 
 /** GET /api/rooms entry (listed rooms only). */
 /** `diff`: DifficultyId (shared/constants.ts DIFFICULTIES); absent = 'normal'. */
@@ -82,7 +87,8 @@ export interface RosterEntry { id: number; name: string; look: number }
 
 export type ServerMsg =
   // diff: the room's DifficultyId (absent = 'normal').
-  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; y: number; debug: number; diff?: string }
+  | { t: 'w'; id: number; room: string; ch: number; step: number; taken: number[]; doors: number; x: number; z: number; y: number; debug: number; diff?: string;
+      /** Booby-trap states by trap id (TRAP_ST), and whether armed ones are live (1) or dark (0). */ tr?: number[]; ton?: number }
   | { t: 'ro'; players: RosterEntry[] }
   | { t: 'err'; msg: string }
   // g = open door mask, ho = holdout seconds left (-1 none), q = active step, qc = collected items for a collect step.

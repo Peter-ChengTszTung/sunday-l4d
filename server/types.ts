@@ -75,7 +75,11 @@ export interface Glob { x1: number; y1: number; z1: number; t: number }
 export interface Puddle { id: number; x: number; y: number; z: number; r: number; life: number; age: number; tick: number }
 /** A firebomb's burning patch; `by`: id of the survivor who threw it (kill credit). */
 export interface Fire { id: number; x: number; y: number; z: number; r: number; life: number; age: number; tick: number; by: number }
-/** A rattling Rattle Bomb: seconds until it goes off, who threw it and with which weapon, and the path field toward it. */
-export interface Lure { x: number; y: number; z: number; t: number; by: number; w: number; field: Int16Array }
+/**
+ * Something commons flock to: a rattling Rattle Bomb (seconds until it goes off, who threw it and with which weapon)
+ * or a ringing alarm car (w = -1: nothing goes off when it stops). `field`: the path field toward it; commons within
+ * `tiles` of it come.
+ */
+export interface Lure { x: number; y: number; z: number; t: number; by: number; w: number; field: Int16Array; tiles: number }
 
 export interface Checkpoint { step: number; doors: number; taken: number[] }

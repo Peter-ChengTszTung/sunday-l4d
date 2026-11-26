@@ -87,6 +87,17 @@ export interface Note { id: number; x: number; z: number; y: number; title: stri
  * (metres), facing `yaw` (0 = -Z, PI/2 = -X, the camera's convention). The gunner stands MOUNT.seat m
  * behind the pivot. Its tile stays walkable; a low sandbag ring is drawn around it.
  */
+/**
+ * Booby traps (docs/booby-traps.html). `car`: a Snoozle alarm car, also an ordinary 'car' prop on the
+ * same tiles; shooting it, a blast, fire or a charging Charger sets it off. `light`: a Snoozle nightlight
+ * on a wall whose cone of light sets it off when a survivor walks in; one hit breaks it silently.
+ */
+export type TrapKind = 'car' | 'light';
+/**
+ * A trap. (x, z): its centre in metres (a nightlight: the point on the wall it hangs from); y: the floor
+ * height under it. Car: the tile rect (tx, tz, w, d) it covers. Light: (fx, fz) the unit direction its cone shines.
+ */
+export interface Trap { id: number; kind: TrapKind; x: number; z: number; y: number; tx: number; tz: number; w: number; d: number; fx: number; fz: number }
 export interface Mount { id: number; kind: MountKind; x: number; z: number; y: number; yaw: number }
 export interface Label { text: string; x: number; z: number; size: number; color: string; rot: number; /** Floor height (m). */ y: number }
 export interface Arrow { x: number; z: number; rot: number; /** Floor height (m). */ y: number }
@@ -190,6 +201,7 @@ export interface ChapterDef {
   /** Stair flights and ladders (for rendering). */ ramps: Ramp[];
   /** Door id per node, -1 where there is none. */ doorCell: Int8Array;
   props: Prop[]; pickups: Pickup[]; lamps: Vec2[]; arrows: Arrow[]; mounts: Mount[];
+  /** Booby traps (alarm cars, nightlights); index = Trap.id. */ traps: Trap[];
   labels: Label[]; doors: Door[]; notes: Note[]; steps: Step[];
   spawns: Vec2[]; startCell: { x: number; z: number; lv: number };
   /** Per step index: where the team respawns if it wipes after that checkpoint. */ checkpointSpawns: Record<number, Vec2[]>;
@@ -245,7 +257,7 @@ export class LevelBuilder {
   private readonly touched: Uint8Array;
   readonly ramps: Ramp[] = [];
   readonly props: Prop[] = []; readonly pickups: Pickup[] = []; readonly lamps: Vec2[] = [];
-  readonly arrows: Arrow[] = []; readonly labels: Label[] = []; readonly mounts: Mount[] = [];
+  readonly arrows: Arrow[] = []; readonly labels: Label[] = []; readonly mounts: Mount[] = []; readonly traps: Trap[] = [];
   readonly doors: Door[] = []; readonly notes: Note[] = []; readonly steps: Step[] = [];
   readonly checkpointSpawns: Record<number, Vec2[]> = {};
   readonly densityRects: DensityRect[] = [];
@@ -367,6 +379,28 @@ export class LevelBuilder {
     this.rect(x, z, x + w - 1, z + d - 1, (i) => { this.solid[i] = 1; this.propCell[i] = 1; if (opaque) this.opaque[i] = 1; });
     this.props.push({ type, x, z, w, d, ...extra, ...(this.lv ? { lv: this.lv } : {}) });
     return this;
+  }
+
+  /**
+   * A Snoozle alarm car (a booby trap) on tiles (x, z, w, d): a 'car' prop like any other, plus a trap that
+   * sets off a lure, a wake-up and a horde when shot, blasted, burnt or charged into. Returns the trap id.
+   */
+  alarmCar(x: number, z: number, w = 1, d = 2, extra: { color?: number; rot?: number } = {}): number {
+    this.prop('car', x, z, w, d, extra);
+    const id = this.traps.length;
+    this.traps.push({ id, kind: 'car', x: (x + w / 2) * TILE, z: (z + d / 2) * TILE, y: this.baseY, tx: x, tz: z, w, d, fx: 0, fz: 0 });
+    return id;
+  }
+  /**
+   * A Snoozle nightlight (a booby trap): plugged into the wall at the back of floor tile (x, z) and shining
+   * toward `face` across that tile and on (TRAP.light.range m, a 60° cone). The tile must be walkable and
+   * the one behind it, opposite `face`, a wall. Returns the trap id.
+   */
+  nightlight(x: number, z: number, face: RampDir): number {
+    this.idx(x, z);
+    const fx = RAMP_DX[RAMP_OF[face]], fz = RAMP_DZ[RAMP_OF[face]], id = this.traps.length;
+    this.traps.push({ id, kind: 'light', x: (x + 0.5 - fx * 0.48) * TILE, z: (z + 0.5 - fz * 0.48) * TILE, y: this.baseY, tx: x, tz: z, w: 1, d: 1, fx, fz });
+    return id;
   }
 
   /** Loot: weapons, ammo, medkits. Returns the pickup id. */
@@ -656,7 +690,7 @@ export class LevelBuilder {
       ...meta, theme: meta.theme ?? this.theme, W: this.W, H: this.H, levels: this.levels,
       floor: this.floor, solid: this.solid, opaque: this.opaque, propCell: this.propCell, wallH: this.wallH, wallKind: this.wallKind,
       air: this.air, ramp: this.ramp, ladder: this.ladderCell, rampLo: this.rampLo, rampHi: this.rampHi, ramps: this.ramps,
-      doorCell: this.doorCell, props: this.props, pickups: this.pickups, lamps: this.lamps, arrows: this.arrows, labels: this.labels, mounts: this.mounts,
+      doorCell: this.doorCell, props: this.props, pickups: this.pickups, lamps: this.lamps, arrows: this.arrows, labels: this.labels, mounts: this.mounts, traps: this.traps,
       doors: this.doors, notes: this.notes, steps: this.steps, spawns: this.spawns, startCell: this.startCell, checkpointSpawns: this.checkpointSpawns,
       density: this.densityRects,
     };

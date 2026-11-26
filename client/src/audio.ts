@@ -43,6 +43,16 @@ const RADIO: Record<RadioVoice, { hiss: number; crack: number; am: number; mur: 
   team: { hiss: 0.12, crack: 0.06, am: 0.28, mur: 0.06, f0: 290, syl: [0.07, 0.15] },
   voice: { hiss: 0.14, crack: 0.05, am: 0.45, mur: 0.05, f0: 175, syl: [0.16, 0.34] },
 };
+/**
+ * Snoozle's lullaby (Brahms' "Wiegenlied" in C, the alarm car's register): [eighth note from the pickup, Hz, length
+ * in eighths]. 50 eighths, so it loops every 25 car pulses; the nightlight plays the first 20 an octave up.
+ */
+const CAR_TUNE: readonly (readonly [number, number, number])[] = [
+  [0, 659, 1], [1, 659, 1], [2, 784, 3], [5, 659, 1], [6, 659, 2], [8, 784, 4], [12, 659, 1], [13, 784, 1],
+  [14, 1047, 2], [16, 988, 3], [19, 880, 1], [20, 880, 2], [22, 784, 2], [24, 587, 1], [25, 659, 1],
+  [26, 698, 2], [28, 587, 2], [30, 587, 1], [31, 659, 1], [32, 698, 4], [36, 587, 1], [37, 698, 1],
+  [38, 988, 1], [39, 880, 1], [40, 784, 2], [42, 988, 2], [44, 1047, 6],
+];
 const rnd = (a: number, b: number): number => a + Math.random() * (b - a);
 const pick = <T>(xs: readonly T[]): T => xs[(Math.random() * xs.length) | 0];
 
@@ -1005,6 +1015,93 @@ export class Sfx {
   /** One burst of a twin-bell alarm clock (call every ~0.3 s while it rings). */
   ring(x: number, z: number): void {
     this.emit([x, z], { reach: 2.9, wet: 0.4, prio: true }, () => { for (let i = 0; i < 8; i++) this.tone('square', i % 2 ? 2350 : 1980, i % 2 ? 2300 : 1950, 0.32, 0.002, 0.03, i * 0.036); });
+  }
+  // --- Booby traps (client/src/traps.ts). Both play Snoozle's lullaby (Brahms' "Wiegenlied", C major) on a
+  // music box: the sleepers come to it. The car plays it low and slow over a two-tone horn; the nightlight
+  // plays the opening an octave up and quicker. Neither shares a pitch range or rhythm with the Alarm Clock's
+  // `ring` (a 2 kHz square trill in 36 ms blips).
+  /** A music-box tine: a pure tone and a bright "ting" partial (4.02x, a hair sharp) that dies first. `bend` sags the pitch. */
+  private tine(f: number, vol: number, decay: number, when = 0, bend = 1): void {
+    this.tone('sine', f, f * bend, vol, 0.002, decay, when);
+    this.tone('sine', f * 4.02, f * 4.02 * bend, vol * 0.22, 0.001, decay * 0.18, when);
+  }
+  /** A car horn: square waves at `fs` through one lowpass, held flat for `hold` s then released; `bend` droops the pitch (a dying battery). */
+  private horn(fs: readonly number[], vol: number, hold: number, rel: number, when = 0, bend = 1, cut = 1500): void {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime + when, g = c.createGain(), lp = c.createBiquadFilter();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    g.gain.setValueAtTime(vol, t + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + hold + rel);
+    lp.type = 'lowpass'; lp.frequency.value = cut * this.pj; lp.Q.value = 0.9;
+    lp.connect(g).connect(this.out);
+    for (const f of fs) {
+      const o = c.createOscillator();
+      o.type = 'square';
+      o.frequency.setValueAtTime(f * this.pj, t);
+      o.frequency.exponentialRampToValueAtTime(f * this.pj * bend, t + hold + rel);
+      o.connect(lp); o.start(t); o.stop(t + hold + rel + 0.05);
+      this.track(o);
+    }
+  }
+  /**
+   * One 0.5 s pulse of a ringing alarm car (`n` counts pulses from 0). A two-tone horn honks on every pulse,
+   * alternating high and low ("HONK-honk", the headlights flash with it), under the lullaby on a low music box
+   * at a slow waltz (an eighth note is 0.25 s, so each pulse plays the next two eighths of a 25-pulse loop).
+   * The box sags flat over the ring (about 0.8 of a semitone by pulse 30) like a spring running down.
+   */
+  carAlarm(x: number, z: number, n: number): void {
+    const k = n % 25, sag = 1 - Math.min(n, 40) * 0.0015;
+    this.emit([x, z], { reach: 3.6, wet: 0.45, prio: true, jit: 0.008 }, () => {
+      this.horn(n % 2 ? [330, 392] : [392, 494], n % 2 ? 0.11 : 0.14, 0.17, 0.06);
+      for (const [at, f, len] of CAR_TUNE) if (at >> 1 === k) this.tine(f * sag, 0.3, 0.25 + len * 0.22, (at & 1) * 0.25);
+    });
+  }
+  /** A nightlight's warning (it plays 0.6 s later unless you step out of its light): a soft tine "uh-oh", the second note sagging, and a lamp click. */
+  nightChirp(x: number, z: number): void {
+    this.emit([x, z], { reach: 1.4, wet: 0.2, prio: true, jit: 0.02 }, () => {
+      this.hiss('highpass', 5000, 4000, 0.7, 0.05, 0.001, 0.012);
+      this.tine(1568, 0.13, 0.16, 0.02);
+      this.tine(1245, 0.14, 0.32, 0.17, 0.94);
+    });
+  }
+  /** A nightlight plays its lullaby (about TRAP.light.ring s): the car's tune an octave up and quicker, with three soft low tines under it. */
+  nightLullaby(x: number, z: number): void {
+    const e = 0.18;
+    this.emit([x, z], { reach: 2.4, wet: 0.35, prio: true, jit: 0.01 }, () => {
+      for (const [at, f, len] of CAR_TUNE) if (at < 20) this.tine(f * 2, 0.2, 0.2 + len * e * 1.2 + (at === 19 ? 0.6 : 0), at * e);
+      for (const [at, f] of [[2, 523], [8, 523], [14, 698]] as const) this.tine(f, 0.09, 1.1, at * e);
+    });
+  }
+  /**
+   * A trap stops ringing: the music box runs out of spring, five falling tines spreading apart and going flat,
+   * then the mechanism's clunk. The car's is an octave lower, carries further and its horn droops off like a flat battery.
+   */
+  trapWindDown(kind: 'car' | 'light', x: number, z: number): void {
+    const car = kind === 'car', o = car ? 1 : 2;
+    this.emit([x, z], { reach: car ? 3 : 1.6, wet: 0.4, jit: 0.01 }, () => {
+      if (car) this.horn([392, 494], 0.1, 0.05, 0.6, 0, 0.7, 900);
+      let w = car ? 0.2 : 0.05;
+      [1047, 988, 880, 784, 659].forEach((f, i) => { this.tine(f * o * (1 - i * 0.035), car ? 0.26 : 0.16, 0.5 + i * 0.15, w); w += 0.17 + i * 0.09; });
+      this.hiss('bandpass', 900, 600, 2, car ? 0.12 : 0.07, 0.002, 0.05, w + 0.1);
+      this.tone('triangle', 180, 150, car ? 0.1 : 0.06, 0.002, 0.06, w + 0.1);
+    });
+  }
+  /**
+   * A trap broken before it went off (a nightlight shot out): a small plastic crack, a few sputters of electric
+   * fizzle over a dying mains hum, and the music box's one strangled note sliding away. Kept quiet: it's the good outcome.
+   * A car (not sent today) cracks lower and chokes its horn off in a blip.
+   */
+  trapBreak(kind: 'car' | 'light', x: number, z: number): void {
+    const car = kind === 'car';
+    this.emit([x, z], { reach: car ? 1.5 : 0.9, wet: 0.2, jit: 0.06 }, () => {
+      this.hiss('bandpass', car ? 1400 : 3200, car ? 700 : 1800, 1.2, 0.3, 0.001, 0.04);
+      this.hiss('bandpass', car ? 2200 : 4500, 2000, 1.5, 0.14, 0.001, 0.03, 0.035);
+      for (let i = 0, w = 0.05; i < 4; i++, w += rnd(0.03, 0.09)) this.hiss('highpass', rnd(4000, 6500), 2500, 0.8, 0.07 * (1 - i * 0.2), 0.002, rnd(0.015, 0.04), w);
+      this.tone('sawtooth', 100, 60, 0.035, 0.005, 0.3, 0.04);
+      if (car) this.horn([392, 494], 0.08, 0.04, 0.05, 0.03, 0.85, 900);
+      else this.tone('sine', 1319, 330, 0.05, 0.002, 0.22, 0.06);
+    });
   }
   /** It rang out. */
   alarmOut(): void { this.emit(null, {}, () => { for (let i = 0; i < 3; i++) this.tone('square', 2100, 1400, 0.16, 0.005, 0.25, i * 0.18); }); this.horde(); }

@@ -15,6 +15,7 @@ export default {
   "Cranky? Dot, they're ZOMBIES.": "起床氣？阿朵，他們根本是殭屍啦！",
   "Taro": "芋頭",
   "Sleepwalkers. Hm. They do look terribly tired.": "夢遊者啊。嗯，他們看起來確實累壞了。",
+  "Don't shoot the cars, sweet pea. Snoozle alarms play the lullaby, and sleepers love it.": "別對車子開槍喔，小豌豆。打盹樂防盜警報會放搖籃曲，夢遊者最愛聽了。",
   "Gear up at Tony's Pizza": "到東尼披薩補給裝備",
   "My work! Tony keeps a Boomstick under the till. For rude customers.": "我打工的地方！東尼在收銀台下藏了一把轟天棍，專治奧客。",
   "Nori": "海苔",

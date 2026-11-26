@@ -125,6 +125,7 @@ Why each one was awake at 3 a.m. is part of the mystery: only people who were as
   - Dot: "South down Marshmallow Avenue. Mind the sleepwalkers. They get cranky."
   - Pip: "Cranky? Dot, they're ZOMBIES."
   - Taro: "Sleepwalkers. Hm. They do look terribly tired."
+  - Dot: "Don't shoot the cars, sweet pea. Snoozle alarms play the lullaby, and sleepers love it."
 - **Flags:** none
 
 **1.3 · `reach` · Weapon stop**

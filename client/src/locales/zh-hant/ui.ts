@@ -120,6 +120,8 @@ export default {
   "Free from the Charger!": "掙脫衝鋒者了！",
   "Goo incoming — move!": "黏液來了——快閃！",
   "ALARM CLOCK! Shoot it — {s} s!": "鬧鐘怪！快射它——只剩 {s} 秒！",
+  "CAR ALARM!": "汽車警報！",
+  "NIGHTLIGHT!": "小夜燈！",
   "An Alarm Clock is ringing {m} m away": "{m} 公尺外有鬧鐘怪在響",
   "The alarm rang out — sleepers incoming!": "鬧鐘響完了——沉睡者要來了！",
   "Campaign complete! Back to chapter 1…": "戰役完成！回到第 1 章…",

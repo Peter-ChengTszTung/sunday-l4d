@@ -46,6 +46,8 @@ export function build() {
   let ci = 0;
   /** Abandoned car (1x2, facing north unless rotated). */
   const car = (x: number, z: number, rot = N, w = 1, d = 2) => b.prop('car', x, z, w, d, { color: CAR[ci++ % CAR.length], rot });
+  /** The same car with a Snoozle alarm (a booby trap: docs/booby-traps.html), in the same paint order. */
+  const alarmCar = (x: number, z: number, rot = N, w = 1, d = 2) => b.alarmCar(x, z, w, d, { color: CAR[ci++ % CAR.length], rot });
   /** Sleeper trail: little painted "zZ" marks along the way the sleepwalkers went. */
   const zz = (x: number, z: number, rot = N) => b.label('zZ', x, z, 18, LAV, rot);
 
@@ -81,7 +83,10 @@ export function build() {
   b.lamp(18.6, 47); b.lamp(18.6, 53); b.lamp(29.4, 50);
   // Abandoned cars, doors open, all facing north (the way the sleepers walked).
   car(20, 10); car(25, 14); b.prop('van', 22, 20, 1, 3, { color: 0xe8e3f0, rot: N }); car(27, 24);
-  car(19, 30); car(24, 33); b.prop('van', 21, 39, 1, 3, { color: 0x63e6be, rot: N }); car(26, 42);
+  car(19, 30); car(24, 33); b.prop('van', 21, 39, 1, 3, { color: 0x63e6be, rot: N });
+  // The teaching alarm car (Dot warns about it on step 2): alone in the open east lane under the
+  // billboard, its blinking dash seen from the laundromat end of the avenue.
+  alarmCar(26, 42);
   car(20, 58); car(27, 60); b.prop('van', 23, 66, 1, 3, { color: 0xffd43b, rot: N }); car(19, 73);
   car(25, 77); car(21, 83); b.prop('van', 27, 86, 1, 3, { color: 0x4dabf7, rot: N }); car(20, 90);
   // The pile-up that closes the avenue at the garage.
@@ -261,6 +266,9 @@ export function build() {
   b.prop('bench', 135, 155, 3, 1); b.prop('shelf', 140, 147, 1, 6);
   // The stacks: a serpentine of shelving.
   for (const [x, z] of [[124, 142], [127, 138], [124, 134], [127, 130], [124, 126]]) b.prop('shelf', x, z, 14, 1);
+  // A Snoozle nightlight on the east wall at the first turn of the stacks: its cone fills the gap in
+  // the first shelf row, seen glowing all the way up the east aisle from the door. Shoot it first.
+  b.nightlight(140, 142, '-x');
   b.label('LIBRARY', 132, 153, 34, TEAL);
   b.lamp(126, 156);
   b.arrow(126, 151.5, E); b.arrow(139, 144, N); b.arrow(125, 140, N); b.arrow(139, 136, N); b.arrow(125, 132, N); b.arrow(139, 128, N); b.arrow(125.5, 123.5, N);
@@ -606,7 +614,9 @@ export function build() {
   // Footbridges. Not F.WOOD: wood is an indoor floor and gets a ceiling, which hung in the open air here.
   b.carve(58, 3, 60, 6, F.CONCRETE); b.carve(84, 3, 86, 6, F.CONCRETE);
   b.prop('container', 40, 4, 8, 2, { color: 0xc8324b }); b.prop('container', 66, 3, 7, 2, { color: 0x2f5f78 }); b.prop('container', 91, 4, 6, 2, { color: 0xffd43b });   // moored barges
-  car(45, 10, E, 2, 1); car(55, 13, WEST, 2, 1); b.prop('van', 63, 10, 3, 1, { color: 0x9775fa }); car(73, 12, E, 2, 1); car(81, 9, WEST, 2, 1); car(93, 13, E, 2, 1);
+  car(45, 10, E, 2, 1); car(55, 13, WEST, 2, 1); b.prop('van', 63, 10, 3, 1, { color: 0x9775fa }); alarmCar(73, 12, E, 2, 1); car(81, 9, WEST, 2, 1); car(93, 13, E, 2, 1);
+  // Alarm car mid-canal, in the rifle lane the canal horde runs down; ammo in its open boot.
+  b.pick('ammo', 75, 12);
   b.prop('bench', 50, 7, 2, 1); b.prop('bench', 77, 7, 2, 1); b.prop('dumpster', 70, 16, 2, 1);
   b.pick('ammo', 66, 16); b.pick('rifle', 72, 1); b.pick('ammo', 73, 1); b.pick('medkit', 40, 1);   // the towpath pays for the detour
   b.label('LANTERN CANAL', 58, 11.5, 30, PINK, E);
@@ -644,6 +654,9 @@ export function build() {
   b.label('SNOOZLE SLEEP SHOP', 141, 19, 14, PINK, E); b.label('DREAMWELL', 137.5, 11.5, 16, LAV, E);
   b.lamp(136, 19.5); b.lamp(146, 19.5);
   b.arrow(132.5, 15.5, S); b.arrow(138, 19, E); b.arrow(149.5, 16.5, N);
+  // Snoozle nightlight in the shop's way-in, on the east jamb: its cone lies across the doorway,
+  // and the glow shows through it from the far end of Gumdrop Street.
+  b.nightlight(133, 17, '-x');
 
   // ------------------------------------------------------------------
   // 16. The river: Bayfront Promenade, Night Ferry Terminal, Wharf Halt and the freight bridge
@@ -755,6 +768,7 @@ export function build() {
       ['Dot', 'South down Marshmallow Avenue. Mind the sleepwalkers. They get cranky.'],
       ['Pip', 'Cranky? Dot, they\'re ZOMBIES.'],
       ['Taro', 'Sleepwalkers. Hm. They do look terribly tired.'],
+      ['Dot', 'Don\'t shoot the cars, sweet pea. Snoozle alarms play the lullaby, and sleepers love it.'],
     ],
   });
   b.reach({ x0: 33, z0: 63, x1: 43, z1: 70 }, {

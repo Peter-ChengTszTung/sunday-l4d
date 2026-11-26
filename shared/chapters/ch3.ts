@@ -226,7 +226,10 @@ export function build() {
   b.carve(78, 56, 102, 72, F.ASPHALT);
   b.walls(77, 56, 77, 73, WALL.FENCE, 3); b.walls(78, 73, 102, 73, WALL.FENCE, 3); b.walls(103, 57, 103, 73, WALL.FENCE, 3);
   b.walls(88, 73, 91, 73, WALL.BUILDING, STOREY);                         // block under the back landing
-  b.prop('car', 80, 58, 1, 2, { color: 0xc98a3a, rot: N }); b.prop('van', 99, 57, 1, 3, { color: 0xe8e3f0, rot: N });
+  b.alarmCar(80, 58, 1, 2, { color: 0xc98a3a, rot: N }); b.prop('van', 99, 57, 1, 3, { color: 0xe8e3f0, rot: N });
+  // The yardmaster's car has a Snoozle alarm (docs/booby-traps.html): the switch horde's stragglers
+  // follow the team into the lot. Ammo in its open boot, north side.
+  b.pick('ammo', 80, 57);
   b.prop('pillar', 95, 58, 1, 1, { color: 0x2f8f8a }); b.prop('pillar', 96, 58, 1, 1, { color: 0x2f8f8a });  // portaloos
   for (const [x, z] of [[82, 63], [86, 63], [93, 63], [98, 63], [82, 68], [98, 68], [82, 72], [86, 72], [93, 72], [98, 72]]) b.prop('pillar', x, z, 1, 1, { color: 0x6f6a5a });   // the stilts
   b.prop('crate', 90, 67); b.prop('barrel', 85, 70);
@@ -615,6 +618,9 @@ export function build() {
   b.fill(94, 109, 94, 112); b.fill(95, 109, 96, 109); b.walls(94, 109, 96, 112, WALL.BUILDING, STOREY);
   b.stairs(95, 110, 96, 112, '-z');
   b.prop('counter', 88, 109, 5, 1, { color: 0x6f7f9a }); b.prop('shelf', 87, 113, 1, 2);
+  // A Snoozle nightlight in the tower's front door, on the west jamb: its cone lies across the
+  // doorway, in and out again, seen from down the pier.
+  b.nightlight(90, 116, '+x');
   b.pick('medkit', 92, 114); b.pick('ammo', 88, 115);
   b.label('CONTROL TOWER', 91, 112.4, 14, GOLD); b.label('STAIRS UP', 95.5, 113.6, 10, GOLD, N);
   b.lamp(91, 112); b.lamp(93.5, 115.4);
@@ -831,6 +837,7 @@ export function build() {
   b.walls(85, 180, 149, 213, WALL.BUILDING, 6);
   b.carve(87, 182, 147, 211, F.TILES);
   b.carve(85, 186, 86, 189, F.TILES);                                     // west doors (from the road)
+  b.nightlight(86, 189, '-z');                                            // Snoozle nightlight on the south jamb, its cone across the doors
   b.fill(108, 182, 109, 203); b.fill(108, 210, 109, 211);                  // wall A: gap at the south end
   b.fill(128, 188, 129, 211);                                              // wall B: gap at the north end
   b.carve(148, 193, 149, 197, F.TILES);                                   // east doors (to the quay)
@@ -910,6 +917,7 @@ export function build() {
   b.carve(162, 239, 162, 241, F.INTERIOR);                                // front door
   b.fill(172, 236, 172, 238); b.fill(175, 236, 175, 238);
   b.stairs(173, 236, 174, 238, '-z');
+  b.nightlight(175, 239, '-x');                                            // Snoozle nightlight: its cone lies across the foot of the stairs
   b.prop('counter', 163, 245, 5, 1, { color: 0x6f7f9a }); b.prop('radio', 165, 244);
   b.prop('bed', 169, 245, 2, 1); b.prop('bed', 172, 245, 2, 1); b.prop('shelf', 163, 235, 1, 3);
   b.pick('medkit', 166, 236); b.pick('ammo', 167, 236); b.pick('rattle', 168, 236);   // for the run back
@@ -951,6 +959,9 @@ export function build() {
   b.carve(27, 201, 61, 208, F.INTERIOR);
   for (const x of [29, 36, 43, 50, 57]) b.carve(x, 209, x + 3, 210, F.INTERIOR);
   b.carve(31, 200, 32, 200, F.INTERIOR); b.carve(55, 200, 56, 200, F.INTERIOR);
+  // A Snoozle nightlight on the back wall by the east back door, shining down the lane through the
+  // roundhouse: the short way back to the mission runs through its cone (or go round).
+  b.nightlight(54, 201, '+z');
   b.prop('bus', 30, 202, 2, 6, { color: COAL }); b.prop('bus', 37, 202, 2, 6, { color: 0x3a2a2a }); b.prop('bus', 51, 202, 2, 6, { color: 0x2f4a3a });
   b.prop('counter', 45, 201, 4, 1, { color: 0x6f7f9a }); b.prop('shelf', 61, 201, 1, 4);
   b.pick('shotgun', 46, 202); b.pick('ammo', 47, 202); b.pick('medkit', 59, 207);

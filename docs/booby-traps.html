@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Booby Traps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column of design-doc sections, matching docs/big-hold-on-v2.html. */
+:root {
+  --bg: #f6f3fb; --panel: #ffffff; --ink: #251d3a; --muted: #6a6183; --line: #ddd5ec;
+  --alarm: #d6336c; --lure: #d18b00; --safe: #0f9f93; --accent: #5b3fd1; --wall: #8d84a6; --floor: #ece6f6;
+  --chip: #efe9fb;
+  --display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #17121f; --panel: #211a2d; --ink: #efe9fb; --muted: #a79dc0; --line: #352b47;
+  --alarm: #ff6b9a; --lure: #f2b63a; --safe: #3fd6c6; --accent: #a58cff; --wall: #6e6589; --floor: #2a2238; --chip: #2c2340;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #17121f; --panel: #211a2d; --ink: #efe9fb; --muted: #a79dc0; --line: #352b47;
+  --alarm: #ff6b9a; --lure: #f2b63a; --safe: #3fd6c6; --accent: #a58cff; --wall: #6e6589; --floor: #2a2238; --chip: #2c2340;
+  color-scheme: dark }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 40px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 48px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.3rem); font-weight: 800; }
+h2 { font-size: 1.7rem; font-weight: 800; }
+h3 { font-size: 1.2rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code { font: 500 0.88em var(--mono); }
+.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 18px; }
+.lede { font-size: 1.08rem; color: var(--muted); }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.ref { font: 500 12px/1.4 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.tag { display: inline-block; font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 5px 8px; border-radius: 99px; background: var(--chip); color: var(--ink); justify-self: start; }
+.tag.now { background: var(--alarm); color: #fff; }
+.timeline { display: flex; width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); font: 600 12px/1.25 var(--body); }
+.timeline div { padding: 10px 8px; min-width: 0; border-right: 1px solid var(--line); background: var(--panel); }
+.timeline div:last-child { border-right: 0; }
+.timeline small { display: block; font: 500 11px/1.3 var(--mono); color: var(--muted); margin-top: 4px; }
+.t-al { box-shadow: inset 0 4px 0 var(--alarm); } .t-lu { box-shadow: inset 0 4px 0 var(--lure); } .t-sa { box-shadow: inset 0 4px 0 var(--safe); } .t-mu { box-shadow: inset 0 4px 0 var(--muted); }
+.tl-scroll { overflow-x: auto; }
+.tl-scroll .timeline { min-width: 640px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 12px/1.3 var(--body); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+td.num { font-family: var(--mono); }
+.tbl { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+.tbl table { min-width: 640px; }
+.trap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+@media (max-width: 820px) { .trap { grid-template-columns: 1fr; } }
+.trap .spec { display: grid; gap: 12px; min-width: 0; }
+.diagram { overflow-x: auto; }
+.diagram svg { width: 100%; min-width: 380px; height: auto; display: block; }
+svg text { font-family: var(--body); font-size: 2.2px; fill: var(--ink); }
+svg .lbl { font-weight: 600; }
+svg .mut { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 14px; margin: 0; }
+.kv dt { color: var(--muted); font-weight: 600; }
+.kv dd { margin: 0; min-width: 0; }
+@media (max-width: 480px) { .kv { grid-template-columns: 1fr; gap: 2px; } .kv dd { margin-bottom: 8px; } }
+.decide { border-left: 3px solid var(--accent); }
+.rule { border-top: 3px solid var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header style="display:grid;gap:14px">
+    <div class="eyebrow">Chibi Outbreak · design proposal for review</div>
+    <h1>Booby Traps</h1>
+    <p class="lede">Things on the map that make a noise when you handle them carelessly. A Snoozle car alarm that sings a lullaby when you shoot it, a nightlight that plays one when you walk past. In Mallow Bay the sleepers swarm anything awake and noisy, so a noise at the wrong moment brings the horde. Every trap can be seen before it goes off, and every trap can be set off on purpose for a reason.</p>
+  </header>
+
+  <section>
+    <div class="eyebrow">Why</div>
+    <h2>What traps add</h2>
+    <div class="grid2">
+      <div class="card"><h3>Streets are just a backdrop</h3><p>Chapters 1, 2 and 4 park 49 cars between them. Today they are walls with paint. Traps make some of them worth looking at.</p></div>
+      <div class="card"><h3>Hordes come from the clock</h3><p>Between objectives, hordes arrive when the director's timer runs out. A trap turns a horde into something the team caused, and could have avoided.</p></div>
+      <div class="card"><h3>Shooting is free</h3><p>Spraying at a walker costs only ammo. Next to an alarm car it costs a horde, so you have to stop and think about where you shoot.</p></div>
+      <div class="card"><h3>Stories to tell</h3><p>"Pip set off a car alarm!" in the kill feed. The Charger that hit a car while chasing you. Small moments the team talks about after the run.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Rules for every trap</div>
+    <h2>Tell, trigger, consequence, counterplay</h2>
+    <div class="grid4">
+      <div class="card rule"><h3>Tell</h3><p>Visible from at least 20 m away, before you are in range. If a player could not have seen it, the trap is wrong.</p></div>
+      <div class="card rule"><h3>Trigger</h3><p>One clear cause per trap, never random. The server decides; clients only show it.</p></div>
+      <div class="card rule"><h3>Consequence</h3><p>A noise: sleepers nearby wake, and a wave comes from the noise's direction. Sized by difficulty, and it replaces a timed horde instead of adding to one.</p></div>
+      <div class="card rule"><h3>Counterplay</h3><p>Avoid it, disarm it, or use it as a tool. Each trap goes off once, then stays as a dead prop.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">First slice</div>
+    <h2>Two traps with opposite lessons</h2>
+    <p>The car alarm teaches "don't shoot it". The nightlight teaches "shoot it first". Build both together and players learn to read each trap instead of following one blanket rule.</p>
+
+    <div class="trap">
+      <div class="spec">
+        <span class="tag now">Build first</span>
+        <h3>Snoozle car alarm</h3>
+        <p>An ordinary parked car with a blinking red light on the dashboard and a Snoozle sticker on the windscreen. Shoot it and it plays a lullaby jingle at full volume.</p>
+        <dl class="kv">
+          <dt>Tell</dt><dd>Red dash light blinks every 1 s, visible from 25 m. Windscreen tinted lighter than other cars. Snoozle sticker.</dd>
+          <dt>Trigger</dt><dd>A bullet hitting the car (a shotgun blast counts once). A blast whose radius reaches it. Fire burning on it for 1 s. <b>A Charger hitting it.</b> Melee, shoves and walking into it do nothing.</dd>
+          <dt>Ring</dt><dd>15 s. Commons within 30 m of walking distance go to the car, as with a lure. Sleepers within 24 m wake up and come too.</dd>
+          <dt>Horde</dt><dd>1.2 × a full horde, coming from the hidden spawn point nearest the car, so it arrives while the alarm is still ringing and piles up round the car.</dd>
+          <dt>After</dt><dd>The jingle winds down and the crowd turns on the team. The light goes dark. The car is now an ordinary prop.</dd>
+          <dt>Upside</dt><dd>Set it off on purpose, wait for the crowd to gather, then throw a molotov or a pipe bomb at the car. Optional loot in the boot (see decisions).</dd>
+        </dl>
+      </div>
+      <div class="diagram" role="img" aria-label="Top-down diagram: the team shoots an alarm car, commons and woken sleepers gather at the car, and a horde arrives from a hidden spawn point behind it.">
+        <svg viewBox="0 0 100 70" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="0" width="100" height="70" rx="2" fill="var(--floor)"/>
+          <rect x="0" y="0" width="100" height="10" fill="var(--wall)" opacity=".5"/>
+          <rect x="0" y="60" width="100" height="10" fill="var(--wall)" opacity=".5"/>
+          <text x="2" y="6.5" class="mut">buildings</text>
+          <circle cx="55" cy="35" r="20" fill="var(--lure)" opacity=".12" stroke="var(--lure)" stroke-width=".4" stroke-dasharray="1.5 1"/>
+          <text x="61" y="18" class="lbl" style="fill:var(--lure)">lure: 30 m walk</text>
+          <rect x="51" y="32" width="8" height="5" rx="1.2" fill="var(--alarm)"/>
+          <circle cx="56.5" cy="33.6" r=".8" fill="#fff"/>
+          <text x="49" y="42" class="lbl" style="fill:var(--alarm)">alarm car</text>
+          <g fill="var(--safe)"><circle cx="12" cy="33" r="1.6"/><circle cx="15" cy="37" r="1.6"/><circle cx="11" cy="39" r="1.6"/><circle cx="16" cy="31" r="1.6"/></g>
+          <text x="7" y="46" class="lbl" style="fill:var(--safe)">team</text>
+          <path d="M18 34 L49 34.5" stroke="var(--safe)" stroke-width=".4" stroke-dasharray="1 .8"/>
+          <text x="25" y="32.5" class="mut">stray shot</text>
+          <g fill="var(--muted)"><circle cx="44" cy="24" r="1.1"/><circle cx="66" cy="44" r="1.1"/><circle cx="62" cy="22" r="1.1"/></g>
+          <path d="M44 24 L51 31 M66 44 L59 37 M62 22 L57 31" stroke="var(--muted)" stroke-width=".35"/>
+          <text x="34" y="21" class="mut">sleepers wake</text>
+          <rect x="88" y="12" width="9" height="8" rx="1" fill="none" stroke="var(--alarm)" stroke-width=".4" stroke-dasharray="1 .6"/>
+          <text x="73" y="14" class="mut">hidden spawn</text>
+          <path d="M90 20 C 85 28, 72 33, 61 34.5" stroke="var(--alarm)" stroke-width=".7" fill="none" marker-end="url(#ah)"/>
+          <text x="79" y="37" class="lbl" style="fill:var(--alarm)">horde</text>
+          <defs><marker id="ah" viewBox="0 0 4 4" refX="3" refY="2" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0 L4 2 L0 4 z" fill="var(--alarm)"/></marker></defs>
+          <text x="2" y="66.5" class="mut">The crowd gathers at the car for 15 s, then turns on the team.</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="trap">
+      <div class="spec">
+        <span class="tag now">Build first</span>
+        <h3>Nightlight sensor</h3>
+        <p>A Snoozle nightlight plugged into a wall, throwing a soft cone of light across a corridor or a doorway. It plays a lullaby to whoever walks into the light.</p>
+        <dl class="kv">
+          <dt>Tell</dt><dd>A glowing sheep on the wall and a visible cone of light on the floor, 6 m long and 60° wide.</dd>
+          <dt>Trigger</dt><dd>A survivor enters the cone. It chirps first, then plays after <b>0.6 s</b>: step back out in time and it resets. Zombies never set it off.</dd>
+          <dt>Disarm</dt><dd>One hit from any gun or melee weapon breaks it, silently. That's the lesson: shoot it before you walk in.</dd>
+          <dt>Consequence</dt><dd>Sleepers within 20 m wake up, and a wave (12 + two per survivor) comes from the nightlight's direction. No lure phase.</dd>
+          <dt>Where</dt><dd>Indoors, in rooms full of sleepers: hospital wards, the hotel, the plant offices. It guards a doorway that the critical path goes through.</dd>
+        </dl>
+      </div>
+      <div class="card" style="align-self:stretch">
+        <h3>Why both</h3>
+        <ul>
+          <li>The car punishes careless shooting; the nightlight punishes careless walking.</li>
+          <li>One makes you hold fire, the other makes you fire first. Neither can be handled with "always shoot" or "never shoot".</li>
+          <li>The car belongs to street sections and the nightlight to indoor ones, so every chapter gets at least one.</li>
+          <li>They share one server path: a trigger check, then a noise. Everything after them reuses it.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Car alarm, second by second</div>
+    <h2>The ring</h2>
+    <div class="tl-scroll">
+      <div class="timeline">
+        <div class="t-mu" style="flex:1">Trigger<small>0 s · banner, kill feed</small></div>
+        <div class="t-lu" style="flex:4">Lure: commons go to the car<small>0–15 s · sleepers wake</small></div>
+        <div class="t-al" style="flex:3">Horde arrives at the car<small>~5–15 s · from nearest hidden spawn</small></div>
+        <div class="t-sa" style="flex:3">Crowd turns on the team<small>15 s + · car goes dark</small></div>
+      </div>
+    </div>
+    <p>The lure and the horde overlap on purpose. A team that triggers it by mistake gets a big fight. A team that triggers it on purpose and has a molotov ready gets most of the horde in one place.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Later, on the same framework</div>
+    <h2>More traps</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Trap</th><th>Tell</th><th>Trigger</th><th>Consequence</th><th>Counterplay or upside</th></tr></thead>
+        <tbody>
+          <tr><td><b>Fire-exit door</b></td><td>Red push bar, "ALARM WILL SOUND"</td><td>Opening it</td><td>Full horde from beyond the door</td><td>A shortcut. Quick route with a horde, or the long way round</td></tr>
+          <tr><td><b>Fuel barrel / propane tank</b></td><td>Red barrel, hazard stripes</td><td>Bullet or blast</td><td>Blast + fire patch (<code>FIRE</code>), wakes sleepers within 16 m</td><td>Kills a crowd. Can hurt teammates</td></tr>
+          <tr><td><b>Hush fog machine</b></td><td>Lavender mist leaking out</td><td>Bullet</td><td>A 6 m mist cloud for 10 s: zombies in it slow down and doze, survivors in it get drowsy</td><td>Strong at chokepoints. Your own team must keep out</td></tr>
+          <tr><td><b>Broken glass, tin cans</b></td><td>Glints on the floor</td><td>Sprinting over it</td><td>Wakes sleepers within 10 m</td><td>Walk, don't run. Cheap tension in sleeper rooms</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Fairness</div>
+    <h2>Director and difficulty</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Director rules</h3>
+        <ul>
+          <li>A trap horde <b>is</b> the next timed horde: push the timer back (<code>t.horde = max(t.horde, roll(mobEvery))</code>), as the anti-camping horde already does.</li>
+          <li>Traps are off during holdouts and while a Brute is up. Their lights go dark, so the tell matches. (Not while someone is down: that flips too often, and the lights would flicker.)</li>
+          <li>Single use. A trap that has gone off never goes off again.</li>
+          <li>None in Big Hold On arenas or safe rooms.</li>
+        </ul>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Difficulty</th><th>Car horde</th><th>Nightlight wave</th></tr></thead>
+          <tbody>
+            <tr><td>Easy</td><td class="num">lure + wake only</td><td class="num">wake only</td></tr>
+            <tr><td>Normal</td><td class="num">1.2 × horde</td><td class="num">12 + 2/survivor</td></tr>
+            <tr><td>Hard</td><td class="num">1.6 × horde</td><td class="num">16 + 4/survivor</td></tr>
+            <tr><td>Nightmare</td><td class="num">2.0 × horde</td><td class="num">20 + 4/survivor</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p>A full horde is <code>HORDE.base + HORDE.per × survivors</code> (8 + 5n). The table already scales by difficulty, so the director's usual <code>mob</code> multiplier is not applied on top. For four survivors on Normal the car brings 34 walkers.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Maps</div>
+    <h2>Placement</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Rules</h3>
+        <ul>
+          <li>Visible from at least 20 m along the way the team approaches.</li>
+          <li>At most one trap in view at a time, at least 30 m apart along the path.</li>
+          <li>Alarm cars sit where fights already happen (a street the horde runs down), so a stray shot is a real risk.</li>
+          <li>The validator rejects traps inside a holdout arena or a safe room, or with no hidden spawn within reach.</li>
+        </ul>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Chapter</th><th>Cars today</th><th>Alarm cars</th><th>Nightlights</th></tr></thead>
+          <tbody>
+            <tr><td>1 · teaching</td><td class="num">26</td><td class="num">2, the first early with a Dot radio warning</td><td class="num">2</td></tr>
+            <tr><td>2</td><td class="num">10</td><td class="num">4</td><td class="num">2</td></tr>
+            <tr><td>3</td><td class="num">1</td><td class="num">0–2</td><td class="num">4–6 (indoors)</td></tr>
+            <tr><td>4</td><td class="num">13</td><td class="num">6</td><td class="num">2</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p>Chapter 1 introduces it: right after the first safe room, Dot says something like <i>"Careful near the cars, sweet pea. Snoozle alarms play the lullaby, and the sleepers love it."</i> The first alarm car stands alone in an open street, so it's an easy lesson.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Readability</div>
+    <h2>Feedback</h2>
+    <div class="grid2">
+      <div class="card"><h3>Sound</h3><p>Synthesised in <code>client/src/audio.ts</code>: a car horn pulse under a music-box version of the lullaby, positional, audible across the map. The nightlight gets a soft chirp (the 0.6 s warning), then a brighter music-box phrase. Both stop with a clear wind-down.</p></div>
+      <div class="card"><h3>Text</h3><p>Banner: <b>CAR ALARM!</b> Kill feed: <b>"Pip set off a car alarm!"</b>, or <b>"A Charger set off a car alarm!"</b> when it was the Charger. Nightlight: <b>"Nori woke the ward!"</b></p></div>
+      <div class="card"><h3>Visuals</h3><p>The car's headlights flash in time with the jingle and the dash light goes solid while it rings. A spent trap goes dark. Lights are small separate entities, so the baked world and its culling tables are untouched.</p></div>
+      <div class="card"><h3>Bots and AI</h3><p>Zombies ignore traps except the Charger, which sets off cars by hitting them, never on purpose. That interaction is the best unplanned moment this system creates.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Work list</div>
+    <h2>How it plugs in</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Shared</h3>
+        <ul>
+          <li><code>shared/level.ts</code>: a <code>traps: Trap[]</code> list on the level and a builder call <code>.trap('caralarm' | 'nightlight', …)</code>. It places the prop and registers the trap, plus a cell → trap lookup.</li>
+          <li><code>shared/constants.ts</code>: <code>TRAP</code> tuning (ring time, lure reach, wake radius, horde share per difficulty).</li>
+          <li><code>shared/protocol.ts</code>: a <code>['trap', id, kind, state, by]</code> event, plus spent traps in the join snapshot.</li>
+          <li><code>shared/validate.ts</code>: placement rules.</li>
+        </ul>
+        <p class="ref">shared/level.ts · constants.ts · protocol.ts · validate.ts</p>
+      </div>
+      <div class="card">
+        <h3>Server</h3>
+        <ul>
+          <li>Trigger checks: the point where a shot's <code>L.ray</code> ends, blast radius, fire patches, and the Charger's wall-hit.</li>
+          <li>Consequence: <code>alertNear</code>, a lure entry at the car, <code>spawnWave({ noise: cell })</code>, director timer pushed back.</li>
+          <li>Disarm (nightlight): any hit on its cell marks it spent with no noise.</li>
+        </ul>
+        <p class="ref">server/room.ts · server/combat.ts · server/tuning.ts</p>
+      </div>
+      <div class="card">
+        <h3>Client</h3>
+        <ul>
+          <li>The dash light and nightlight cone as small dynamic entities, ringing and spent states.</li>
+          <li>Audio: the jingle, the chirp, the wind-down.</li>
+          <li>HUD: banner and kill-feed lines, with translations.</li>
+        </ul>
+        <p class="ref">client/src/world.ts · audio.ts · hud.ts · main.ts</p>
+      </div>
+      <div class="card">
+        <h3>Proof</h3>
+        <ul>
+          <li>Typecheck, map validator, smoke test.</li>
+          <li>A scripted server check that shooting a car, a blast and walking into a nightlight each set a trap off. (The range map runs without the server, so it can't host traps.)</li>
+          <li>Netcode review of the new event; a playtest on chapter 1's teaching car.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Decided 2026-11-26</div>
+    <h2>Decisions</h2>
+    <p>All four proposals accepted. On review, trap counts and trap horde sizes were both doubled from the first draft (the tables above show the new numbers).</p>
+    <div class="grid2">
+      <div class="card decide"><h3>1 · Puffer explosions</h3><p>Does a Puffer popping next to an alarm car set it off? It's funny and fits the rules, but the team didn't choose that shot. Decided: <b>no</b>. Only bullets, blasts, fire and the Charger.</p></div>
+      <div class="card decide"><h3>2 · Loot in the boot</h3><p>Some alarm cars have a pickup in the open boot (ammo, a throwable), so there's a reason to go near them. Decided: <b>yes</b>, one in each chapter.</p></div>
+      <div class="card decide"><h3>3 · Reward for using it on purpose</h3><p>If most of the trap horde dies within 6 s of the alarm stopping, the next timed horde comes a little later. It rewards the molotov play, but it's harder to explain. Decided: <b>not in the first slice</b>.</p></div>
+      <div class="card decide"><h3>4 · Scope of the first slice</h3><p>Car alarm and nightlight together, or the car alarm alone first and the nightlight in a second pass. Decided: <b>both</b>, since they share the server path and teach together.</p></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>
