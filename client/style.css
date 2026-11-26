@@ -33,6 +33,8 @@ canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 @keyframes hit { from { opacity: 1; transform: rotate(45deg) scale(1.15); } to { opacity: 0; transform: rotate(45deg) scale(0.7); } }
 
 #vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 40, 90, 0.75) 100%); transition: opacity 0.35s; }
+#gas { position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 55%, rgba(233, 247, 106, 0.55) 0 30%, rgba(214, 226, 96, 0.88) 70%, rgba(190, 200, 80, 0.95) 100%); }
 #goo { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s;
   background: radial-gradient(circle at 20% 30%, rgba(190, 240, 80, 0.9) 0 9%, transparent 10%), radial-gradient(circle at 70% 20%, rgba(170, 230, 70, 0.9) 0 13%, transparent 14%),
     radial-gradient(circle at 80% 70%, rgba(190, 240, 80, 0.9) 0 11%, transparent 12%), radial-gradient(circle at 30% 75%, rgba(170, 230, 70, 0.9) 0 15%, transparent 16%),

@@ -137,15 +137,32 @@ const HORDE_VS = /* glsl */ `attribute vec4 aI0; attribute vec4 aI1; attribute v
 // `inst`: hardware-instanced (see INST_FORMAT): the model matrix and tint come per instance, not as uniforms.
 // Instances are scaled uniformly, so the model matrix's upper 3x3 serves for normals.
 const INST_VS = /* glsl */ `attribute vec4 aI0; attribute vec4 aI1; attribute vec4 aI2; attribute vec4 aI3; attribute vec4 aITint; varying vec3 vTint;`;
+/**
+ * Particles close to the eye (fx.ts): each instance is shrunk about its own centre, in the vertex shader, so it
+ * never covers more than a set share of the screen. They are opaque but drawn after the world (rows PUFF and
+ * SPARK), so every pixel of one is shaded a second time, and a puff at arm's length used to fill the frame.
+ * `uNear` = (cap, fade start, 1 / fade length): the instance's radius is held to `cap` x its distance from the
+ * eye (cap = the tangent of the largest angular radius, near enough), and it shrinks to nothing between
+ * `fade start + fade length` and `fade start` metres. Needs a unit-radius mesh scaled uniformly (the instance's
+ * radius is read off the matrix's first column). Beyond `radius / cap` metres nothing changes.
+ */
+const NEAR_VS = /* glsl */ `uniform vec3 view_position; uniform vec3 uNear;
+  vec3 nearShrink(vec3 w, vec3 c, float r) {
+    float d = distance(c, view_position);
+    float k = min(min(1.0, uNear.x * d / max(r, 0.0001)), clamp((d - uNear.y) * uNear.z, 0.0, 1.0));
+    return c + (w - c) * k;
+  }`;
+/** `uNear` for the lit puffs and for the comic stars (whose blast flash is meant to be huge), and the value that turns it off. */
+export const NEAR_PUFF = [0.3, 0.15, 1 / 0.35], NEAR_SPARK = [0.75, 0.1, 1 / 0.2], NEAR_OFF = [1e6, -1, 1];
 const toonVS = (uv: boolean, parts = false, ink = false, inst = false, horde = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec3 aNormal; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection; uniform mat3 matrix_normal;
   varying vec3 vN; varying vec3 vW; varying vec3 vC; ${ink ? 'varying float vInk;' : ''}
-  ${horde ? HORDE_VS : ''} ${parts ? PARTS(horde) : ''} ${inst ? INST_VS : ''}
+  ${horde ? HORDE_VS : ''} ${parts ? PARTS(horde) : ''} ${inst ? INST_VS + NEAR_VS : ''}
   void main(void) {
     ${parts ? 'int pi = partIndex(); vec3 p = partPos(pi, aPosition), nrm = partNormal(pi, aNormal);' : 'vec3 p = aPosition, nrm = aNormal;'}
     ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(model); vTint = aITint.rgb;' : horde ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); mat3 nmat = mat3(aN0.xyz, aN1.xyz, aN2.xyz);' : 'mat4 model = matrix_model; mat3 nmat = matrix_normal;'}
-    vec4 w = model * vec4(p, 1.0);
+    vec4 w = model * vec4(p, 1.0); ${inst ? 'w.xyz = nearShrink(w.xyz, aI3.xyz, length(aI0.xyz));' : ''}
     vW = w.xyz; vN = normalize(nmat * nrm); vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} ${ink ? 'vInk = 1.0 - aColor.a;' : ''}
     gl_Position = matrix_viewProjection * w;
   }`;
@@ -199,21 +216,23 @@ const toonFS = (uv: boolean, ink = false, inst = false) => /* glsl */ `
     gl_FragColor = vec4(fogged(c, vW), 1.0);
   }`;
 
-const unlitVS = (uv: boolean, inst = false) => /* glsl */ `
+// `near`: instances shrink close to the eye (see NEAR_VS). `va`: the vertex colour's alpha is the vertex's opacity.
+const unlitVS = (uv: boolean, inst = false, near = false, va = false) => /* glsl */ `
   attribute vec3 aPosition; attribute vec4 aColor; ${uv ? 'attribute vec2 aUv; varying vec2 vUv;' : ''}
   uniform mat4 matrix_model; uniform mat4 matrix_viewProjection;
-  varying vec3 vW; varying vec3 vC; ${inst ? INST_VS : ''}
+  varying vec3 vW; varying vec3 vC; ${va ? 'varying float vA;' : ''} ${inst ? INST_VS : ''} ${near ? NEAR_VS : ''}
   void main(void) {
     ${inst ? 'mat4 model = mat4(aI0, aI1, aI2, aI3); vTint = aITint.rgb;' : 'mat4 model = matrix_model;'}
-    vec4 w = model * vec4(aPosition, 1.0); vW = w.xyz; vC = aColor.rgb; ${uv ? 'vUv = aUv;' : ''} gl_Position = matrix_viewProjection * w;
+    vec4 w = model * vec4(aPosition, 1.0); ${near ? 'w.xyz = nearShrink(w.xyz, aI3.xyz, length(aI0.xyz));' : ''}
+    vW = w.xyz; vC = aColor.rgb; ${va ? 'vA = aColor.a;' : ''} ${uv ? 'vUv = aUv;' : ''} gl_Position = matrix_viewProjection * w;
   }`;
-const unlitFS = (uv: boolean, inst = false) => /* glsl */ `
-  varying vec3 vW; varying vec3 vC; ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''}
+const unlitFS = (uv: boolean, inst = false, va = false) => /* glsl */ `
+  varying vec3 vW; varying vec3 vC; ${va ? 'varying float vA;' : ''} ${uv ? 'varying vec2 vUv; uniform sampler2D uTex;' : ''}
   ${inst ? 'varying vec3 vTint;' : 'uniform vec3 uTint;'} uniform float uAlpha;
   ${FOG}
   void main(void) {
     ${uv ? 'vec4 t = texture2D(uTex, vUv); if (t.a < 0.02) discard;' : 'vec4 t = vec4(1.0);'}
-    gl_FragColor = vec4(fogged(vC * ${inst ? 'vTint' : 'uTint'} * t.rgb, vW), uAlpha * t.a);
+    gl_FragColor = vec4(fogged(vC * ${inst ? 'vTint' : 'uTint'} * t.rgb, vW), uAlpha * t.a${va ? ' * vA' : ''});
   }`;
 
 const outlineVS = (parts = false, horde = false) => /* glsl */ `
@@ -272,12 +291,13 @@ export function makeToon(o: ToonOpts = {}): pc.ShaderMaterial {
   return m;
 }
 
-export interface UnlitOpts { color?: number; alpha?: number; blend?: 'normal' | 'add'; fog?: boolean; depthTest?: boolean; depthWrite?: boolean; cull?: 'back' | 'front' | 'none'; tex?: pc.Texture }
+export interface UnlitOpts { color?: number; alpha?: number; blend?: 'normal' | 'add'; fog?: boolean; depthTest?: boolean; depthWrite?: boolean; cull?: 'back' | 'front' | 'none'; tex?: pc.Texture; /** Each vertex's opacity comes from its colour's alpha (`toMesh`'s `alpha`), times `alpha`. */ vertexAlpha?: boolean }
 export function makeUnlit(o: UnlitOpts = {}): pc.ShaderMaterial {
   const uv = !!o.tex;
   const attributes: Record<string, string> = { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR };
   if (uv) attributes.aUv = pc.SEMANTIC_TEXCOORD0;
-  const m = new pc.ShaderMaterial({ uniqueName: uv ? 'UnlitTex' : 'Unlit', attributes, vertexGLSL: unlitVS(uv), fragmentGLSL: unlitFS(uv) });
+  const va = !!o.vertexAlpha;
+  const m = new pc.ShaderMaterial({ uniqueName: (uv ? 'UnlitTex' : 'Unlit') + (va ? 'VA' : ''), attributes, vertexGLSL: unlitVS(uv, false, false, va), fragmentGLSL: unlitFS(uv, false, va) });
   m.setParameter('uTint', rgb(o.color ?? 0xffffff));
   m.setParameter('uAlpha', o.alpha ?? 1);
   m.setParameter('uFogOn', o.fog === false ? 0 : 1);
@@ -371,12 +391,17 @@ export const INST_FORMAT = new pc.VertexFormat(device, [
 const INST_ATTR = { aI0: pc.SEMANTIC_ATTR11, aI1: pc.SEMANTIC_ATTR12, aI2: pc.SEMANTIC_ATTR13, aI3: pc.SEMANTIC_ATTR14, aITint: pc.SEMANTIC_ATTR15 };
 /** `toonMat` drawn instanced: many small lit shapes of one mesh in a single draw. */
 export const toonInstMat = new pc.ShaderMaterial({ uniqueName: 'ToonInst', attributes: { ...ATTR, ...INST_ATTR }, vertexGLSL: toonVS(false, false, false, true), fragmentGLSL: toonFS(false, false, true) });
-toonInstMat.setParameter('uFogOn', 1); toonInstMat.setParameter('uTorchUse', 1); toonInstMat.setParameter('uCeil', 0); toonInstMat.update();
+toonInstMat.setParameter('uFogOn', 1); toonInstMat.setParameter('uTorchUse', 1); toonInstMat.setParameter('uCeil', 0); toonInstMat.setParameter('uNear', NEAR_PUFF); toonInstMat.update();
 drawAs(DRAW.PUFF, toonInstMat);
 /** Double-sided fogged unlit vertex colour, drawn instanced (comic stars). */
-export const unlitInstMat = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });
-unlitInstMat.setParameter('uAlpha', 1); unlitInstMat.setParameter('uFogOn', 1); unlitInstMat.cull = pc.CULLFACE_NONE; unlitInstMat.update();
+export const unlitInstMat = new pc.ShaderMaterial({ uniqueName: 'UnlitInstNear', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true, true), fragmentGLSL: unlitFS(false, true) });
+unlitInstMat.setParameter('uAlpha', 1); unlitInstMat.setParameter('uFogOn', 1); unlitInstMat.setParameter('uNear', NEAR_SPARK); unlitInstMat.cull = pc.CULLFACE_NONE; unlitInstMat.update();
 drawAs(DRAW.SPARK, unlitInstMat);
+/** Debug (`__game.nearFx(false)`): turn the close-to-the-eye shrink of particles off and on, to compare. */
+export function setNearShrink(on: boolean): void {
+  toonInstMat.setParameter('uNear', on ? NEAR_PUFF : NEAR_OFF);
+  unlitInstMat.setParameter('uNear', on ? NEAR_SPARK : NEAR_OFF);
+}
 /** `makeUnlit`'s blended, fogged vertex colour drawn instanced (the horde's ring shadows): `alpha` for all, the colour per instance. */
 export function makeUnlitInst(alpha: number): pc.ShaderMaterial {
   const m = new pc.ShaderMaterial({ uniqueName: 'UnlitInst', attributes: { aPosition: pc.SEMANTIC_POSITION, aColor: pc.SEMANTIC_COLOR, ...INST_ATTR }, vertexGLSL: unlitVS(false, true), fragmentGLSL: unlitFS(false, true) });

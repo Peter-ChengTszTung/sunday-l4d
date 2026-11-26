@@ -10,7 +10,7 @@ import { buildSetPieces } from './setpieces';
 import { buildMounts, type MountAim } from './mounts';
 import { Chibi, survivorLook, zombieHorde } from './chibi';
 import { ViewModel, gunMuzzle } from './viewmodel';
-import { app, setTorch } from './gfx';
+import { app, setTorch, setNearShrink } from './gfx';
 import { quatYXZ } from './geo';
 import { FX } from './fx';
 import { Sfx } from './audio';
@@ -898,6 +898,8 @@ function onEvent(ev: GameEvent): void {
       fx.burst(p, 0xc8f25a, 26, 8, 0.22); fx.poof(p, 0xe9f76a, 10, 0.5);
       const d = Math.hypot(ev[1] - me.x, y - me.gy, ev[2] - me.z);
       sfx.at(y).boom(ev[1], ev[2]); me.trauma = Math.min(1, me.trauma + 1 / (1 + d * 0.2));
+      // Up close the cloud would fill the view: its particles shrink near the eye, so the gas is a screen wash.
+      hud.gas(Math.min(0.9, (4.5 - d) / 3));
       break;
     }
     case 'goo': if (ev[1] === me.id) hud.goo(); break;
@@ -1552,4 +1554,4 @@ if (params.has('step')) { const n = Number(params.get('step')); const timer = se
 // Debug test switches (dev server only): `?god` survivors take no damage, `?calm` no director zombies.
 const cheat = (o: { god?: boolean; calm?: boolean }) => { if (debugServer) net.send({ t: 'dbgf', ...(o.god !== undefined ? { god: o.god ? 1 : 0 } : {}), ...(o.calm !== undefined ? { calm: o.calm ? 1 : 0 } : {}) } as const); };
 if (params.has('god') || params.has('calm')) { const timer = setInterval(() => { if (me.id && debugServer) { cheat({ ...(params.has('god') ? { god: true } : {}), ...(params.has('calm') ? { calm: true } : {}) }); clearInterval(timer); } }, 200); }
-if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, fx, /** What the instanced zombie draws did last frame: { bodies, shadows, draws }. */ get horde() { return zombieHorde()?.stats ?? null; }, get world() { return world; }, get level() { return L; }, fire, shove, interact, jump, give: debugGive, /** Dev server: `cheat({ god, calm })` test switches. */ cheat, /** Dev server: spawn zombie type `zt` at (x, z). */ spawn: (zt: number, x: number, z: number) => { if (debugServer) net.send({ t: 'dbgz', zt, x, z }); }, state: () => ({ inGame, locked, ended, chapter, step, qc, doors, holdout, serverState }) } });
+if (DEBUG) Object.assign(window, { __game: { me, zeds, mates, keys, mouse, net, camera, app, fx, /** What the instanced zombie draws did last frame: { bodies, shadows, draws }. */ get horde() { return zombieHorde()?.stats ?? null; }, get world() { return world; }, get level() { return L; }, fire, shove, interact, jump, give: debugGive, /** `nearFx(false)`: particles close to the eye at full size again (gfx.ts NEAR_VS), to compare. */ nearFx: setNearShrink, /** Dev server: `cheat({ god, calm })` test switches. */ cheat, /** Dev server: spawn zombie type `zt` at (x, z). */ spawn: (zt: number, x: number, z: number) => { if (debugServer) net.send({ t: 'dbgz', zt, x, z }); }, state: () => ({ inGame, locked, ended, chapter, step, qc, doors, holdout, serverState }) } });

@@ -2,7 +2,7 @@ import { DROOLER, FIRE } from '../../shared/constants';
 // Pooled comic-book effects: tracers, star bursts, goo blobs and poof clouds.
 // Particles shrink instead of fading so they stay opaque and cel-flat.
 import * as pc from 'playcanvas';
-import { box, sphere, ring, make, merge, toMesh, trs } from './geo';
+import { type Geo, box, sphere, ring, make, merge, toMesh, trs } from './geo';
 import { app, device, DRAW, drawAs, meshEntity, makeUnlit, toonMat, outlineMat, tintOf, toonInstMat, unlitInstMat, INST_FORMAT, INST_FLOATS } from './gfx';
 import { STAR_MESH } from './viewmodel';
 
@@ -50,20 +50,38 @@ const _q = new pc.Quat(), _spin = new pc.Quat(), _pos = new pc.Vec3(), _scl = ne
 const _p: P3 = { x: 0, y: 0, z: 0 };
 export const GOO = 0x8cf07a, GOO_DARK = 0x3a8f52;
 // Unit-radius puddle: a dark rim around a bright pool with a few highlight spots, one mesh.
-const PUDDLE_MESH = toMesh(device, merge([
-  make(ring(0, 1, 28), GOO_DARK),
-  make(ring(0, 0.86, 28), GOO, trs(0, 0.004, 0)),
-  make(ring(0, 0.16, 12), 0xe6ffd0, trs(-0.35, 0.008, -0.2)),
-  make(ring(0, 0.09, 10), 0xe6ffd0, trs(0.3, 0.008, 0.32)),
-  make(ring(0, 0.12, 10), 0xc8ffb0, trs(0.15, 0.008, -0.45)),
-]));
-const puddleMat = makeUnlit({ alpha: 0.82, blend: 'normal' });
+// These floor decals are see-through (COAT) and up to 3.6 m across, so under your feet they fill the view, and
+// each coat laid over another is a second blend of every pixel. They used to be a whole rim-coloured disc with
+// the pool laid over it: two coats nearly everywhere. Now the rim is only the band that shows, and the pool is
+// one coat that comes out the same colour as the two did (`over`).
+const COAT = 0.82, COAT2 = 1 - (1 - COAT) * (1 - COAT);
+/** The colour that, drawn once at opacity COAT2, gives what `top` at COAT over `under` at COAT gave. */
+function over(top: number, under: number): number {
+  const ch = (s: number) => Math.round((COAT * ((top >> s) & 255) + COAT * (1 - COAT) * ((under >> s) & 255)) / COAT2);
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+/** A decal mesh from [geometry, opacity] parts, drawn with `decalMat` (the opacity rides in the vertex colour's alpha). */
+function decal(parts: [Geo, number][]): pc.Mesh {
+  const alpha: number[] = [];
+  for (const [g, a] of parts) for (let i = 0; i < g.pos.length / 3; i++) alpha.push(Math.round(a * 255));
+  return toMesh(device, merge(parts.map(([g]) => g)), true, alpha);
+}
+const decalMat = makeUnlit({ blend: 'normal', vertexAlpha: true });
+const PUDDLE_MESH = decal([
+  [make(ring(0.86, 1, 28), GOO_DARK, trs(0, 0.004, 0)), COAT],
+  [make(ring(0, 0.86, 28), over(GOO, GOO_DARK), trs(0, 0.004, 0)), COAT2],
+  [make(ring(0, 0.16, 12), 0xe6ffd0, trs(-0.35, 0.008, -0.2)), COAT],
+  [make(ring(0, 0.09, 10), 0xe6ffd0, trs(0.3, 0.008, 0.32)), COAT],
+  [make(ring(0, 0.12, 10), 0xc8ffb0, trs(0.15, 0.008, -0.45)), COAT],
+]);
+/** The throw preview's landing ring. */
+const puddleMat = makeUnlit({ alpha: COAT, blend: 'normal' });
 // Scorch mark under a fire: a dark disc with a glowing rim.
-const SCORCH_MESH = toMesh(device, merge([
-  make(ring(0, 1, 28), 0xff922b),
-  make(ring(0, 0.9, 28), 0x3a1f1a, trs(0, 0.004, 0)),
-  make(ring(0, 0.45, 20), 0x1a1226, trs(0.1, 0.008, -0.05)),
-]));
+const SCORCH_MESH = decal([
+  [make(ring(0.9, 1, 28), 0xff922b, trs(0, 0.004, 0)), COAT],
+  [make(ring(0, 0.9, 28), over(0x3a1f1a, 0xff922b), trs(0, 0.004, 0)), COAT2],
+  [make(ring(0, 0.45, 20), 0x1a1226, trs(0.1, 0.008, -0.05)), COAT],
+]);
 const FLAME_COLORS = [0xff5a1f, 0xff922b, 0xffd43b, 0xfff1a8];
 const ROPE_COLORS = [0xff8fab, 0xfff5f5];
 const ropeMats = ROPE_COLORS.map((color) => drawAs(DRAW.SPARK, makeUnlit({ color, fog: false })));
@@ -123,7 +141,7 @@ export class FX {
     while (this.puddles.length >= DROOLER.maxPuddles) this.parkPuddle(this.puddles.shift()!);
     let ent = this.sparePuddles.pop();
     if (ent) ent.enabled = true;
-    else { ent = meshEntity(PUDDLE_MESH, puddleMat); app.root.addChild(ent); }
+    else { ent = meshEntity(PUDDLE_MESH, decalMat); app.root.addChild(ent); }
     ent.setPosition(x, y + 0.035 + (id % 7) * 0.002, z); // tiny offset so overlapping puddles don't z-fight
     ent.setLocalScale(0.01, 1, 0.01);
     this.puddles.push({ ent, id, x, y, z, r, age: 0, life, bub: 0 });
@@ -147,7 +165,7 @@ export class FX {
     while (this.flames.length >= FIRE.max) this.parkFlame(this.flames.shift()!);
     let ent = this.spareScorch.pop();
     if (ent) ent.enabled = true;
-    else { ent = meshEntity(SCORCH_MESH, puddleMat); app.root.addChild(ent); }
+    else { ent = meshEntity(SCORCH_MESH, decalMat); app.root.addChild(ent); }
     ent.setPosition(x, y + 0.03 + (id % 7) * 0.002, z);
     ent.setLocalScale(0.01, 1, 0.01);
     this.flames.push({ ent, id, x, y, z, r, age: 0, life, snd: 0 });

@@ -12,7 +12,7 @@ export class Hud {
     hud: $('hud'), hpbar: $('hpbar'), hptext: $('hptext'), meds: $('meds'), armor: $('armor'), armorbar: $('armorbar'), throwable: $('throwable'), throwname: $('throwname'), throwkey: $('throwkey'), wname: $('wname'), mag: $('mag'), reserve: $('reserve'),
     acount: $('acount'), slots: $('slots'), team: $('team'), feed: $('feed'), banner: $('banner'), prompt: $('prompt'), ring: $('ring'),
     ringfg: document.getElementById('ringfg') as unknown as SVGCircleElement, ringlabel: $('ringlabel'), hitmark: $('hitmark'), vignette: $('vignette'),
-    goo: $('goo'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
+    goo: $('goo'), gas: $('gas'), dmgdir: $('dmgdir'), objective: $('objective'), holdout: $('holdout'), room: $<HTMLButtonElement>('room'), crosshair: $('crosshair'),
     spectate: $('spectate'), end: $('end'), endtitle: $('endtitle'), endstats: $('endstats'), endboard: $('endboard'), pause: $('pause'),
     endnext: $('endnext'), waypoint: $('waypoint'), wpdist: $('wpdist'), radio: $('radio'), radiowho: $('radiowho'), radioline: $('radioline'),
     intro: $('intro'), introch: $('introch'), introtitle: $('introtitle'), introsub: $('introsub'), introtext: $('introtext'),
@@ -25,6 +25,7 @@ export class Hud {
   private hurtT = 0;
   private dirT = 0;
   private gooT = 0;
+  private gasT = 0;
 
   private set(key: string, value: string, apply: (v: string) => void): void {
     if (this.last[key] === value) return;
@@ -216,6 +217,16 @@ export class Hud {
     this.el.dmgdir.style.transform = `rotate(${angle}rad)`;
     this.el.dmgdir.style.opacity = '1';
   }
+  /**
+   * A Puffer burst nearby: a yellow wash over the view, `k` (0..1) as thick as it is close. A page overlay
+   * rather than full-screen particles (those are shrunk near the eye, see gfx.ts NEAR_VS), so it costs no GPU fill.
+   */
+  gas(k: number): void {
+    if (k <= 0) return;
+    this.gasT = 0.35 + 0.9 * k;
+    this.el.gas.style.transition = 'opacity 0.08s';
+    this.el.gas.style.opacity = String(Math.min(1, Math.max(Number(this.el.gas.style.opacity) || 0, k)));
+  }
   goo(): void { this.gooT = 4; this.el.goo.style.transition = 'opacity 0.1s'; this.el.goo.style.opacity = '1'; }
 
   spread(px: number): void { this.set('gap', px.toFixed(0), (v) => { this.el.crosshair.style.setProperty('--gap', `${v}px`); }); }
@@ -227,6 +238,7 @@ export class Hud {
     if (this.radioT > 0 || this.radioQ.length) { this.radioT -= dt; if (this.radioT <= 0) this.nextRadio(); }
     if (this.introT > 0) { this.introT -= dt; if (this.introT <= 0) this.el.intro.hidden = true; }
     if (this.dirT > 0) { this.dirT -= dt; if (this.dirT <= 0) this.el.dmgdir.style.opacity = '0'; }
+    if (this.gasT > 0) { this.gasT -= dt; if (this.gasT <= 0) { this.el.gas.style.transition = 'opacity 1.4s'; this.el.gas.style.opacity = '0'; } }
     if (this.gooT > 0) { this.gooT -= dt; if (this.gooT <= 1.2) { this.el.goo.style.transition = 'opacity 1.2s'; this.el.goo.style.opacity = '0'; } }
   }
 
