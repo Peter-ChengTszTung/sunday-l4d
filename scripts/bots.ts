@@ -13,7 +13,7 @@ import WebSocket from 'ws';
 import { getLevel } from '../shared/chapters';
 import { TILE, PLAYER, PSTATE, WEAPONS, MOUNT, ZSTATE, type WeaponDef } from '../shared/constants';
 import type { Level, Step } from '../shared/level';
-import type { ClientMsg, ServerMsg, PlayerSnap, ZombieSnap } from '../shared/protocol';
+import { ZombieTable, type ClientMsg, type ServerMsg, type PlayerSnap, type ZombieSnap, type Snapshot } from '../shared/protocol';
 
 // ------------------------------------------------------------------ options
 const argv = process.argv.slice(2);
@@ -68,7 +68,8 @@ class Bot {
   ws: WebSocket;
   id = 0; name: string; ch = -1; L!: Level;
   x = 0; y = 0; z = 0; yaw = Math.PI; pitch = 0;
-  snap: Extract<ServerMsg, { t: 's' }> | null = null;
+  snap: Snapshot | null = null;
+  private readonly zt = new ZombieTable();
   step = -1; st: number = PSTATE.ALIVE; pinned = false; mount = -1;
   gun: number; mags: Record<number, number> = {}; reloadUntil = 0; nextShot = 0; burst = 0; nadeSeq = 0;
   goal: P3 | null = null; goalKind = ''; atGoal = false; goalNode = -1; goalDoors = -1;
@@ -101,7 +102,7 @@ class Bot {
       return;
     }
     if (m.t !== 's') return;
-    this.snap = m;
+    this.snap = this.zt.snapshot(m);
     for (const e of m.ev) {
       switch (e[0]) {
         case 'reset': if (e[1] !== this.ch) this.setChapter(e[1]); this.goal = null; log(this.tag, `room reset (chapter ${e[1] + 1}, step ${e[2]})`); break;
@@ -167,7 +168,7 @@ class Bot {
   }
 
   /** Decide where to be: revive someone, a mounted gun, a holdout post, or near the lead. */
-  think(s: Extract<ServerMsg, { t: 's' }>, t: number) {
+  think(s: Snapshot, t: number) {
     const L = this.L, step = L.def.steps[s.q];
     // A downed teammate close by comes first.
     // One helper per downed survivor: the nearest free bot (a gunner stays on the gun if anyone else can go).
@@ -238,7 +239,7 @@ class Bot {
 
   // ---------------------------------------------------------------- posts
   /** Holdout post: --posts if given, else a spot spread round the waypoint with a view of it. */
-  holdPost(step: Step, s: Extract<ServerMsg, { t: 's' }>): P3 {
+  holdPost(step: Step, s: Snapshot): P3 {
     const L = this.L;
     if (POSTS.length) {
       const [tx, tz, lv = 0] = POSTS[this.idx % POSTS.length];
@@ -348,7 +349,7 @@ class Bot {
   }
 
   // ---------------------------------------------------------------- combat
-  shoot(s: Extract<ServerMsg, { t: 's' }>, t: number, downed: boolean) {
+  shoot(s: Snapshot, t: number, downed: boolean) {
     if (t < this.reloadUntil || t < this.nextShot) return;
     const L = this.L, g = s.g, mounted = this.mount >= 0;
     const wi = mounted ? this.mountWeapon() : downed ? 0 : this.gun, wp = WEAPONS[wi];

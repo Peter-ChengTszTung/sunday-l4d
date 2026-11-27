@@ -4,7 +4,7 @@ import * as pc from 'playcanvas';
 import { TILE, CEIL_H, STOREY, STEP_UP, LADDER_SPEED, PLAYER, WEAPONS, ZTYPES, ZT, PSTATE, ALARM, ARMOR, THROW_MAX, THROWABLES, unpackThrowables, armoredFront, SURVIVOR_RULES, difficultyLabel, parseDifficulty, shoveFatigue, shoveCooldown, weaponIndex, type DifficultyId, type WeaponId, MEDS, medIndex, unpackMeds, medSelect, medNext, medUseful, healAmount, MOUNT, TRAP_ST } from '../../shared/constants';
 import { isIndoor, cellOf, type Level } from '../../shared/level';
 import { CHAPTERS, getLevel } from '../../shared/chapters';
-import type { GameEvent, PlayerSnap, RosterEntry, ServerMsg } from '../../shared/protocol';
+import { ZombieTable, type GameEvent, type PlayerSnap, type RosterEntry, type ServerMsg } from '../../shared/protocol';
 import { buildWorld, type PickupView, type NoteView, type World } from './world';
 import { buildSetPieces } from './setpieces';
 import { buildMounts, type MountAim } from './mounts';
@@ -172,6 +172,8 @@ let roomDiff: DifficultyId = 'normal';
 const rescueIn = (secs: number): string => (Number.isFinite(secs) ? t('rescue in {s}s', { s: secs }) : t('rescue at the next safe room'));
 /** Teammates and zombies as the server reports them (drawn, eased, voiced). */
 const remotes = new Remotes({ fx, sfx, hud, me, inRange: () => range !== null });
+/** Fills in the [id] stubs of each snapshot's zombie list (see ZombieWire). */
+const zombieTable = new ZombieTable();
 const mates = remotes.mates, zeds = remotes.zeds;
 let inGame = false, locked = false, ended = false;
 /** The HoldGate stopping the holdout timer (snapshot `gt`), or null. */
@@ -1065,7 +1067,7 @@ net.onMessage = (m: ServerMsg) => {
       if (m.g !== doors) { doors = m.g; world.setDoors(doors); }
       for (const ev of m.ev) onEvent(ev);
       applyPlayers(m.p);
-      remotes.applyZombies(m.z, time);
+      remotes.applyZombies(zombieTable.apply(m.z), time);
       break;
   }
 };

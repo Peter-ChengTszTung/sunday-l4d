@@ -1,6 +1,7 @@
 // Server-side entity state: players, zombies, hordes and floor hazards the room simulates.
 import type { WebSocket } from 'ws';
 import type { Side } from './tuning';
+import type { ZombieSnap } from '../shared/protocol';
 
 export interface Player {
   id: number; ws: WebSocket; name: string; look: number;
@@ -59,6 +60,7 @@ export interface Zombie {
   sit: boolean; anger: number;
   /** Running straight at its target (the line there is clear, see FOCUS), and seconds until that is tested again. */
   run: boolean; runT: number; /** Survivor `run` was tested toward. */ runTgt: number;
+  /** What the last snapshot sent of it in full (undefined: never sent). */ sent?: ZombieSnap;
 }
 
 /**

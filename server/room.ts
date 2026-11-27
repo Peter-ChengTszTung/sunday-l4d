@@ -2,10 +2,10 @@
 // chapter's quest steps. Players are trusted for their own movement and hit
 // claims (validated loosely).
 import type { WebSocket } from 'ws';
-import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, TRAP, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, MOUNT, type DifficultyId, type ZombieDef } from '../shared/constants';
+import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, SNAP_FAR, SNAP_FAR_EVERY, MAX_PLAYERS, PLAYER, WEAPONS, ZTYPES, ZT, ZSTATE, PSTATE, SURVIVORS, CHARGER, DROOLER, ALARM, SNATCHER, PIGGY, WEEPER, FIRE, LURE, ARMOR, INTRO, introduced, isCommon, THROW_MAX, TRAP, packThrowables, SURVIVOR_RULES, healAmount, MEDS, medIndex, packMeds, medUseful, MOUNT, type DifficultyId, type ZombieDef } from '../shared/constants';
 import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Trap, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
-import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
+import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap, ZombieWire } from '../shared/protocol';
 import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP, BRUTE_PAIR, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, GATE_NAG, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
@@ -47,6 +47,10 @@ export class Room implements CombatHost, TrapHost {
   L!: Level;
   private flow = new Int16Array(1);
   private tickN = 0;
+  /** Snapshots sent (paces far zombies, SNAP_FAR_EVERY). */
+  private snapN = 0;
+  /** Someone joined: the next snapshot sends every zombie in full (they have none to fill [id] stubs from). */
+  private snapAll = true;
   /** Dev-server test switches (the 'dbgf' message): no damage to survivors / no director zombies. */
   private dbgGod = false; private dbgCalm = false;
   private interval: ReturnType<typeof setInterval>;
@@ -382,6 +386,7 @@ export class Room implements CombatHost, TrapHost {
     // Beside a standing survivor, else beside a downed one (a solo self-reviving player gets their helper right there).
     const mate = this.standing()[0] ?? this.watchers()[0];
     this.players.set(p.id, p);
+    this.snapAll = true;
     this.revealLoot();
     const spawns = this.spawnPoints();
     this.spawnPlayer(p, this.spawnSlot(spawns, look), true);
@@ -2871,8 +2876,25 @@ export class Room implements CombatHost, TrapHost {
       p.push([q.id, r2(q.x), r2(q.y), r2(q.z), r2(q.ry), r2(q.rx), Math.ceil(q.hp), q.st, q.w, packMeds(q.meds),
         r2(q.revT / q.revNeed), q.anim, q.st !== PSTATE.DEAD ? 0 : Number.isFinite(q.respawnT) ? Math.ceil(q.respawnT) : -1, Math.ceil(q.armor), packThrowables((wi) => q.thr[wi] ?? 0), q.mount ?? -1]);
     }
-    const z: ZombieSnap[] = [];
-    for (const q of this.zombies.values()) z.push([q.id, q.type, r2(q.x), r2(q.z), r2(q.ry), q.st, r2(q.y)]);
+    // Each zombie goes in full, or as an [id] stub (see ZombieWire) when it has not changed since it was last
+    // sent, or when it is far from every survivor and this is not its turn. A state change always goes out at once.
+    const z: ZombieWire[] = [];
+    const farTurn = this.snapN++ % SNAP_FAR_EVERY === 0, far2 = SNAP_FAR * SNAP_FAR;
+    for (const q of this.zombies.values()) {
+      const n: ZombieSnap = [q.id, q.type, r2(q.x), r2(q.z), Math.round(q.ry * 10) / 10, q.st, r2(q.y)];
+      const o = q.sent;
+      if (!this.snapAll && o && o[1] === n[1] && o[5] === n[5]) {
+        let skip = o[2] === n[2] && o[3] === n[3] && o[4] === n[4] && o[6] === n[6];
+        if (!skip && !farTurn) {
+          skip = true;
+          for (const pl of this.players.values()) if ((pl.x - q.x) ** 2 + (pl.z - q.z) ** 2 < far2) { skip = false; break; }
+        }
+        if (skip) { z.push([q.id]); continue; }
+      }
+      q.sent = n;
+      z.push(n);
+    }
+    this.snapAll = false;
     this.broadcast({ t: 's', st: this.state, g: this.doors, ho: this.holdout >= 0 ? Math.ceil(this.holdout) : -1, gt: this.holdout >= 0 && this.hs.stall ? this.gateSnap() : undefined, q: this.step, qc: this.collected, p, z, ev: this.events });
     this.events = [];
   }

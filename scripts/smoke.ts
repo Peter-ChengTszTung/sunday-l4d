@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 import { getLevel } from '../shared/chapters';
 import { F, cellOf } from '../shared/level';
 import { TILE, STOREY, PSTATE, ZT, WEAPONS, weaponIndex } from '../shared/constants';
-import type { ClientMsg, GameEvent, ServerMsg } from '../shared/protocol';
+import { ZombieTable, type ClientMsg, type GameEvent, type ServerMsg, type Snapshot } from '../shared/protocol';
 
 // Random port so parallel runs (e.g. several agents) do not collide.
 const PORT = Number(process.env.SMOKE_PORT) || 4000 + Math.floor(Math.random() * 900);
@@ -15,17 +15,17 @@ const L = getLevel(0), MAP = L.def;
 const fail = (msg: string): never => { console.error('FAIL:', msg); server.kill(); process.exit(1); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-interface Bot { ws: WebSocket; id: number; room: string; /** Pickups taken at join (includes thinned loot). */ taken: Set<number>; snap: Extract<ServerMsg, { t: 's' }> | null; events: GameEvent[]; send(m: ClientMsg): void }
+interface Bot { ws: WebSocket; id: number; room: string; /** Pickups taken at join (includes thinned loot). */ taken: Set<number>; snap: Snapshot | null; zt: ZombieTable; events: GameEvent[]; send(m: ClientMsg): void }
 function bot(name: string, room: string): Promise<Bot> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-    const b: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
+    const b: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, zt: new ZombieTable(), events: [], send: (m) => ws.send(JSON.stringify(m)) };
     ws.on('open', () => b.send({ t: 'j', name, room, ch: 0 }));
     ws.on('error', reject);
     ws.on('message', (raw) => {
       const m = JSON.parse(raw.toString()) as ServerMsg;
       if (m.t === 'w') { b.id = m.id; b.room = m.room; b.taken = new Set(m.taken); resolve(b); }
-      else if (m.t === 's') { b.snap = m; b.events.push(...m.ev); }
+      else if (m.t === 's') { b.snap = b.zt.snapshot(m); b.events.push(...m.ev); }
     });
   });
 }
@@ -256,13 +256,13 @@ console.log(`ok: all ${MAP.steps.length} quest steps of "${MAP.title}" completed
 const cpStep = MAP.steps.findIndex((s) => s.kind === 'gather' && s.checkpoint);
 const c = await new Promise<Bot>((resolve, reject) => {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws`);
-  const bt: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, events: [], send: (m) => ws.send(JSON.stringify(m)) };
+  const bt: Bot = { ws, id: 0, room: '', taken: new Set(), snap: null, zt: new ZombieTable(), events: [], send: (m) => ws.send(JSON.stringify(m)) };
   ws.on('open', () => bt.send({ t: 'j', name: 'Gamma', room: '', create: true, ch: 0, cp: cpStep, diff: 'hard' }));
   ws.on('error', reject);
   ws.on('message', (raw) => {
     const m = JSON.parse(raw.toString()) as ServerMsg;
     if (m.t === 'w') { bt.id = m.id; bt.room = m.room; if (m.step !== cpStep + 1) fail(`safe-room start began at step ${m.step}, expected ${cpStep + 1}`); if (m.diff !== 'hard') fail(`created room reports difficulty ${m.diff}, expected hard`); resolve(bt); }
-    else if (m.t === 's') { bt.snap = m; bt.events.push(...m.ev); }
+    else if (m.t === 's') { bt.snap = bt.zt.snapshot(m); bt.events.push(...m.ev); }
   });
 });
 await sleep(300);

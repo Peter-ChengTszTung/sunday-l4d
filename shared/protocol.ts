@@ -5,6 +5,10 @@ export type PlayerSnap = [number, number, number, number, number, number, number
 // Player y is the absolute height of their feet (floor height of their storey/stair + any jump).
 // [id, type, x, z, yaw, state, y] (y: floor height under it, metres; multi-storey maps, see shared/level.ts)
 export type ZombieSnap = [number, number, number, number, number, number, number];
+// On the wire a zombie is either its full ZombieSnap or just [id]: "still here, nothing new to show" (it has not
+// changed since it was last sent, or it is far from everyone and skipped this snapshot, see SNAP_FAR). A survivor
+// who joins gets every zombie in full on their first snapshot. ZombieTable turns the wire list back into full ones.
+export type ZombieWire = ZombieSnap | [id: number];
 // Every event position below carries a trailing y (metres, the floor height there) so effects and
 // sounds land on the right storey.
 
@@ -95,7 +99,31 @@ export type ServerMsg =
   // g = open door mask, ho = holdout seconds left (-1 none), q = active step, qc = collected items for a collect step.
   // gt = the HoldGate stopping the holdout timer right now (absent: none): [gate index into Step.gates, progress 0-1 for an
   // area gate, id of the survivor on its spot (0 = nobody)].
-  | { t: 's'; st: 'play' | 'won' | 'lost'; g: number; ho: number; gt?: [number, number, number]; q: number; qc: number; p: PlayerSnap[]; z: ZombieSnap[]; ev: GameEvent[] };
+  | { t: 's'; st: 'play' | 'won' | 'lost'; g: number; ho: number; gt?: [number, number, number]; q: number; qc: number; p: PlayerSnap[]; z: ZombieWire[]; ev: GameEvent[] };
+
+export type SnapMsg = Extract<ServerMsg, { t: 's' }>;
+/** A snapshot with every zombie in full (ZombieTable.apply). */
+export type Snapshot = Omit<SnapMsg, 'z'> & { z: ZombieSnap[] };
+
+/** Client side of the [id] stubs: remembers each zombie's last full entry and fills the stubs in. */
+export class ZombieTable {
+  private readonly last = new Map<number, ZombieSnap>();
+  /** Every zombie in `list` in full (a stub for one never seen in full is dropped); zombies not in it are forgotten. */
+  apply(list: ZombieWire[]): ZombieSnap[] {
+    const out: ZombieSnap[] = [];
+    const seen = new Set<number>();
+    for (const w of list) {
+      const id = w[0];
+      seen.add(id);
+      if (w.length > 1) { this.last.set(id, w as ZombieSnap); out.push(w as ZombieSnap); continue; }
+      const full = this.last.get(id);
+      if (full) out.push(full);
+    }
+    for (const id of this.last.keys()) if (!seen.has(id)) this.last.delete(id);
+    return out;
+  }
+  snapshot(m: SnapMsg): Snapshot { return { ...m, z: this.apply(m.z) }; }
+}
 
 export type ClientMsg =
   // room '' = quick play; create = open a new room on chapter `ch` starting at checkpoint step `cp` (-1 = chapter start).

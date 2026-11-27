@@ -3,6 +3,9 @@
 export const TILE = 2; // metres per map tile
 export const TICK_HZ = 30;
 export const SNAP_EVERY = 2; // send a snapshot every N ticks (15 Hz)
+/** Zombies farther than this (metres) from every survivor are sent every SNAP_FAR_EVERY snapshots (half rate). */
+export const SNAP_FAR = 40;
+export const SNAP_FAR_EVERY = 2;
 export const MAX_PLAYERS = 8;
 export const CEIL_H = 4.2;
 /**

@@ -88,7 +88,9 @@ function findRoom(requested: unknown, chapter: unknown, create = false, cp: unkn
 }
 
 // noServer so Vite's HMR socket can share the same HTTP server in dev.
-const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
+// perMessageDeflate: snapshots are JSON that repeats itself (and the last one), so they shrink ~2.5-3x. Small
+// messages (input, acks) skip it. Browsers negotiate it on their own.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 4096, perMessageDeflate: { threshold: 256, zlibDeflateOptions: { level: 3 }, concurrencyLimit: 16 } });
 server.on('upgrade', (req, socket, head) => {
   if ((req.url ?? '').split('?')[0] !== '/ws') { if (PROD) socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
