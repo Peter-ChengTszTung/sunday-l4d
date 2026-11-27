@@ -1178,7 +1178,9 @@ export function build() {
     ],
   });
   b.gather({ x0: 167, z0: 97, x1: 175, z1: 105 }, {
-    objective: 'Hole up in the parking office', checkpoint: true, closes: [officeEntry],
+    // Plumley's shuts too: once the yard gate opens the dock barricade (MBPD, for the finale's police-corridor
+    // lane), the food court → Plumley's → Cineplex → car park would lead back round to the outside of this door.
+    objective: 'Hole up in the parking office', checkpoint: true, closes: [officeEntry, plumShutter],
     radio: [
       ['Dot', 'Parking office, ground floor, south-west corner. Get in and get that door shut.'],
       ['Taro', 'Ambulances nose to tail, doors open. They got out on foot. I hope.'],
