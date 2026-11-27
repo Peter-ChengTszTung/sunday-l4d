@@ -947,7 +947,7 @@ function onEvent(ev: GameEvent): void {
     case 'blast': if (ev[1] !== me.id || ev[1] === 0) boomFx(ev[2], ev[3], ev[4], ev[5]); break;
     case 'kb': if (ev[1] === me.id) { me.kx = ev[2]; me.kz = ev[3]; me.vy = 4; me.onGround = false; me.trauma = 1; } break;
     case 'horde': hud.banner(t('HORDE INCOMING!'), true); sfx.horde(); break;
-    case 'brute': hud.banner(t('A BRUTE approaches…'), true); sfx.brute(); break;
+    case 'brute': hud.banner(ev[1] === 2 ? t('Two BRUTES approach…') : t('A BRUTE approaches…'), true); sfx.brute(); break;
     case 'slam': {
       const y = ev[4] ?? 0, d = Math.hypot(ev[2] - me.x, y - me.gy, ev[3] - me.z);
       fx.burst({ x: ev[2], y: y + 0.6, z: ev[3] }, 0xffffff, 6, 4, 0.14, true, 0.35, 4);

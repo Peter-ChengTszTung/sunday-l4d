@@ -30,6 +30,7 @@ export default {
   "{name} joined the squad": "{name} 加入了小隊",
   "{name} left": "{name} 離開了",
   "The Brute is down!": "巨漢倒下了！",
+  "One Brute down — one to go!": "倒下一個巨漢——還有一個！",
   "Alarm Clock silenced!": "鬧鐘怪安靜了！",
   "{name} set off a car alarm!": "{name} 觸發了汽車警報！",
   "A Charger set off a car alarm!": "衝鋒者撞響了汽車警報！",

@@ -114,6 +114,7 @@ export default {
   "{who} was helped up": "{who}被扶起來了",
   "HORDE INCOMING!": "屍潮來襲！",
   "A BRUTE approaches…": "巨漢逼近中…",
+  "Two BRUTES approach…": "兩個巨漢逼近中…",
   "PINNED! Hang on…": "被壓制了！撐住…",
   "{who} is PINNED — shoot the Charger!": "{who}被壓制了——快射衝鋒者！",
   "A Charger slammed {who} into a wall!": "衝鋒者把{who}撞到牆上了！",

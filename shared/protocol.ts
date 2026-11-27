@@ -39,7 +39,8 @@ export type GameEvent =
   | ['kb', pid: number, vx: number, vz: number]
   // A horde is coming; (x, z): where its main body spawns from (absent if it trickles in from all over).
   | ['horde', x?: number, z?: number]
-  | ['brute']
+  // A Brute is coming; `n` = 2: a pair of them (server/tuning.ts BRUTE_PAIR).
+  | ['brute', n?: number]
   | ['end', won: number, kills: number, seconds: number, board?: [number, number][], nextChapter?: number]
   // --- Charger / Drooler / Alarm Clock (zombie states CHARGE, PIN, RING travel in ZombieSnap).
   // A charging Charger hit a wall and stunned itself.

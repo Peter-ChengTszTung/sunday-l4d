@@ -242,8 +242,17 @@ export const FOCUS = { near: 18, reconsider: 12, margin: 6, block: 2.4, beeline:
  */
 // Doubled (base, cap, escape trickle) after the first v2 review: the finales read too thin.
 export const BIG_HOLD = { base: [44, 60, 80, 100] as const, open: 0.6, brute: 0.4, cap: [60, 80, 110, 140] as const, drain: 0.08, escapeEvery: 0.55 };
-/** Brute health: base + this per survivor beyond the first (before difficulty). */
-export const BRUTE_HP_PER = 1100;
+/**
+ * Brute health by survivors still in the fight (alive or down, not dead) when it spawns, before difficulty.
+ * 1-4 is the old base 2200 + 1100 per extra survivor; past four each adds half that, since a big team
+ * never has everyone on the Brute. More survivors than entries: the last entry.
+ */
+export const BRUTE_HP = [2200, 3300, 4400, 5500, 6050, 6600, 7150, 7700] as const;
+/**
+ * From `from` survivors in the fight a Brute comes as a pair, each with `share` of BRUTE_HP: two threats
+ * to split the team's attention rather than one damage sponge. Never alongside a Brute already up.
+ */
+export const BRUTE_PAIR = { from: 6, share: 0.5 };
 /** Seconds between repeats of a stalled HoldGate's feed line while nobody is on it. */
 export const GATE_NAG = 12;
 /** The Brute runs this much faster while its target is further than `far` m away (no kiting it forever in the open). */

@@ -6,7 +6,7 @@ import { TILE, STOREY, LADDER_SPEED, ZOMBIE_LADDER, TICK_HZ, SNAP_EVERY, MAX_PLA
 import { F, cellOf, type HoldStage, type Level, type Mount, type Pos3, type Rect, type Step, type Trap, type Vec2 } from '../shared/level';
 import { chapterCount } from '../shared/chapters';
 import type { ClientMsg, GameEvent, PlayerSnap, ServerMsg, ZombieSnap } from '../shared/protocol';
-import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP_PER, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, GATE_NAG, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
+import { INF, rand, r2, HOLD_SCALE, DIRS8, EYE, REACH_DY, WANDERERS, MIN_SPAWN_DIST, ZONE_MIN, ZONE_GUN_GAP, CLUSTER, FLANK_CHANCE, FLANK_MIN, NOISE_REACH, GOO_HUNT, DIRECTOR, DIFFICULTY, BRUTE_HP, BRUTE_PAIR, BRUTE_CATCHUP, HORDE, LOOT, DIRECTOR_DEBUG, roll, defaultHoldScript, AMBUSHER, MAX_LIFT, TP_GRACE, SLOTTED, GRABBER, FOCUS, BIG_HOLD, GATE_NAG, TRAP_HORDE, TRAP_TEAM, type Side } from './tuning';
 import type { Player, Zombie, Wave, Glob, Puddle, Fire, Lure, Checkpoint } from './types';
 import { dataFor, objectiveCells, type ChapterData } from './chapterdata';
 import { onFire, onBlast, onShove, applyBlast, type CombatHost } from './combat';
@@ -749,7 +749,7 @@ export class Room implements CombatHost, TrapHost {
     const off = Math.max(0, Math.min(0.55, TILE / 2 - T.radius - 0.05));
     const zb: Zombie = {
       id: this.nextZid++, type, x, y, z, ry: rand(0, Math.PI * 2), st: dormant ? ZSTATE.IDLE : ZSTATE.RUN,
-      hp: type === ZT.BRUTE ? Math.round((T.hp + BRUTE_HP_PER * (this.players.size - 1)) * this.diff.bruteHp)
+      hp: type === ZT.BRUTE ? this.bruteHp(1)
         : isCommon(type) ? T.hp : Math.round(T.hp * this.diff.spHp),
       speed: T.speed * rand(0.86, 1.14), offX: rand(-1, 1) * off, offZ: rand(-1, 1) * off,
       t: 0, hitDone: true, target: 0, dormant, stun: 0, vx: 0, vz: 0, leapCd: rand(1, 3), lx: 0, lz: 0,
@@ -892,7 +892,11 @@ export class Room implements CombatHost, TrapHost {
     }
     this.events.push(['zdie', z.id, r2(z.x), r2(z.z), z.type, head ? 1 : 0, by ? by.id : 0, r2(z.y)]);
     if (z.type === ZT.PUFFER) this.explode(z);
-    if (z.type === ZT.BRUTE) this.events.push(['msg', 'The Brute is down!']);
+    if (z.type === ZT.BRUTE) {
+      let left = 0;
+      for (const o of this.zombies.values()) if (o !== z && o.type === ZT.BRUTE && o.hp > 0 && !o.dormant) left++;
+      this.events.push(['msg', left ? 'One Brute down — one to go!' : 'The Brute is down!']);
+    }
     if (z.type === ZT.DROOLER) this.addPuddle(z.x, z.y, z.z, DROOLER.deathR, DROOLER.deathLife);
     if (z.type === ZT.ALARM && z.st === ZSTATE.RING) this.events.push(['msg', 'Alarm Clock silenced!']);
     if (z.type === ZT.WEEPER) this.events.push(['msg', 'The Weeper is quiet now.']);
@@ -1911,13 +1915,39 @@ export class Room implements CombatHost, TrapHost {
     });
   }
 
-  /** A Brute ahead of the team (any side in a holdout), out of sight; announced. Cell centre: it's wide. */
+  /** Survivors still in the fight (alive or down; the dead don't count), at least 1. */
+  private fighting(): number {
+    let n = 0;
+    for (const p of this.players.values()) if (p.st !== PSTATE.DEAD) n++;
+    return Math.max(1, n);
+  }
+  /** A Brute's health for the survivors in the fight now (BRUTE_HP), `share` of it, after difficulty. */
+  private bruteHp(share: number): number {
+    const n = this.fighting();
+    return Math.round(BRUTE_HP[Math.min(n, BRUTE_HP.length) - 1] * share * this.diff.bruteHp);
+  }
+
+  /**
+   * A Brute ahead of the team (any side in a holdout), out of sight; announced. Cell centre: it's wide.
+   * A big team (BRUTE_PAIR) with no Brute up gets two, each from its own spawn cell, sharing the health.
+   */
   private spawnBrute(): Zombie | null {
-    const [a, b] = DIRECTOR.boss.spawn;
-    const c = this.pickSpawnCell(a, b, this.holdout >= 0 ? 0 : 1);
+    const [a, b] = DIRECTOR.boss.spawn, side = this.holdout >= 0 ? 0 : 1;
+    const c = this.pickSpawnCell(a, b, side);
     if (c < 0) return null;
+    let up = false;
+    for (const z of this.zombies.values()) if (z.type === ZT.BRUTE && !z.dormant) up = true;
     const p = this.cellPos(c), zb = this.spawnZombie(ZT.BRUTE, p.x, p.y, p.z);
-    this.events.push(['brute']);
+    let two: Zombie | null = null;
+    if (!up && this.fighting() >= BRUTE_PAIR.from) {
+      const c2 = this.pickSpawnCell(a, b, side);
+      if (c2 >= 0 && c2 !== c) {
+        const p2 = this.cellPos(c2);
+        two = this.spawnZombie(ZT.BRUTE, p2.x, p2.y, p2.z);
+        zb.hp = two.hp = this.bruteHp(BRUTE_PAIR.share);
+      }
+    }
+    this.events.push(two ? ['brute', 2] : ['brute']);
     return zb;
   }
 
