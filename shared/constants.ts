@@ -3,7 +3,7 @@
 export const TILE = 2; // metres per map tile
 export const TICK_HZ = 30;
 export const SNAP_EVERY = 2; // send a snapshot every N ticks (15 Hz)
-export const MAX_PLAYERS = 4;
+export const MAX_PLAYERS = 8;
 export const CEIL_H = 4.2;
 /**
  * Multi-storey maps (shared/level.ts): storey k's floor is at k * STOREY metres. Equal to CEIL_H, so an
@@ -314,6 +314,11 @@ export const SURVIVORS: SurvivorLook[] = [
   { name: 'Pip', shirt: 0x39c5bb, hair: 0xffd166, style: 'spiky' },
   { name: 'Nori', shirt: 0xb18cff, hair: 0x2b2d5b, style: 'buns' },
   { name: 'Taro', shirt: 0xffa94d, hair: 0xe8e8f0, style: 'bob' },
+  // Looks 4-7: the second half of an 8-player squad. Shirts kept clear of the first four and of zombie skin.
+  { name: 'Yuzu', shirt: 0xffd43b, hair: 0x6b3e26, style: 'buns' },
+  { name: 'Bao', shirt: 0x4c8dff, hair: 0x1f1f2e, style: 'cap' },
+  { name: 'Tofu', shirt: 0xf1f3f5, hair: 0x2b2b2b, style: 'spiky' },
+  { name: 'Matcha', shirt: 0x2f9e44, hair: 0xe8590c, style: 'bob' },
 ];
 
 /**

@@ -26,6 +26,10 @@ export default {
   "Pip": "小皮",
   "Nori": "海苔",
   "Taro": "芋頭",
+  "Yuzu": "柚子",
+  "Bao": "包子",
+  "Tofu": "豆腐",
+  "Matcha": "抹茶",
   // Server feed lines (server/room.ts, server/index.ts); {name} = a player name
   "{name} joined the squad": "{name} 加入了小隊",
   "{name} left": "{name} 離開了",

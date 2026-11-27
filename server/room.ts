@@ -18,6 +18,9 @@ const PHASE_NAMES = ['BUILD_UP', 'SUSTAIN', 'FADE', 'RELAX'];
 /** `pickSpawnCell`'s `ahead` for a team-sourced wave's side. */
 const waveAhead = (w: Wave) => (w.side < 0 ? -1 : w.side > 0 ? 0.75 : 0);
 
+/** Offsets (m) around an authored spawn point where extra survivors may stand (Room.spawnSlot). */
+const SLOT_OFFS: [number, number][] = [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2], [0.85, 0.85], [-0.85, 0.85], [0.85, -0.85], [-0.85, -0.85]];
+
 export type { Player } from './types';
 
 /** `pickTarget`'s result: who a zombie goes for, how far (floor to floor), and the field it paths on. */
@@ -258,7 +261,7 @@ export class Room implements CombatHost, TrapHost {
     this.events = [['reset', this.ch, this.step, this.doors, [...this.taken], cp && !freshStart ? 1 : 0]];
     const spawns = this.spawnPoints();
     let slot = 0;
-    for (const p of this.players.values()) this.spawnPlayer(p, spawns[slot++ % spawns.length], !cp || freshStart);
+    for (const p of this.players.values()) this.spawnPlayer(p, this.spawnSlot(spawns, slot++), !cp || freshStart);
     const sp = spawns[0];
     this.best = this.progressAt(sp.x, sp.y ?? 0, sp.z);
     this.routeBest = 0;
@@ -305,6 +308,34 @@ export class Room implements CombatHost, TrapHost {
     this.events.push(['loot', back]);
   }
 
+  /** Extra spawn spots per authored list (spawnSlot), worked out once per list. */
+  private slotCache = new WeakMap<Vec2[], Vec2[]>();
+  /**
+   * Spawn point for slot `i` of a safe room's `pts` (maps author four). Slots past the list take open spots
+   * around the authored ones, each as far as it can be from every spot already taken, so a squad of eight
+   * stands on eight spots rather than four stacked pairs.
+   */
+  private spawnSlot(pts: Vec2[], i: number): Vec2 {
+    if (i < pts.length) return pts[i];
+    let extra = this.slotCache.get(pts);
+    if (!extra) {
+      extra = [];
+      const taken = [...pts];
+      const cands = pts.flatMap((p) => SLOT_OFFS.map(([dx, dz]) => ({ x: p.x + dx, z: p.z + dz, y: p.y }))).filter((c) => this.fits(c));
+      while (taken.length < MAX_PLAYERS && cands.length) {
+        let best = -1, bestD = -1;
+        cands.forEach((c, k) => {
+          const d = Math.min(...taken.map((t) => Math.hypot(t.x - c.x, t.z - c.z)));
+          if (d > bestD) { bestD = d; best = k; }
+        });
+        const [c] = cands.splice(best, 1);
+        taken.push(c); extra.push(c);
+      }
+      this.slotCache.set(pts, extra);
+    }
+    return extra.length ? extra[(i - pts.length) % extra.length] : pts[i % pts.length];
+  }
+
   private spawnPlayer(p: Player, s0: Vec2, fresh: boolean): void {
     const s = this.settle(s0), y = s.y;
     Object.assign(p, { x: s.x, y, z: s.z, ry: Math.PI, rx: 0, hp: PLAYER.hp, st: PSTATE.ALIVE, w: 0, anim: 0,
@@ -320,10 +351,13 @@ export class Room implements CombatHost, TrapHost {
 
   /** A spawn point standing on real floor: its own tile's floor height (stairs included), else the nearest open tile. */
   private settle(s: Vec2): Pos3 {
-    const L = this.L, y = s.y ?? 0, n = L.nodeAt(s.x, y, s.z);
-    // The whole body must fit, not just its centre (a spawn offset can brush a machine or a wall).
-    if (!L.blocked(n, this.doors) && Math.abs(L.heightAt(n, s.x, s.z) - y) <= STOREY / 2 && !L.boxBlocked(s.x, L.heightAt(n, s.x, s.z), s.z, PLAYER.radius, this.doors)) return { x: s.x, y: L.heightAt(n, s.x, s.z), z: s.z };
+    if (this.fits(s)) { const L = this.L, n = L.nodeAt(s.x, s.y ?? 0, s.z); return { x: s.x, y: L.heightAt(n, s.x, s.z), z: s.z }; }
     return this.nearestOpen(s);
+  }
+  /** A survivor's whole body fits standing at `s` on its storey, not just its centre (an offset can brush a machine or a wall). */
+  private fits(s: Vec2): boolean {
+    const L = this.L, y = s.y ?? 0, n = L.nodeAt(s.x, y, s.z);
+    return !L.blocked(n, this.doors) && Math.abs(L.heightAt(n, s.x, s.z) - y) <= STOREY / 2 && !L.boxBlocked(s.x, L.heightAt(n, s.x, s.z), s.z, PLAYER.radius, this.doors);
   }
 
   /** Refresh a survivor's floor height and node after they (or the server) moved them. */
@@ -350,7 +384,7 @@ export class Room implements CombatHost, TrapHost {
     this.players.set(p.id, p);
     this.revealLoot();
     const spawns = this.spawnPoints();
-    this.spawnPlayer(p, spawns[look % spawns.length], true);
+    this.spawnPlayer(p, this.spawnSlot(spawns, look), true);
     // Late joiners start beside the team if the run is already under way.
     if (mate && (this.started || this.step > 0)) {
       p.x = mate.x; p.y = mate.gy; p.z = mate.z;
